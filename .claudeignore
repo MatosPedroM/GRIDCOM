@@ -1,0 +1,7 @@
+saves/
+dist/
+build/
+__pycache__/
+*.pyc
+*.pyo
+.git/

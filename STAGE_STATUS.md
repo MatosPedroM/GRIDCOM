@@ -6,11 +6,11 @@
 
 ## Current Stage
 
-**STAGE 1 — Network Data Model**
+**STAGE 2 — DC Load Flow Solver**
 
 ## Current Status
 
-**COMPLETE** — All data files written and validation test passing.
+**COMPLETE** — DCLoadFlow written and validation tests passing.
 
 ## Session Log
 
@@ -28,6 +28,12 @@
 - Written: `DOMAIN_GLOSSARY.md` (complete)
 - Written: `SIMULATION_API.md` (complete)
 - Status: All Stage 0 configuration complete
+
+### Session 4 (Stage 2 — DC Load Flow Solver)
+- Written: `src/simulation/loadflow.py` — DCLoadFlow class + LoadFlowResult
+- Fixed: L10, L11, L29 active_from_shift mismatches (bus/line activation consistency)
+- Added: `test_loadflow_solves()` — 5 sub-checks, all PASS
+- Validation: 2/2 tests passed
 
 ### Session 3 (Stage 1 — Network Data Model)
 - Written: `src/utils/helpers.py` — resource_path() for dev + PyInstaller builds
@@ -65,12 +71,16 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
   ✓ src/data/fleet.py          — GenerationUnit dataclass, 47 units
   ✓ src/data/profiles.py       — demand/wind/solar profiles, 10 ShiftSpecs
   ✓ src/simulation/grid.py     — Grid class (full public interface per API contract)
-  ✓ tests/test_simulation.py   — test_grid_loads() — 1/1 PASS
+  ✓ tests/test_simulation.py   — test_grid_loads() — PASS
 
   Grid sizes by shift:
-    Shift 1: 15 buses, 10 lines, 9 units
-    Shift 3: 26 buses, 16 lines, 23 units
+    Shift 1: 15 buses, 8 lines, 9 units
+    Shift 3: 26 buses, 14 lines, 23 units
     Shift 5: 40 buses, 29 lines, 47 units
+
+STAGE 2 — DC LOAD FLOW SOLVER (complete, validated)
+  ✓ src/simulation/loadflow.py — DCLoadFlow class + LoadFlowResult
+  ✓ tests/test_simulation.py   — test_loadflow_solves() — PASS
 
 SOURCE FILES (empty placeholders — no working code)
   src/main.py
@@ -103,20 +113,19 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 1 complete. Ready to begin Stage 2 — DC Load Flow Solver.
+Nothing. Stage 2 complete. Ready to begin Stage 3.
 
 ---
 
 ## What Is NOT Yet Built
 
-**Stages 2-14 have empty placeholder files only.**
+**Stages 3-14 have empty placeholder files only.**
 
 Do not reference any simulation, display, or gameplay module as if it
 contains working code unless listed above as complete.
 
 Specifically — these classes and functions DO NOT EXIST YET:
 - `GridSimulation` (src/simulation/simulation.py)
-- `DCLoadFlow` (src/simulation/loadflow.py)
 - `VoltageModel` (src/simulation/voltage.py)
 - `FrequencyModel` (src/simulation/frequency.py)
 - `UnitModel` (src/simulation/units.py)
@@ -128,23 +137,25 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 2 — DC Load Flow Solver**
+**Stage 3 — Frequency and Voltage Models**
 
-Goal: Implement DCLoadFlow in src/simulation/loadflow.py using numpy.
-Solves θ = B⁻¹ × P for bus voltage angles and computes line flows.
-No display. No game loop. Pure numpy physics.
+Goal: Implement FrequencyModel (swing equation + droop) and VoltageModel
+(decoupled ΔV = B'⁻¹ × Q). Pure numpy physics, no display.
 
 Files to write:
-1. `src/simulation/loadflow.py` — DCLoadFlow class
+1. `src/simulation/frequency.py` — FrequencyModel
+2. `src/simulation/voltage.py`   — VoltageModel
 
-Validation test (add to tests/test_simulation.py):
+Validation tests (add to tests/test_simulation.py):
 ```
-test_loadflow_solves...
-  3-bus test network: angles correct to 1e-6 — PASS
-  Line flows computed correctly — PASS
-  Line loading percentages correct — PASS
-  Singular matrix (islanded) returns safe fallback — PASS
-2/2 tests passed
+test_frequency_model...
+  Imbalance drives frequency deviation — PASS
+  Droop response reduces imbalance — PASS
+  Frequency clamped to [45, 55] Hz — PASS
+test_voltage_model...
+  Voltage solution physically reasonable — PASS
+  PV->PQ conversion on reactive limit — PASS
+3/3 tests passed
 ```
 
 ---
@@ -167,6 +178,7 @@ None.
 |-------|------|--------|------|
 | 0 | Structure created, git committed | PASS | TBD |
 | 1 | test_grid_loads() — 1/1 | PASS | 2026-05-07 |
+| 2 | test_loadflow_solves() — 2/2 | PASS | 2026-05-07 |
 
 ---
 

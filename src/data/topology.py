@@ -252,10 +252,10 @@ LINES: list[Line] = [
          reactance_pu=0.020, rating_mw=1200.0, active_from_shift=1, voltage_kv=400.0),
 
     Line(label='L10', from_bus='NRTH', to_bus='COAL',
-         reactance_pu=0.022, rating_mw=1000.0, active_from_shift=1, voltage_kv=400.0),
+         reactance_pu=0.022, rating_mw=1000.0, active_from_shift=5, voltage_kv=400.0),
 
     Line(label='L11', from_bus='WEST', to_bus='RDST',
-         reactance_pu=0.022, rating_mw=1000.0, active_from_shift=1, voltage_kv=400.0),
+         reactance_pu=0.022, rating_mw=1000.0, active_from_shift=3, voltage_kv=400.0),
 
     # ── 220kV SOUTH SUB-GRID (Shifts 1-2) ────────────────────────────────
     Line(label='L12', from_bus='ASHF', to_bus='FAIR',
@@ -314,7 +314,7 @@ LINES: list[Line] = [
          reactance_pu=0.080, rating_mw=200.0, active_from_shift=1, voltage_kv=220.0),
 
     Line(label='L29', from_bus='SLST', to_bus='STAN',
-         reactance_pu=0.075, rating_mw=500.0, active_from_shift=3, voltage_kv=220.0),
+         reactance_pu=0.075, rating_mw=500.0, active_from_shift=5, voltage_kv=220.0),
 ]
 
 

@@ -444,6 +444,241 @@ def test_loadflow_solves() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STAGE 4 TESTS — Generation Unit State Machine
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_unit_model() -> bool:
+    """
+    Verify UnitModel state transitions, ramp behaviour, and FleetModel aggregates.
+    """
+    print("test_unit_model...")
+    all_passed = True
+
+    try:
+        from simulation.units import UnitModel, FleetModel
+        from simulation.grid import Grid
+        from data.fleet import get_unit
+
+        # ── Unit starts OFFLINE ───────────────────────────────────────────
+        try:
+            spec = get_unit('RVSD-1')
+            um = UnitModel(spec)
+            assert um.state == 'OFFLINE', \
+                f"Expected OFFLINE, got {um.state!r}"
+            assert um.current_mw == 0.0, \
+                f"OFFLINE unit should have 0 MW, got {um.current_mw}"
+            assert um.start_progress == 0.0, \
+                f"start_progress should be 0.0, got {um.start_progress}"
+            print(f"  Unit starts OFFLINE: state={um.state}, "
+                  f"output={um.current_mw} MW -- PASS")
+        except AssertionError as e:
+            print(f"  Initial state: FAIL -- {e}")
+            all_passed = False
+
+        # ── start() transitions to STARTING ───────────────────────────────
+        try:
+            spec = get_unit('RVSD-1')
+            um = UnitModel(spec)
+            accepted = um.start()
+            assert accepted, "start() should return True from OFFLINE"
+            assert um.state == 'STARTING', \
+                f"After start(), expected STARTING, got {um.state!r}"
+            assert um.current_mw == 0.0, \
+                f"STARTING unit should have 0 MW output"
+
+            # start() should be rejected when already STARTING
+            rejected = um.start()
+            assert not rejected, "start() on STARTING unit should return False"
+            print(f"  start() -> STARTING: accepted={accepted}, "
+                  f"re-start rejected={not rejected} -- PASS")
+        except AssertionError as e:
+            print(f"  start() transition: FAIL -- {e}")
+            all_passed = False
+
+        # ── Cold start countdown advances; unit goes ONLINE ───────────────
+        try:
+            spec = get_unit('ASHG-1')   # CCGT: cold_start_min = 60.0
+            um = UnitModel(spec)
+            um.start()
+
+            # Advance 30 sim-minutes (1800 seconds). Should still be STARTING.
+            um.tick(dt_sim_seconds=1800.0)
+            assert um.state == 'STARTING', \
+                f"After 30 min, CCGT should still be STARTING, got {um.state!r}"
+            assert abs(um.start_progress - 0.5) < 0.01, \
+                f"start_progress should be ~0.5 at 30/60 min, got {um.start_progress:.3f}"
+
+            # Advance another 31 minutes (1860 seconds). Should be ONLINE.
+            um.tick(dt_sim_seconds=1860.0)
+            assert um.state == 'ONLINE', \
+                f"After 61+ min, CCGT should be ONLINE, got {um.state!r}"
+            assert um.current_mw == spec.min_mw, \
+                f"On ONLINE transition, output should be min_mw={spec.min_mw}, " \
+                f"got {um.current_mw}"
+            print(f"  Cold start ({spec.cold_start_min:.0f} min): "
+                  f"STARTING -> ONLINE at min_mw={spec.min_mw} MW -- PASS")
+        except AssertionError as e:
+            print(f"  Cold start countdown: FAIL -- {e}")
+            all_passed = False
+
+        # ── Ramp rate limits output per tick ──────────────────────────────
+        try:
+            spec = get_unit('RVSD-1')   # COAL: ramp 3%/min, rated 300 MW
+            um = UnitModel(spec, initial_mw=90.0)  # start ONLINE at min
+
+            um.set_target(300.0)
+
+            # After 1 simulated minute (60 seconds), ramp = 3% × 300 = 9 MW
+            um.tick(dt_sim_seconds=60.0)
+            expected_after_1min = 90.0 + 9.0
+            assert abs(um.current_mw - expected_after_1min) < 0.01, \
+                f"After 1 min, expected {expected_after_1min} MW, " \
+                f"got {um.current_mw:.3f} MW"
+
+            # After another 4 minutes (240 s), total 5 min: +9*5=45 MW from 90 = 135
+            um.tick(dt_sim_seconds=240.0)
+            expected_after_5min = 90.0 + 9.0 * 5
+            assert abs(um.current_mw - expected_after_5min) < 0.1, \
+                f"After 5 min, expected {expected_after_5min} MW, " \
+                f"got {um.current_mw:.3f} MW"
+
+            print(f"  Ramp rate: {spec.ramp_pct_per_min}%/min on {spec.rated_mw} MW: "
+                  f"+{um.current_mw - 90.0:.1f} MW in 5 min -- PASS")
+        except AssertionError as e:
+            print(f"  Ramp rate: FAIL -- {e}")
+            all_passed = False
+
+        # ── Output clamped to [min_mw, rated_mw] when ONLINE ──────────────
+        try:
+            spec = get_unit('HART-1')   # NUCLEAR: min 490, rated 700
+            um = UnitModel(spec, initial_mw=490.0)
+
+            # Target below min: clamp to min_mw
+            um.set_target(100.0)
+            assert um.target_mw == spec.min_mw, \
+                f"Target below min_mw should be clamped: expected {spec.min_mw}, " \
+                f"got {um.target_mw}"
+
+            # Target above rated: clamp to rated_mw
+            um.set_target(9999.0)
+            assert um.target_mw == spec.rated_mw, \
+                f"Target above rated_mw should be clamped: expected {spec.rated_mw}, " \
+                f"got {um.target_mw}"
+
+            print(f"  Output clamping [{spec.min_mw}, {spec.rated_mw}] MW -- PASS")
+        except AssertionError as e:
+            print(f"  Output clamping: FAIL -- {e}")
+            all_passed = False
+
+        # ── stop() transitions ONLINE -> SHUTDOWN -> OFFLINE ──────────────
+        try:
+            spec = get_unit('DUNH-1')   # HYDRO_PUMP: ramp 100%/min, rated 200 MW
+            um = UnitModel(spec, initial_mw=200.0)
+            assert um.state == 'ONLINE'
+
+            accepted = um.stop()
+            assert accepted, "stop() should return True from ONLINE"
+            assert um.state == 'SHUTDOWN', \
+                f"After stop(), expected SHUTDOWN, got {um.state!r}"
+            assert um.target_mw == 0.0, \
+                "SHUTDOWN target should be 0"
+
+            # Hydro ramps at 100%/min: 200 MW ramps to 0 in 1 min
+            # Advance 1.1 minutes (66 seconds)
+            um.tick(dt_sim_seconds=66.0)
+            assert um.state == 'OFFLINE', \
+                f"After ramping to 0, expected OFFLINE, got {um.state!r}"
+            assert um.current_mw == 0.0, \
+                f"OFFLINE output should be 0, got {um.current_mw}"
+
+            print(f"  stop() -> SHUTDOWN -> OFFLINE: "
+                  f"ramp-down complete in ~1 min -- PASS")
+        except AssertionError as e:
+            print(f"  Shutdown sequence: FAIL -- {e}")
+            all_passed = False
+
+        # ── trip() goes to OFFLINE immediately from any state ─────────────
+        try:
+            spec = get_unit('RVSD-3')
+            um_online = UnitModel(spec, initial_mw=300.0)
+            um_online.trip()
+            assert um_online.state == 'OFFLINE', \
+                f"trip() from ONLINE should go to OFFLINE, got {um_online.state!r}"
+            assert um_online.current_mw == 0.0
+
+            um_starting = UnitModel(spec)
+            um_starting.start()
+            um_starting.trip()
+            assert um_starting.state == 'OFFLINE', \
+                f"trip() from STARTING should go to OFFLINE, got {um_starting.state!r}"
+
+            print(f"  trip() from ONLINE and STARTING -> OFFLINE immediately -- PASS")
+        except AssertionError as e:
+            print(f"  trip(): FAIL -- {e}")
+            all_passed = False
+
+        # ── Renewable unit always ONLINE; start/stop rejected ─────────────
+        try:
+            spec = get_unit('WNCN-1')   # WIND
+            um = UnitModel(spec)
+            assert um.state == 'ONLINE', \
+                f"Wind unit should start ONLINE, got {um.state!r}"
+            assert not um.start(), "start() should return False for renewable"
+            assert not um.stop(), "stop() should return False for renewable"
+            um.set_renewable_output(350.0)
+            assert abs(um.current_mw - 350.0) < 0.01, \
+                f"set_renewable_output should set output: expected 350, " \
+                f"got {um.current_mw}"
+            print(f"  Renewable always ONLINE, output overridable -- PASS")
+        except AssertionError as e:
+            print(f"  Renewable unit: FAIL -- {e}")
+            all_passed = False
+
+        # ── FleetModel aggregates ─────────────────────────────────────────
+        try:
+            g1 = Grid(1)
+            schedule = {
+                'RVSD-1': 280.0,
+                'HART-1': 600.0,
+                'HART-2': 700.0,
+            }
+            fleet = FleetModel(g1, initial_schedule=schedule)
+
+            total_gen = fleet.total_generation_mw()
+            # Scheduled units + any renewables at 0 MW
+            expected = 280.0 + 600.0 + 700.0
+            assert abs(total_gen - expected) < 0.1, \
+                f"Fleet total gen: expected {expected}, got {total_gen:.1f}"
+
+            reserve = fleet.spinning_reserve_mw()
+            assert reserve >= 0.0, f"Spinning reserve must be >= 0, got {reserve}"
+
+            p_inj = fleet.p_injections()
+            assert 'MDBY' in p_inj, "RVSD units at MDBY should appear in p_injections"
+            assert abs(p_inj['MDBY'] - 280.0) < 0.1, \
+                f"MDBY P injection: expected 280, got {p_inj['MDBY']:.1f}"
+            assert abs(p_inj['CNTR'] - 1300.0) < 0.1, \
+                f"CNTR P injection: expected 1300, got {p_inj.get('CNTR', 0):.1f}"
+
+            oit = fleet.online_unit_types()
+            assert len(oit) > 0, "online_unit_types should return non-empty list"
+
+            print(f"  FleetModel: total_gen={total_gen:.1f} MW, "
+                  f"reserve={reserve:.1f} MW -- PASS")
+        except AssertionError as e:
+            print(f"  FleetModel aggregates: FAIL -- {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR -- {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # STAGE 3 TESTS — Frequency and Voltage Models
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -721,6 +956,7 @@ if __name__ == "__main__":
     results = [
         test_grid_loads(),
         test_loadflow_solves(),
+        test_unit_model(),
         test_frequency_model(),
         test_voltage_model(),
     ]

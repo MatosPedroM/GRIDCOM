@@ -1,0 +1,530 @@
+"""
+src/simulation/units.py
+
+Generation unit state machine for the GRIDCOM simulation.
+
+Each physical generator is represented by a UnitModel instance.
+UnitModel tracks state (OFFLINE/STARTING/ONLINE/SHUTDOWN), output (MW),
+target setpoint, ramp progress, and reactive injection (MVAr).
+
+FleetModel owns all UnitModel instances for a shift and provides aggregate
+queries (total generation, system inertia, spinning reserve).
+
+States:
+    OFFLINE   — unit is shut down. Output = 0. Inertia contribution = 0.
+    STARTING  — cold start in progress. Output = 0. Timer counts up to
+                cold_start_min. Inertia contribution = 0 (not synchronised).
+    ONLINE    — unit is synchronised and producing. Output ramps toward target.
+                Output clamped to [min_mw, rated_mw].
+    SHUTDOWN  — unit received stop command. Ramps down to min_mw, then trips
+                to OFFLINE automatically.
+
+Transitions:
+    OFFLINE  -> STARTING  : start() called
+    STARTING -> ONLINE    : start timer reaches cold_start_min
+    ONLINE   -> SHUTDOWN  : stop() called
+    SHUTDOWN -> OFFLINE   : output reaches min_mw (or 0 if min_mw == 0)
+    Any      -> OFFLINE   : trip() called (protection trip, immediate)
+
+Wind and Solar units are always ONLINE — their output is overridden by
+the renewables model each tick via set_renewable_output(). start()/stop()
+do nothing for wind/solar units.
+
+See SIMULATION_API.md for the unit_states / unit_outputs_mw contract.
+See DOMAIN_GLOSSARY.md for unit type definitions and ramp/inertia values.
+"""
+
+from simulation.constants import (
+    MIN_OUTPUT_FRACTION,
+    DEBUG_SIMULATION,
+)
+from data.fleet import GenerationUnit
+
+# Unit types that are non-dispatchable (renewables — output set externally).
+_RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
+
+# Unit types that require minimum output > 0 when online.
+# For these types, min_mw from fleet.py is already correct.
+# HYDRO variants and renewables allow min_mw = 0.
+_THERMAL_TYPES: frozenset[str] = frozenset({'COAL', 'CCGT', 'NUCLEAR'})
+
+
+class UnitModel:
+    """
+    Mutable state machine for a single generation unit.
+
+    Constructed from a GenerationUnit dataclass (immutable spec).
+    All physics state lives here; GenerationUnit is read-only after creation.
+
+    Attributes (read-only via properties):
+        label:        Unit label string, e.g. 'RVSD-1'.
+        state:        Current state string: 'OFFLINE', 'STARTING', 'ONLINE', 'SHUTDOWN'.
+        current_mw:   Current output in MW.
+        target_mw:    Dispatch setpoint the unit is ramping toward.
+        start_progress: Fraction of cold start complete (0.0–1.0). 0.0 when not STARTING.
+        q_injection_mvar: Current reactive injection (MVAr). Positive = injection.
+        is_renewable: True for WIND and SOLAR units.
+    """
+
+    def __init__(self, spec: GenerationUnit, initial_mw: float | None = None) -> None:
+        """
+        Initialise unit from its static specification.
+
+        Args:
+            spec:        Frozen GenerationUnit dataclass from fleet.py.
+            initial_mw:  Starting output in MW. None = unit starts OFFLINE (0 MW).
+                         If provided, unit starts ONLINE at this output level.
+                         Clamped to [min_mw, rated_mw].
+        """
+        self._spec = spec
+        self._is_renewable = spec.unit_type in _RENEWABLE_TYPES
+
+        if initial_mw is not None:
+            clamped = max(spec.min_mw, min(spec.rated_mw, float(initial_mw)))
+            self._state: str = 'ONLINE'
+            self._current_mw: float = clamped
+            self._target_mw: float = clamped
+        else:
+            self._state = 'ONLINE' if self._is_renewable else 'OFFLINE'
+            self._current_mw = 0.0
+            self._target_mw = 0.0
+
+        self._start_timer_min: float = 0.0   # simulated minutes elapsed since STARTING
+        self._q_injection_mvar: float = 0.0
+
+    # ─────── READ-ONLY PROPERTIES ─────────────────────────────────────────
+
+    @property
+    def label(self) -> str:
+        return self._spec.label
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    @property
+    def current_mw(self) -> float:
+        return self._current_mw
+
+    @property
+    def target_mw(self) -> float:
+        return self._target_mw
+
+    @property
+    def start_progress(self) -> float:
+        """Cold start completion fraction. 0.0–1.0. 0.0 when not STARTING."""
+        if self._state != 'STARTING' or self._spec.cold_start_min <= 0.0:
+            return 0.0
+        return min(1.0, self._start_timer_min / self._spec.cold_start_min)
+
+    @property
+    def q_injection_mvar(self) -> float:
+        return self._q_injection_mvar
+
+    @property
+    def is_renewable(self) -> bool:
+        return self._is_renewable
+
+    @property
+    def inertia_contribution(self) -> tuple[str, float]:
+        """Returns (unit_type, current_mw) for FrequencyModel inertia calculation.
+        Returns (unit_type, 0.0) when not ONLINE — no inertia contribution."""
+        if self._state == 'ONLINE':
+            return (self._spec.unit_type, self._current_mw)
+        return (self._spec.unit_type, 0.0)
+
+    # ─────── COMMANDS ─────────────────────────────────────────────────────
+
+    def start(self) -> bool:
+        """
+        Issue start command. Transitions OFFLINE -> STARTING.
+
+        Returns:
+            True if command accepted (was OFFLINE).
+            False if unit is not OFFLINE (already running or starting).
+        """
+        if self._is_renewable:
+            return False
+        if self._state != 'OFFLINE':
+            return False
+        self._state = 'STARTING'
+        self._start_timer_min = 0.0
+        if DEBUG_SIMULATION:
+            print(f'[UNITS] {self.label} OFFLINE -> STARTING '
+                  f'(cold start {self._spec.cold_start_min:.0f} min)')
+        return True
+
+    def stop(self) -> bool:
+        """
+        Issue stop command. Transitions ONLINE -> SHUTDOWN.
+
+        Returns:
+            True if command accepted (was ONLINE).
+            False if unit is not ONLINE.
+        """
+        if self._is_renewable:
+            return False
+        if self._state != 'ONLINE':
+            return False
+        self._state = 'SHUTDOWN'
+        self._target_mw = 0.0
+        if DEBUG_SIMULATION:
+            print(f'[UNITS] {self.label} ONLINE -> SHUTDOWN')
+        return True
+
+    def trip(self) -> None:
+        """
+        Protection trip — immediate transition to OFFLINE from any state.
+        Zeroes output and clears reactive injection.
+        """
+        if DEBUG_SIMULATION and self._state != 'OFFLINE':
+            print(f'[UNITS] {self.label} TRIPPED from {self._state} '
+                  f'({self._current_mw:.1f} MW -> 0)')
+        self._state = 'OFFLINE'
+        self._current_mw = 0.0
+        self._target_mw = 0.0
+        self._start_timer_min = 0.0
+        self._q_injection_mvar = 0.0
+
+    def set_target(self, target_mw: float) -> bool:
+        """
+        Set dispatch target. Only valid when ONLINE.
+
+        Args:
+            target_mw: Target output in MW. Clamped to [min_mw, rated_mw].
+
+        Returns:
+            True if accepted (unit is ONLINE).
+            False otherwise.
+        """
+        if self._state != 'ONLINE':
+            return False
+        self._target_mw = max(
+            self._spec.min_mw,
+            min(self._spec.rated_mw, float(target_mw))
+        )
+        return True
+
+    def set_q_target(self, q_mvar: float) -> bool:
+        """
+        Set reactive injection target. Only valid when ONLINE.
+
+        Args:
+            q_mvar: Reactive injection in MVAr. Clamped to [q_min_mvar, q_max_mvar].
+
+        Returns:
+            True if accepted (unit is ONLINE).
+            False otherwise.
+        """
+        if self._state != 'ONLINE':
+            return False
+        self._q_injection_mvar = max(
+            self._spec.q_min_mvar,
+            min(self._spec.q_max_mvar, float(q_mvar))
+        )
+        return True
+
+    def set_renewable_output(self, output_mw: float) -> None:
+        """
+        Override current output for renewable units (WIND/SOLAR).
+
+        Called each tick by the renewables model. Clamped to [0, rated_mw].
+        Has no effect on non-renewable units.
+        """
+        if not self._is_renewable:
+            return
+        self._current_mw = max(0.0, min(self._spec.rated_mw, float(output_mw)))
+        self._target_mw = self._current_mw
+
+    # ─────── TICK ─────────────────────────────────────────────────────────
+
+    def tick(self, dt_sim_seconds: float) -> None:
+        """
+        Advance unit state by dt_sim_seconds of simulated time.
+
+        Args:
+            dt_sim_seconds: Elapsed simulated time this tick (seconds).
+        """
+        if self._state == 'OFFLINE':
+            return
+
+        if self._state == 'STARTING':
+            self._tick_starting(dt_sim_seconds)
+            return
+
+        if self._state == 'ONLINE':
+            self._tick_online(dt_sim_seconds)
+            return
+
+        if self._state == 'SHUTDOWN':
+            self._tick_shutdown(dt_sim_seconds)
+
+    # ─────── TICK HELPERS ─────────────────────────────────────────────────
+
+    def _tick_starting(self, dt_sim_seconds: float) -> None:
+        """Advance cold start timer. Transition to ONLINE when complete."""
+        dt_min = dt_sim_seconds / 60.0
+        self._start_timer_min += dt_min
+
+        if self._start_timer_min >= self._spec.cold_start_min:
+            self._state = 'ONLINE'
+            self._start_timer_min = 0.0
+            self._current_mw = self._spec.min_mw
+            self._target_mw = self._spec.min_mw
+            if DEBUG_SIMULATION:
+                print(f'[UNITS] {self.label} STARTING -> ONLINE '
+                      f'(min output {self._spec.min_mw:.1f} MW)')
+
+    def _tick_online(self, dt_sim_seconds: float) -> None:
+        """Ramp output toward target at the unit's ramp rate."""
+        if self._is_renewable:
+            return  # renewable output is set externally
+
+        ramp_mw_per_sec = (self._spec.ramp_pct_per_min / 100.0) \
+                          * self._spec.rated_mw / 60.0
+        max_delta = ramp_mw_per_sec * dt_sim_seconds
+
+        delta = self._target_mw - self._current_mw
+        if abs(delta) <= max_delta:
+            self._current_mw = self._target_mw
+        else:
+            self._current_mw += max_delta if delta > 0.0 else -max_delta
+
+        # Enforce output bounds.
+        self._current_mw = max(
+            self._spec.min_mw,
+            min(self._spec.rated_mw, self._current_mw)
+        )
+
+    def _tick_shutdown(self, dt_sim_seconds: float) -> None:
+        """Ramp down toward 0. Transition to OFFLINE when output reaches 0."""
+        ramp_mw_per_sec = (self._spec.ramp_pct_per_min / 100.0) \
+                          * self._spec.rated_mw / 60.0
+        max_delta = ramp_mw_per_sec * dt_sim_seconds
+
+        self._current_mw = max(0.0, self._current_mw - max_delta)
+
+        if self._current_mw <= 0.0:
+            self._current_mw = 0.0
+            self._state = 'OFFLINE'
+            self._q_injection_mvar = 0.0
+            if DEBUG_SIMULATION:
+                print(f'[UNITS] {self.label} SHUTDOWN -> OFFLINE')
+
+
+class FleetModel:
+    """
+    Manages all UnitModel instances for the active shift.
+
+    Constructed from a Grid object — creates one UnitModel per active unit.
+    Provides aggregate queries (total generation, inertia, reserve) and
+    routes player commands to individual units.
+
+    Usage:
+        fleet = FleetModel(grid)
+        fleet.start_unit('ASHG-1')
+        fleet.set_unit_target('RVSD-1', 250.0)
+        fleet.tick(dt_sim_seconds)
+        total_mw = fleet.total_generation_mw()
+    """
+
+    def __init__(
+        self,
+        grid,
+        initial_schedule: dict[str, float] | None = None,
+    ) -> None:
+        """
+        Build unit models from the grid's active fleet.
+
+        Args:
+            grid:             Grid object for the active shift.
+            initial_schedule: {unit_label: initial_mw} starting dispatch.
+                              Units in the schedule start ONLINE at the given MW.
+                              Units not in the schedule start OFFLINE
+                              (except renewables, which always start ONLINE).
+        """
+        initial_schedule = initial_schedule or {}
+        self._units: dict[str, UnitModel] = {}
+
+        for spec in grid.get_active_units():
+            initial_mw = initial_schedule.get(spec.label)
+            model = UnitModel(spec, initial_mw=initial_mw)
+            self._units[spec.label] = model
+
+    # ─────── TICK ─────────────────────────────────────────────────────────
+
+    def tick(self, dt_sim_seconds: float) -> None:
+        """Advance all unit state machines by dt_sim_seconds."""
+        for model in self._units.values():
+            model.tick(dt_sim_seconds)
+
+    # ─────── COMMANDS ─────────────────────────────────────────────────────
+
+    def start_unit(self, label: str) -> bool:
+        """Start an OFFLINE unit. Returns False if not found or not OFFLINE."""
+        model = self._units.get(label)
+        if model is None:
+            return False
+        return model.start()
+
+    def stop_unit(self, label: str) -> bool:
+        """Stop an ONLINE unit. Returns False if not found or not ONLINE."""
+        model = self._units.get(label)
+        if model is None:
+            return False
+        return model.stop()
+
+    def trip_unit(self, label: str) -> None:
+        """Protection trip — immediate OFFLINE from any state."""
+        model = self._units.get(label)
+        if model is not None:
+            model.trip()
+
+    def set_unit_target(self, label: str, target_mw: float) -> bool:
+        """Set dispatch target. Returns False if not found or not ONLINE."""
+        model = self._units.get(label)
+        if model is None:
+            return False
+        return model.set_target(target_mw)
+
+    def set_unit_q_target(self, label: str, q_mvar: float) -> bool:
+        """Set reactive injection target. Returns False if not found or not ONLINE."""
+        model = self._units.get(label)
+        if model is None:
+            return False
+        return model.set_q_target(q_mvar)
+
+    def set_renewable_output(self, label: str, output_mw: float) -> None:
+        """Set renewable unit output. Has no effect on non-renewable units."""
+        model = self._units.get(label)
+        if model is not None:
+            model.set_renewable_output(output_mw)
+
+    # ─────── QUERIES — INDIVIDUAL ─────────────────────────────────────────
+
+    def get_unit(self, label: str) -> UnitModel:
+        """
+        Get unit model by label.
+
+        Raises:
+            KeyError: If label not in active fleet.
+        """
+        try:
+            return self._units[label]
+        except KeyError:
+            raise KeyError(f"Unit {label!r} not in active fleet")
+
+    def has_unit(self, label: str) -> bool:
+        """True if unit is in the active fleet."""
+        return label in self._units
+
+    # ─────── QUERIES — AGGREGATE ──────────────────────────────────────────
+
+    def total_generation_mw(self) -> float:
+        """Sum of current_mw for all ONLINE units."""
+        return sum(
+            m.current_mw for m in self._units.values()
+            if m.state == 'ONLINE'
+        )
+
+    def spinning_reserve_mw(self) -> float:
+        """Sum of (rated_mw - current_mw) for all ONLINE units."""
+        total = 0.0
+        for m in self._units.values():
+            if m.state == 'ONLINE':
+                total += m._spec.rated_mw - m.current_mw
+        return total
+
+    def online_unit_types(self) -> list[tuple[str, float]]:
+        """
+        Return [(unit_type, current_mw), ...] for all ONLINE units.
+        Used by FrequencyModel to compute weighted system inertia.
+        """
+        return [
+            (m._spec.unit_type, m.current_mw)
+            for m in self._units.values()
+            if m.state == 'ONLINE'
+        ]
+
+    def p_injections(self) -> dict[str, float]:
+        """
+        Build {bus_label: net_p_mw} injection dict for the load flow solver.
+
+        Sums all ONLINE unit outputs at each bus.
+        Load buses are not included — the simulation adds load injections separately.
+        """
+        result: dict[str, float] = {}
+        for m in self._units.values():
+            if m.state == 'ONLINE' and m.current_mw > 0.0:
+                bus = m._spec.bus_label
+                result[bus] = result.get(bus, 0.0) + m.current_mw
+        return result
+
+    def q_injections(self) -> dict[str, float]:
+        """
+        Build {bus_label: net_q_mvar} reactive injection dict for the voltage solver.
+
+        Sums all ONLINE unit Q injections at each bus.
+        """
+        result: dict[str, float] = {}
+        for m in self._units.values():
+            if m.state == 'ONLINE':
+                bus = m._spec.bus_label
+                result[bus] = result.get(bus, 0.0) + m.q_injection_mvar
+        return result
+
+    def pv_bus_constraints(self) -> dict[str, tuple[float, float, float]]:
+        """
+        Build PV bus constraint dict for the voltage solver.
+
+        Returns {bus_label: (v_target_pu, q_max_mvar, q_min_mvar)} for each
+        bus that has at least one ONLINE non-renewable unit.
+
+        When multiple units share a bus, Q limits are summed and v_target
+        is the average of all units at that bus (they should agree).
+        """
+        bus_data: dict[str, list] = {}  # bus_label -> [v_targets, q_maxes, q_mins]
+
+        for m in self._units.values():
+            if m.state != 'ONLINE' or m.is_renewable:
+                continue
+            bus = m._spec.bus_label
+            if bus not in bus_data:
+                bus_data[bus] = [[], 0.0, 0.0]
+            bus_data[bus][0].append(1.0)  # nominal voltage target for all buses
+            bus_data[bus][1] += m._spec.q_max_mvar
+            bus_data[bus][2] += m._spec.q_min_mvar
+
+        result: dict[str, tuple[float, float, float]] = {}
+        for bus, (v_targets, q_max, q_min) in bus_data.items():
+            v_target = sum(v_targets) / len(v_targets)
+            result[bus] = (v_target, q_max, q_min)
+        return result
+
+    # ─────── STATE SNAPSHOT ───────────────────────────────────────────────
+
+    def get_state_snapshot(self) -> dict[str, dict]:
+        """
+        Return a complete snapshot of fleet state for SimulationState construction.
+
+        Returns:
+            {unit_label: {
+                'state': str,
+                'current_mw': float,
+                'target_mw': float,
+                'q_mvar': float,
+                'start_progress': float,
+                'bus_type': 'PV' or 'PQ',
+            }}
+        """
+        snapshot = {}
+        for label, m in self._units.items():
+            snapshot[label] = {
+                'state': m.state,
+                'current_mw': m.current_mw,
+                'target_mw': m.target_mw,
+                'q_mvar': m.q_injection_mvar,
+                'start_progress': m.start_progress,
+                'bus_type': 'PV',  # PQ conversion is set by voltage model
+            }
+        return snapshot

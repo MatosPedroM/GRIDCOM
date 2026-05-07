@@ -6,11 +6,11 @@
 
 ## Current Stage
 
-**STAGE 3 — Frequency and Voltage Models**
+**STAGE 4 — Generation Unit State Machine**
 
 ## Current Status
 
-**COMPLETE** — FrequencyModel and VoltageModel written and validation tests passing.
+**COMPLETE** — UnitModel and FleetModel written and validation tests passing.
 
 ## Session Log
 
@@ -28,6 +28,11 @@
 - Written: `DOMAIN_GLOSSARY.md` (complete)
 - Written: `SIMULATION_API.md` (complete)
 - Status: All Stage 0 configuration complete
+
+### Session 6 (Stage 4 — Generation Unit State Machine)
+- Written: `src/simulation/units.py` — UnitModel + FleetModel
+- Added: `test_unit_model()` — 9 sub-checks, all PASS
+- Validation: 5/5 tests passed
 
 ### Session 5 (Stage 3 — Frequency and Voltage Models)
 - Written: `src/simulation/frequency.py` — FrequencyModel (swing equation + droop)
@@ -96,6 +101,11 @@ STAGE 3 — FREQUENCY AND VOLTAGE MODELS (complete, validated)
   ✓ src/simulation/constants.py — VSHUNT_REG added
   ✓ tests/test_simulation.py    — test_frequency_model(), test_voltage_model() — PASS
 
+STAGE 4 — GENERATION UNIT STATE MACHINE (complete, validated)
+  ✓ src/simulation/units.py — UnitModel (OFFLINE/STARTING/ONLINE/SHUTDOWN)
+                             — FleetModel (aggregate queries, command routing)
+  ✓ tests/test_simulation.py — test_unit_model() — PASS
+
 SOURCE FILES (empty placeholders — no working code)
   src/main.py
   src/simulation/loadflow.py
@@ -125,7 +135,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 3 complete. Ready to begin Stage 4.
+Nothing. Stage 4 complete. Ready to begin Stage 5.
 
 ---
 
@@ -149,25 +159,24 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 4 — Generation Unit State Machine**
+**Stage 5 — Demand, Renewables, and Losses**
 
-Goal: Implement `UnitModel` in `src/simulation/units.py`.
-Each unit has states: OFFLINE → STARTING → ONLINE → SHUTDOWN → OFFLINE.
-Handles ramp rates, cold start countdown, minimum output enforcement.
+Goal: Implement `DemandModel`, `RenewablesModel` in their respective files.
+These add stochastic noise on top of the deterministic profiles from profiles.py.
 
 Files to write:
-1. `src/simulation/units.py` — UnitModel class
+1. `src/simulation/demand.py` — DemandModel (forecast + noise + load shed)
+2. `src/simulation/renewables.py` — RenewablesModel (wind/solar with noise)
 
 Validation tests (add to tests/test_simulation.py):
 ```
-test_unit_model...
-  Unit starts OFFLINE — PASS
-  Start command transitions to STARTING — PASS
-  Cold start countdown advances correctly — PASS
-  Unit goes ONLINE after cold start completes — PASS
-  Ramp rate limits output change per tick — PASS
-  Minimum output enforced when ONLINE — PASS
-  Stop command transitions ONLINE -> SHUTDOWN -> OFFLINE — PASS
+test_demand_model...
+  Demand follows profile shape — PASS
+  Noise is within configured std bounds — PASS
+  Load shed reduces effective demand — PASS
+test_renewables_model...
+  Wind output bounded [0, rated_mw] — PASS
+  Solar zero at night — PASS
 5/5 tests passed
 ```
 
@@ -193,6 +202,7 @@ None.
 | 1 | test_grid_loads() — 1/1 | PASS | 2026-05-07 |
 | 2 | test_loadflow_solves() — 2/2 | PASS | 2026-05-07 |
 | 3 | test_frequency_model() + test_voltage_model() — 4/4 | PASS | 2026-05-07 |
+| 4 | test_unit_model() — 5/5 | PASS | 2026-05-07 |
 
 ---
 

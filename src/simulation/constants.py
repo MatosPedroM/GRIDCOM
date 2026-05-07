@@ -28,7 +28,8 @@ V_NOMINAL_60:  float = 60.0     # kV
 # ─────────────────────────────────────────────
 # LOAD FLOW NUMERICAL
 # ─────────────────────────────────────────────
-YSHUNT_REG: float = 1e-6        # Added to B matrix diagonal for numerical stability
+YSHUNT_REG:  float = 1e-6   # DC load flow B matrix: diagonal shunt for numerical stability
+VSHUNT_REG:  float = 0.1    # Voltage B' matrix: stronger shunt for isolated load buses
 
 # ─────────────────────────────────────────────
 # VOLTAGE THRESHOLDS (per-unit)

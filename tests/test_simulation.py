@@ -444,6 +444,276 @@ def test_loadflow_solves() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STAGE 3 TESTS — Frequency and Voltage Models
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_frequency_model() -> bool:
+    """
+    Verify FrequencyModel drives frequency deviation and applies droop correctly.
+
+    Checks:
+      - Imbalance drives frequency deviation in the correct direction
+      - Droop response opposes the deviation
+      - Frequency is clamped to [F_MIN, F_MAX]
+    """
+    print("test_frequency_model...")
+    all_passed = True
+
+    try:
+        from simulation.frequency import FrequencyModel
+        from simulation.constants import F_NOMINAL, F_MIN, F_MAX
+
+        # ── Generation deficit lowers frequency ───────────────────────────
+        try:
+            fm = FrequencyModel()
+            assert abs(fm.frequency_hz - F_NOMINAL) < 1e-9, \
+                f"Initial frequency should be {F_NOMINAL} Hz, got {fm.frequency_hz}"
+
+            # 500 MW deficit on a 5000 MW system (all coal, H=5).
+            # With no droop (first tick from nominal, Δf=0 → droop=0):
+            # df/dt = (50 / (2×5)) × (-500/1000) = 5 × (-0.5) = -2.5 Hz/s
+            # After 1s: f ≈ 47.5 Hz (well below nominal).
+            online_units = [('COAL', 4500.0)]
+            fm.update(
+                dt_sim_seconds=1.0,
+                p_generation_mw=4500.0,
+                p_load_mw=5000.0,
+                online_unit_types=online_units,
+            )
+            assert fm.frequency_hz < F_NOMINAL, \
+                f"Deficit should lower frequency below {F_NOMINAL}, got {fm.frequency_hz:.4f}"
+            assert fm.frequency_trend == 'FALLING', \
+                f"Trend should be FALLING, got {fm.frequency_trend!r}"
+            print(f"  Deficit lowers frequency: {F_NOMINAL:.1f} -> "
+                  f"{fm.frequency_hz:.4f} Hz, trend={fm.frequency_trend} — PASS")
+
+        except AssertionError as e:
+            print(f"  Imbalance direction: FAIL — {e}")
+            all_passed = False
+
+        # ── Generation surplus raises frequency ────────────────────────────
+        try:
+            fm2 = FrequencyModel()
+            fm2.update(
+                dt_sim_seconds=1.0,
+                p_generation_mw=5500.0,
+                p_load_mw=5000.0,
+                online_unit_types=[('NUCLEAR', 5500.0)],
+            )
+            assert fm2.frequency_hz > F_NOMINAL, \
+                f"Surplus should raise frequency above {F_NOMINAL}, got {fm2.frequency_hz:.4f}"
+            assert fm2.frequency_trend == 'RISING', \
+                f"Trend should be RISING, got {fm2.frequency_trend!r}"
+            print(f"  Surplus raises frequency: {F_NOMINAL:.1f} -> "
+                  f"{fm2.frequency_hz:.4f} Hz, trend={fm2.frequency_trend} — PASS")
+
+        except AssertionError as e:
+            print(f"  Surplus direction: FAIL — {e}")
+            all_passed = False
+
+        # ── Droop response reduces deviation over sustained imbalance ──────
+        try:
+            fm3 = FrequencyModel()
+            # Run for many ticks with a sustained deficit.
+            # Droop adds a corrective P term proportional to -Δf,
+            # so as f falls, droop partially counteracts further decline.
+            # The frequency should not fall as fast after the first few ticks.
+            online_units = [('COAL', 3000.0), ('CCGT', 2000.0)]
+            rates = []
+            for _ in range(20):
+                f_before = fm3.frequency_hz
+                fm3.update(
+                    dt_sim_seconds=0.1,
+                    p_generation_mw=4800.0,
+                    p_load_mw=5000.0,
+                    online_unit_types=online_units,
+                )
+                rates.append(fm3.frequency_hz - f_before)
+
+            # The rate of frequency decline should be reducing (less negative over time)
+            # as droop builds up. Compare average rate of first 5 vs last 5 ticks.
+            early_rate = sum(rates[:5]) / 5
+            late_rate  = sum(rates[15:]) / 5
+            assert late_rate > early_rate, (
+                f"Droop should slow frequency decline: early={early_rate:.5f} Hz/tick "
+                f"late={late_rate:.5f} Hz/tick"
+            )
+            print(f"  Droop slows decline: early_rate={early_rate:.5f} "
+                  f"late_rate={late_rate:.5f} Hz/tick — PASS")
+
+        except AssertionError as e:
+            print(f"  Droop response: FAIL — {e}")
+            all_passed = False
+
+        # ── Frequency clamped to [F_MIN, F_MAX] ────────────────────────────
+        try:
+            fm4 = FrequencyModel()
+            # Force an extreme deficit (all load, no generation) to drive to floor.
+            for _ in range(200):
+                fm4.update(
+                    dt_sim_seconds=1.0,
+                    p_generation_mw=0.0,
+                    p_load_mw=8000.0,
+                    online_unit_types=[],
+                )
+            assert fm4.frequency_hz >= F_MIN, \
+                f"Frequency should not go below F_MIN={F_MIN}, got {fm4.frequency_hz:.4f}"
+            assert fm4.frequency_hz <= F_MAX, \
+                f"Frequency should not exceed F_MAX={F_MAX}, got {fm4.frequency_hz:.4f}"
+
+            fm5 = FrequencyModel()
+            for _ in range(200):
+                fm5.update(
+                    dt_sim_seconds=1.0,
+                    p_generation_mw=8000.0,
+                    p_load_mw=0.0,
+                    online_unit_types=[('COAL', 8000.0)],
+                )
+            assert fm5.frequency_hz <= F_MAX, \
+                f"Frequency should not exceed F_MAX={F_MAX}, got {fm5.frequency_hz:.4f}"
+            assert fm5.frequency_hz >= F_MIN, \
+                f"Frequency should not go below F_MIN={F_MIN}, got {fm5.frequency_hz:.4f}"
+
+            print(f"  Frequency clamped: floor={fm4.frequency_hz:.3f} Hz  "
+                  f"ceiling={fm5.frequency_hz:.3f} Hz — PASS")
+
+        except AssertionError as e:
+            print(f"  Frequency clamp: FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+def test_voltage_model() -> bool:
+    """
+    Verify VoltageModel produces physically reasonable voltage magnitudes
+    and correctly converts PV buses to PQ when reactive limits are hit.
+
+    Checks:
+      - Voltage solution is physically reasonable (slack = 1.0, others near 1.0)
+      - Reactive injection raises voltage; absorption lowers it
+      - PV->PQ conversion fires when Q limit is exceeded
+    """
+    print("test_voltage_model...")
+    all_passed = True
+
+    try:
+        from simulation.grid import Grid
+        from simulation.voltage import VoltageModel
+
+        # ── Slack bus always 1.0, voltages physically reasonable ──────────
+        try:
+            g1 = Grid(1)
+            vm = VoltageModel(g1)
+
+            # Balanced system — zero Q everywhere.
+            q_zero = {b.label: 0.0 for b in g1.get_active_buses()}
+            result = vm.solve(q_zero)
+
+            assert abs(result.bus_voltages['MDBY'] - 1.0) < 1e-9, \
+                f"Slack bus MDBY should have V=1.0, got {result.bus_voltages['MDBY']:.6f}"
+
+            for b in g1.get_active_buses():
+                v = result.bus_voltages[b.label]
+                assert 0.5 <= v <= 1.5, \
+                    f"Bus {b.label} voltage {v:.4f} outside plausible range [0.5, 1.5]"
+
+            print(f"  Balanced solve: all voltages in plausible range, "
+                  f"slack=1.0 — PASS")
+
+        except AssertionError as e:
+            print(f"  Balanced solve: FAIL — {e}")
+            all_passed = False
+
+        # ── Reactive injection raises voltage; absorption lowers it ────────
+        try:
+            g1 = Grid(1)
+            vm = VoltageModel(g1)
+
+            buses = g1.get_active_buses()
+            non_slack = [b.label for b in buses if b.label != g1.slack_bus]
+            target_bus = non_slack[0]  # first non-slack bus
+
+            # Inject +Q at target bus.
+            q_inject = {b.label: 0.0 for b in buses}
+            q_inject[target_bus] = 500.0
+            result_inject = vm.solve(q_inject)
+
+            # Absorb -Q at target bus.
+            q_absorb = {b.label: 0.0 for b in buses}
+            q_absorb[target_bus] = -500.0
+            result_absorb = vm.solve(q_absorb)
+
+            v_inject = result_inject.bus_voltages[target_bus]
+            v_absorb = result_absorb.bus_voltages[target_bus]
+            v_zero   = vm.solve({b.label: 0.0 for b in buses}).bus_voltages[target_bus]
+
+            assert v_inject > v_zero, \
+                f"Q injection should raise voltage: {v_inject:.4f} <= {v_zero:.4f}"
+            assert v_absorb < v_zero, \
+                f"Q absorption should lower voltage: {v_absorb:.4f} >= {v_zero:.4f}"
+
+            print(f"  Q injection raises V ({v_zero:.4f} -> {v_inject:.4f} pu), "
+                  f"absorption lowers V ({v_zero:.4f} -> {v_absorb:.4f} pu) — PASS")
+
+        except AssertionError as e:
+            print(f"  Q effect on voltage: FAIL — {e}")
+            all_passed = False
+
+        # ── PV->PQ conversion when Q limit is hit ─────────────────────────
+        try:
+            g1 = Grid(1)
+            vm = VoltageModel(g1)
+
+            buses = g1.get_active_buses()
+            non_slack = [b.label for b in buses if b.label != g1.slack_bus]
+            pv_bus_label = non_slack[0]
+
+            q_base = {b.label: 0.0 for b in buses}
+
+            # PV bus with a very tight Q limit — target far from current voltage.
+            # Requesting V=1.05 pu when the bus is at ~1.0 pu requires large Q;
+            # cap it at a tiny q_max to force PQ conversion.
+            pv_buses_tight = {
+                pv_bus_label: (1.05, 5.0, -5.0)  # V_target=1.05, Q_max=5 MVAr
+            }
+            result_tight = vm.solve(q_base, pv_buses=pv_buses_tight)
+
+            assert pv_bus_label in result_tight.pq_buses, \
+                f"Bus {pv_bus_label} should be in pq_buses (Q limit hit)"
+
+            # PV bus with ample Q limit — should NOT convert to PQ.
+            pv_buses_ample = {
+                pv_bus_label: (1.02, 9999.0, -9999.0)  # unlimited Q
+            }
+            result_ample = vm.solve(q_base, pv_buses=pv_buses_ample)
+
+            assert pv_bus_label not in result_ample.pq_buses, \
+                f"Bus {pv_bus_label} should NOT be in pq_buses with ample Q limit"
+
+            print(f"  PV->PQ conversion: tight limit fires conversion, "
+                  f"ample limit does not — PASS")
+
+        except AssertionError as e:
+            print(f"  PV->PQ conversion: FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TEST RUNNER
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -451,6 +721,8 @@ if __name__ == "__main__":
     results = [
         test_grid_loads(),
         test_loadflow_solves(),
+        test_frequency_model(),
+        test_voltage_model(),
     ]
     passed = sum(results)
     total = len(results)

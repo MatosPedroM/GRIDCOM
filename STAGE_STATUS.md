@@ -6,11 +6,11 @@
 
 ## Current Stage
 
-**STAGE 2 — DC Load Flow Solver**
+**STAGE 3 — Frequency and Voltage Models**
 
 ## Current Status
 
-**COMPLETE** — DCLoadFlow written and validation tests passing.
+**COMPLETE** — FrequencyModel and VoltageModel written and validation tests passing.
 
 ## Session Log
 
@@ -28,6 +28,14 @@
 - Written: `DOMAIN_GLOSSARY.md` (complete)
 - Written: `SIMULATION_API.md` (complete)
 - Status: All Stage 0 configuration complete
+
+### Session 5 (Stage 3 — Frequency and Voltage Models)
+- Written: `src/simulation/frequency.py` — FrequencyModel (swing equation + droop)
+- Written: `src/simulation/voltage.py` — VoltageModel (decoupled ΔV = B'⁻¹ × Q)
+- Added: `VSHUNT_REG = 0.1` to `constants.py` for voltage B' matrix stability (isolated load buses)
+- Added: `test_frequency_model()` — 4 sub-checks, all PASS
+- Added: `test_voltage_model()` — 3 sub-checks, all PASS
+- Validation: 4/4 tests passed
 
 ### Session 4 (Stage 2 — DC Load Flow Solver)
 - Written: `src/simulation/loadflow.py` — DCLoadFlow class + LoadFlowResult
@@ -82,11 +90,15 @@ STAGE 2 — DC LOAD FLOW SOLVER (complete, validated)
   ✓ src/simulation/loadflow.py — DCLoadFlow class + LoadFlowResult
   ✓ tests/test_simulation.py   — test_loadflow_solves() — PASS
 
+STAGE 3 — FREQUENCY AND VOLTAGE MODELS (complete, validated)
+  ✓ src/simulation/frequency.py — FrequencyModel (swing equation + droop)
+  ✓ src/simulation/voltage.py   — VoltageModel (decoupled ΔV = B'⁻¹ × Q)
+  ✓ src/simulation/constants.py — VSHUNT_REG added
+  ✓ tests/test_simulation.py    — test_frequency_model(), test_voltage_model() — PASS
+
 SOURCE FILES (empty placeholders — no working code)
   src/main.py
   src/simulation/loadflow.py
-  src/simulation/voltage.py
-  src/simulation/frequency.py
   src/simulation/units.py
   src/simulation/demand.py
   src/simulation/renewables.py
@@ -113,7 +125,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 2 complete. Ready to begin Stage 3.
+Nothing. Stage 3 complete. Ready to begin Stage 4.
 
 ---
 
@@ -137,25 +149,26 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 3 — Frequency and Voltage Models**
+**Stage 4 — Generation Unit State Machine**
 
-Goal: Implement FrequencyModel (swing equation + droop) and VoltageModel
-(decoupled ΔV = B'⁻¹ × Q). Pure numpy physics, no display.
+Goal: Implement `UnitModel` in `src/simulation/units.py`.
+Each unit has states: OFFLINE → STARTING → ONLINE → SHUTDOWN → OFFLINE.
+Handles ramp rates, cold start countdown, minimum output enforcement.
 
 Files to write:
-1. `src/simulation/frequency.py` — FrequencyModel
-2. `src/simulation/voltage.py`   — VoltageModel
+1. `src/simulation/units.py` — UnitModel class
 
 Validation tests (add to tests/test_simulation.py):
 ```
-test_frequency_model...
-  Imbalance drives frequency deviation — PASS
-  Droop response reduces imbalance — PASS
-  Frequency clamped to [45, 55] Hz — PASS
-test_voltage_model...
-  Voltage solution physically reasonable — PASS
-  PV->PQ conversion on reactive limit — PASS
-3/3 tests passed
+test_unit_model...
+  Unit starts OFFLINE — PASS
+  Start command transitions to STARTING — PASS
+  Cold start countdown advances correctly — PASS
+  Unit goes ONLINE after cold start completes — PASS
+  Ramp rate limits output change per tick — PASS
+  Minimum output enforced when ONLINE — PASS
+  Stop command transitions ONLINE -> SHUTDOWN -> OFFLINE — PASS
+5/5 tests passed
 ```
 
 ---
@@ -179,6 +192,7 @@ None.
 | 0 | Structure created, git committed | PASS | TBD |
 | 1 | test_grid_loads() — 1/1 | PASS | 2026-05-07 |
 | 2 | test_loadflow_solves() — 2/2 | PASS | 2026-05-07 |
+| 3 | test_frequency_model() + test_voltage_model() — 4/4 | PASS | 2026-05-07 |
 
 ---
 

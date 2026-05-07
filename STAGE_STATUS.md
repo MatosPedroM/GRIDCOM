@@ -6,11 +6,11 @@
 
 ## Current Stage
 
-**STAGE 4 — Generation Unit State Machine**
+**STAGE 5 — Demand, Renewables, and Losses**
 
 ## Current Status
 
-**COMPLETE** — UnitModel and FleetModel written and validation tests passing.
+**COMPLETE** — DemandModel and RenewablesModel written and validation tests passing.
 
 ## Session Log
 
@@ -28,6 +28,13 @@
 - Written: `DOMAIN_GLOSSARY.md` (complete)
 - Written: `SIMULATION_API.md` (complete)
 - Status: All Stage 0 configuration complete
+
+### Session 7 (Stage 5 — Demand, Renewables, and Losses)
+- Written: `src/simulation/demand.py` — DemandModel (profile + noise + load shed + losses)
+- Written: `src/simulation/renewables.py` — RenewablesModel (wind/solar with noise, deterministic mode)
+- Added: `test_demand_model()` — 5 sub-checks, all PASS
+- Added: `test_renewables_model()` — 4 sub-checks, all PASS
+- Validation: 7/7 tests passed
 
 ### Session 6 (Stage 4 — Generation Unit State Machine)
 - Written: `src/simulation/units.py` — UnitModel + FleetModel
@@ -106,6 +113,11 @@ STAGE 4 — GENERATION UNIT STATE MACHINE (complete, validated)
                              — FleetModel (aggregate queries, command routing)
   ✓ tests/test_simulation.py — test_unit_model() — PASS
 
+STAGE 5 — DEMAND, RENEWABLES, AND LOSSES (complete, validated)
+  ✓ src/simulation/demand.py     — DemandModel (profile + noise + load shed + losses)
+  ✓ src/simulation/renewables.py — RenewablesModel (wind/solar + noise, deterministic mode)
+  ✓ tests/test_simulation.py     — test_demand_model(), test_renewables_model() — PASS
+
 SOURCE FILES (empty placeholders — no working code)
   src/main.py
   src/simulation/loadflow.py
@@ -135,7 +147,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 4 complete. Ready to begin Stage 5.
+Nothing. Stage 5 complete. Ready to begin Stage 6.
 
 ---
 
@@ -159,25 +171,23 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 5 — Demand, Renewables, and Losses**
+**Stage 6 — Cascade Detection and Island Finding**
 
-Goal: Implement `DemandModel`, `RenewablesModel` in their respective files.
-These add stochastic noise on top of the deterministic profiles from profiles.py.
+Goal: Implement `CascadeModel` in `src/simulation/cascade.py`.
+Detects network islands (BFS/connected components), identifies blackout zones,
+and checks line overload timers to trigger protection trips.
 
 Files to write:
-1. `src/simulation/demand.py` — DemandModel (forecast + noise + load shed)
-2. `src/simulation/renewables.py` — RenewablesModel (wind/solar with noise)
+1. `src/simulation/cascade.py` — CascadeModel
 
 Validation tests (add to tests/test_simulation.py):
 ```
-test_demand_model...
-  Demand follows profile shape — PASS
-  Noise is within configured std bounds — PASS
-  Load shed reduces effective demand — PASS
-test_renewables_model...
-  Wind output bounded [0, rated_mw] — PASS
-  Solar zero at night — PASS
-5/5 tests passed
+test_cascade_model...
+  Single connected network returns one island — PASS
+  Tripped line splits network into two islands — PASS
+  Isolated buses identified as blackout zones — PASS
+  Overload timer triggers line trip at TRIP_DELAY_S — PASS
+4/4 tests passed
 ```
 
 ---
@@ -203,6 +213,7 @@ None.
 | 2 | test_loadflow_solves() — 2/2 | PASS | 2026-05-07 |
 | 3 | test_frequency_model() + test_voltage_model() — 4/4 | PASS | 2026-05-07 |
 | 4 | test_unit_model() — 5/5 | PASS | 2026-05-07 |
+| 5 | test_demand_model() + test_renewables_model() — 7/7 | PASS | 2026-05-07 |
 
 ---
 

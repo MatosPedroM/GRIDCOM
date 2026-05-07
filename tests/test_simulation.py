@@ -949,6 +949,240 @@ def test_voltage_model() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STAGE 5 TESTS — Demand, Renewables, and Losses
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_demand_model() -> bool:
+    """
+    Verify DemandModel follows the demand profile, adds bounded noise,
+    distributes correctly across load buses, and applies load shed.
+    """
+    print("test_demand_model...")
+    all_passed = True
+
+    try:
+        from simulation.demand import DemandModel
+        from data.profiles import SHIFT_SPECS, LOAD_DISTRIBUTION
+
+        spec = SHIFT_SPECS[1]   # peak_demand_mw = 2200
+
+        # ── Deterministic forecast matches profile ─────────────────────────
+        try:
+            dm = DemandModel(spec)
+            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            forecast = dm.get_forecast_mw(9.0)
+            assert abs(dm.total_demand_mw - forecast) < 0.01, \
+                f"Deterministic demand should equal forecast: " \
+                f"got {dm.total_demand_mw:.2f} vs {forecast:.2f}"
+
+            # Bus demands should sum to total
+            bus_sum = sum(dm.get_bus_demand_mw(b) for b in LOAD_DISTRIBUTION)
+            assert abs(bus_sum - dm.total_demand_mw) < 0.01, \
+                f"Bus demands {bus_sum:.2f} don't sum to total {dm.total_demand_mw:.2f}"
+
+            print(f"  Deterministic: demand={dm.total_demand_mw:.1f} MW "
+                  f"(forecast={forecast:.1f}) buses sum -- PASS")
+        except AssertionError as e:
+            print(f"  Deterministic demand: FAIL -- {e}")
+            all_passed = False
+
+        # ── Morning > night (profile shape) ───────────────────────────────
+        try:
+            dm = DemandModel(spec)
+            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            morning = dm.total_demand_mw
+            dm.update(3.0, total_generation_mw=1000.0, deterministic=True)
+            night = dm.total_demand_mw
+            assert morning > night, \
+                f"Morning demand ({morning:.1f}) should exceed night ({night:.1f})"
+            print(f"  Profile shape: morning={morning:.1f} > night={night:.1f} MW -- PASS")
+        except AssertionError as e:
+            print(f"  Profile shape: FAIL -- {e}")
+            all_passed = False
+
+        # ── Stochastic noise is bounded ────────────────────────────────────
+        try:
+            rng = np.random.default_rng(seed=42)
+            dm = DemandModel(spec, rng=rng)
+            forecast = dm.get_forecast_mw(12.0)
+            samples = []
+            for _ in range(100):
+                dm.update(12.0, total_generation_mw=2000.0, deterministic=False)
+                samples.append(dm.total_demand_mw)
+            # All samples should be within ±2% of forecast (3σ clipping at 1.5%)
+            for s in samples:
+                assert abs(s - forecast) / forecast < 0.03, \
+                    f"Noisy demand {s:.1f} more than 3% from forecast {forecast:.1f}"
+            # Mean should be close to forecast
+            mean = sum(samples) / len(samples)
+            assert abs(mean - forecast) / forecast < 0.005, \
+                f"Mean demand {mean:.1f} too far from forecast {forecast:.1f}"
+            print(f"  Noise bounded: mean={mean:.1f} MW vs forecast={forecast:.1f} MW -- PASS")
+        except AssertionError as e:
+            print(f"  Noise bounds: FAIL -- {e}")
+            all_passed = False
+
+        # ── Load shed reduces effective demand ─────────────────────────────
+        try:
+            dm = DemandModel(spec)
+            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            before_shed = dm.total_demand_mw
+            ld01_before = dm.get_bus_demand_mw('LD01')
+
+            dm.shed_load('LD01', 0.5)   # shed 50% of LD01
+            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            after_shed = dm.total_demand_mw
+            ld01_after = dm.get_bus_demand_mw('LD01')
+
+            assert after_shed < before_shed, \
+                f"Shed should reduce total demand: {after_shed:.1f} >= {before_shed:.1f}"
+            assert abs(ld01_after - ld01_before * 0.5) < 0.1, \
+                f"LD01 after 50% shed: expected {ld01_before * 0.5:.1f}, " \
+                f"got {ld01_after:.1f}"
+
+            # Unknown bus returns False
+            assert not dm.shed_load('MDBY', 0.5), \
+                "shed_load on transmission bus should return False"
+
+            print(f"  Load shed: LD01 {ld01_before:.1f} -> {ld01_after:.1f} MW "
+                  f"(50% shed) -- PASS")
+        except AssertionError as e:
+            print(f"  Load shed: FAIL -- {e}")
+            all_passed = False
+
+        # ── Losses scale with generation ───────────────────────────────────
+        try:
+            from simulation.constants import LOSSES_FRACTION
+            dm = DemandModel(spec)
+            gen_mw = 2000.0
+            dm.update(9.0, total_generation_mw=gen_mw, deterministic=True)
+            expected_losses = gen_mw * LOSSES_FRACTION
+            assert abs(dm.losses_mw - expected_losses) < 0.01, \
+                f"Losses should be {expected_losses:.1f} MW, got {dm.losses_mw:.2f}"
+            print(f"  Losses: {dm.losses_mw:.1f} MW at {gen_mw:.0f} MW gen "
+                  f"({LOSSES_FRACTION*100:.1f}%) -- PASS")
+        except AssertionError as e:
+            print(f"  Losses: FAIL -- {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR -- {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+def test_renewables_model() -> bool:
+    """
+    Verify RenewablesModel output is bounded, solar is zero at night,
+    and deterministic mode suppresses noise.
+    """
+    print("test_renewables_model...")
+    all_passed = True
+
+    try:
+        from simulation.renewables import RenewablesModel
+        from simulation.grid import Grid
+        from data.fleet import UNITS
+
+        # Use Shift 3 which has WNCN (wind) and SLST (solar) active.
+        g3 = Grid(3)
+
+        # ── All outputs bounded [0, rated_mw] ─────────────────────────────
+        try:
+            rng = np.random.default_rng(seed=0)
+            rm = RenewablesModel(g3, rng=rng)
+            rated = {u.label: u.rated_mw for u in g3.get_active_units()
+                     if u.unit_type in ('WIND', 'SOLAR')}
+
+            for hour in [0.0, 6.0, 9.0, 13.0, 18.0, 22.0]:
+                outputs = rm.update(hour, deterministic=False)
+                for label, mw in outputs.items():
+                    assert 0.0 <= mw <= rated[label], \
+                        f"{label} at hour {hour}: output {mw:.2f} outside " \
+                        f"[0, {rated[label]}]"
+
+            print(f"  All outputs in [0, rated_mw] across 6 sample hours -- PASS")
+        except AssertionError as e:
+            print(f"  Output bounds: FAIL -- {e}")
+            all_passed = False
+
+        # ── Solar is zero at night ─────────────────────────────────────────
+        try:
+            rm = RenewablesModel(g3)
+            solar_units = [u.label for u in g3.get_active_units()
+                           if u.unit_type == 'SOLAR']
+            assert solar_units, "Shift 3 should have solar units"
+
+            # Hour 2:00 — deep night, solar profile = 0.0
+            outputs_night = rm.update(2.0, deterministic=False)
+            for label in solar_units:
+                assert outputs_night[label] == 0.0, \
+                    f"Solar {label} at 02:00 should be 0, got {outputs_night[label]:.4f}"
+
+            # Hour 13:00 — solar peak
+            outputs_peak = rm.update(13.0, deterministic=True)
+            for label in solar_units:
+                assert outputs_peak[label] > 0.0, \
+                    f"Solar {label} at 13:00 should be > 0, got {outputs_peak[label]:.4f}"
+
+            print(f"  Solar zero at night, positive at peak -- PASS")
+        except AssertionError as e:
+            print(f"  Solar night/day: FAIL -- {e}")
+            all_passed = False
+
+        # ── Deterministic mode matches forecast ────────────────────────────
+        try:
+            from data.profiles import get_wind_mw, get_solar_mw
+            rm = RenewablesModel(g3)
+            outputs = rm.update(10.0, deterministic=True)
+
+            for unit in g3.get_active_units():
+                if unit.unit_type == 'WIND':
+                    expected = get_wind_mw(10.0, unit.rated_mw)
+                    assert abs(outputs[unit.label] - expected) < 0.01, \
+                        f"{unit.label} deterministic: expected {expected:.2f}, " \
+                        f"got {outputs[unit.label]:.2f}"
+                elif unit.unit_type == 'SOLAR':
+                    expected = get_solar_mw(10.0, unit.rated_mw)
+                    assert abs(outputs[unit.label] - expected) < 0.01, \
+                        f"{unit.label} deterministic: expected {expected:.2f}, " \
+                        f"got {outputs[unit.label]:.2f}"
+
+            print(f"  Deterministic mode matches forecast values -- PASS")
+        except AssertionError as e:
+            print(f"  Deterministic mode: FAIL -- {e}")
+            all_passed = False
+
+        # ── forecast_by_hour covers the requested window ───────────────────
+        try:
+            rm = RenewablesModel(g3)
+            forecasts = rm.forecast_by_hour(6.0, 18.0, step=1.0)
+            wind_units = [u.label for u in g3.get_active_units()
+                          if u.unit_type == 'WIND']
+            for label in wind_units:
+                assert label in forecasts, \
+                    f"Wind unit {label} missing from forecast_by_hour result"
+                hours = list(forecasts[label].keys())
+                assert min(hours) == 6.0 and max(hours) == 18.0, \
+                    f"Forecast hours range incorrect: {min(hours)} to {max(hours)}"
+            print(f"  forecast_by_hour covers 6-18h window -- PASS")
+        except AssertionError as e:
+            print(f"  forecast_by_hour: FAIL -- {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR -- {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TEST RUNNER
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -957,6 +1191,8 @@ if __name__ == "__main__":
         test_grid_loads(),
         test_loadflow_solves(),
         test_unit_model(),
+        test_demand_model(),
+        test_renewables_model(),
         test_frequency_model(),
         test_voltage_model(),
     ]

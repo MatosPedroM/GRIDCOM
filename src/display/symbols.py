@@ -313,7 +313,7 @@ def draw_transmission_line(
     """
     Draw a transmission line with voltage-appropriate style and loading colour.
 
-    400kV: two parallel lines, 2px each, 3px separation.
+    400kV: single 4px line.
     220kV: single 3px line.
     150kV: single 2px line.
     60kV:  dashed 1px line.
@@ -373,13 +373,7 @@ def _draw_line_segment(
 ) -> None:
     """Draw one styled orthogonal segment. No routing logic here."""
     if voltage_kv == 400.0:
-        # Double parallel line, 2px each, 4px gap
-        dx, dy = y2 - y1, x1 - x2   # perpendicular direction (unnormalised)
-        length = max(1, (dx*dx + dy*dy) ** 0.5)
-        ox = int(dx / length * 2.0)
-        oy = int(dy / length * 2.0)
-        pygame.draw.line(surf, col, (x1 + ox, y1 + oy), (x2 + ox, y2 + oy), 2)
-        pygame.draw.line(surf, col, (x1 - ox, y1 - oy), (x2 - ox, y2 - oy), 2)
+        pygame.draw.line(surf, col, (x1, y1), (x2, y2), 4)
     elif voltage_kv == 220.0:
         pygame.draw.line(surf, col, (x1, y1), (x2, y2), 3)
     elif voltage_kv == 150.0:

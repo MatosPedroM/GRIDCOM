@@ -90,7 +90,7 @@ class GridCanvas:
         self._lines: list[Line] = get_lines_by_shift(shift)
 
         # Fast bus lookup
-        self._bus_map: dict[str, Bus] = {b.label: b for b in BUSES}
+        self._bus_map: dict[str, Bus] = {b.label: b for b in self._buses}
 
         # Pre-compute unit layout per station (only stations active this shift)
         active_bus_labels = {b.label for b in self._buses}

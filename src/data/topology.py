@@ -359,6 +359,14 @@ LINES: list[Line] = [
 
     Line(label='L29', from_bus='SLST', to_bus='STAN',
          reactance_pu=0.075, rating_mw=500.0, active_from_shift=5, voltage_kv=220.0),
+
+    # ── ISOLATED BUS FEEDERS (shift 3) ───────────────────────────────────
+    Line(label='L43', from_bus='BARR', to_bus='BARD',
+         reactance_pu=0.060, rating_mw=200.0, active_from_shift=3, voltage_kv=220.0),
+    Line(label='L44', from_bus='BARR', to_bus='WNCN',
+         reactance_pu=0.050, rating_mw=500.0, active_from_shift=3, voltage_kv=220.0),
+    Line(label='L45', from_bus='KELM', to_bus='KELD',
+         reactance_pu=0.040, rating_mw=160.0, active_from_shift=3, voltage_kv=220.0),
 ]
 
 

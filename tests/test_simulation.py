@@ -1365,6 +1365,196 @@ def test_cascade_model() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STAGE 8 TESTS — Master Simulation Loop
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_simulation_model() -> bool:
+    """
+    Verify GridSimulation initialises, ticks, and exposes correct state.
+
+    Checks:
+      - GridSimulation initialises without error for Shift 1
+      - tick() advances sim_time_min correctly
+      - get_state() returns a SimulationState with all required fields populated
+      - is_shift_complete() returns True once duration_minutes has elapsed
+      - set_unit_target() returns True for an ONLINE unit, False for OFFLINE
+      - trip_line() / close_line() toggle line_status correctly
+    """
+    print("test_simulation_model...")
+    all_passed = True
+
+    try:
+        from simulation.simulation import GridSimulation, SimulationState
+        from simulation.grid import Grid
+        from data.profiles import SHIFT_SPECS
+
+        # ── Initialises without error ─────────────────────────────────────
+        try:
+            g1 = Grid(1)
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
+            state = sim.get_state()
+            assert isinstance(state, SimulationState), \
+                f"get_state() should return SimulationState, got {type(state)}"
+            assert state.sim_time_min == 0.0, \
+                f"Initial sim_time_min should be 0, got {state.sim_time_min}"
+            assert abs(state.frequency_hz - 50.0) < 0.01, \
+                f"Initial frequency should be near 50 Hz, got {state.frequency_hz:.4f}"
+            print(f"  GridSimulation(shift=1) initialises: "
+                  f"f={state.frequency_hz:.3f} Hz, t={state.sim_time_min:.1f} min — PASS")
+        except AssertionError as e:
+            print(f"  Initialisation: FAIL — {e}")
+            all_passed = False
+
+        # ── tick() advances sim_time_min ──────────────────────────────────
+        try:
+            g1 = Grid(1)
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
+
+            sim.tick(60.0)   # 60 simulated seconds = 1 simulated minute
+            state = sim.get_state()
+            assert abs(state.sim_time_min - 1.0) < 1e-9, \
+                f"After tick(60s), sim_time_min should be 1.0, got {state.sim_time_min:.6f}"
+
+            sim.tick(120.0)  # 2 more minutes
+            state = sim.get_state()
+            assert abs(state.sim_time_min - 3.0) < 1e-9, \
+                f"After tick(180s total), sim_time_min should be 3.0, got {state.sim_time_min:.6f}"
+
+            print(f"  tick() advances time: t={state.sim_time_min:.1f} min after 3 min — PASS")
+        except AssertionError as e:
+            print(f"  tick() time advance: FAIL — {e}")
+            all_passed = False
+
+        # ── get_state() has all required fields ───────────────────────────
+        try:
+            g1 = Grid(1)
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
+            sim.tick(60.0)
+            state = sim.get_state()
+
+            assert isinstance(state.bus_voltages, dict) and len(state.bus_voltages) > 0, \
+                "bus_voltages should be a non-empty dict"
+            assert isinstance(state.line_flows_mw, dict) and len(state.line_flows_mw) > 0, \
+                "line_flows_mw should be a non-empty dict"
+            assert isinstance(state.line_status, dict) and len(state.line_status) > 0, \
+                "line_status should be a non-empty dict"
+            assert isinstance(state.unit_states, dict), \
+                "unit_states should be a dict"
+            assert isinstance(state.islands, list), \
+                "islands should be a list"
+            assert isinstance(state.blackout_zones, frozenset), \
+                "blackout_zones should be a frozenset"
+            assert state.total_load_mw > 0.0, \
+                f"total_load_mw should be > 0 at hour with demand, got {state.total_load_mw:.1f}"
+
+            # All active lines must appear in line_status
+            for line in g1.get_active_lines():
+                assert line.label in state.line_status, \
+                    f"Line {line.label} missing from line_status"
+                assert state.line_status[line.label] in ('IN_SERVICE', 'TRIPPED'), \
+                    f"Line {line.label} has unexpected status {state.line_status[line.label]!r}"
+
+            print(f"  State fields: {len(state.bus_voltages)} buses, "
+                  f"{len(state.line_flows_mw)} lines, "
+                  f"load={state.total_load_mw:.1f} MW — PASS")
+        except AssertionError as e:
+            print(f"  State fields: FAIL — {e}")
+            all_passed = False
+
+        # ── is_shift_complete() ───────────────────────────────────────────
+        try:
+            g1 = Grid(1)
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
+            spec = SHIFT_SPECS[1]
+            duration_s = spec.duration_hours * 3600.0
+
+            assert not sim.is_shift_complete(), \
+                "is_shift_complete() should be False at t=0"
+
+            # Advance just past duration
+            sim.tick(duration_s + 1.0)
+            assert sim.is_shift_complete(), \
+                f"is_shift_complete() should be True after {spec.duration_hours}h elapsed"
+
+            print(f"  is_shift_complete(): False at t=0, "
+                  f"True after {spec.duration_hours}h — PASS")
+        except AssertionError as e:
+            print(f"  is_shift_complete(): FAIL — {e}")
+            all_passed = False
+
+        # ── set_unit_target() — ONLINE unit accepts, OFFLINE rejects ──────
+        try:
+            g1 = Grid(1)
+            schedule = {'HART-1': 600.0, 'HART-2': 700.0}
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
+                                 initial_schedule=schedule)
+
+            # HART-1 is ONLINE (in initial_schedule); set_unit_target should accept
+            accepted = sim.set_unit_target('HART-1', 650.0)
+            assert accepted, "set_unit_target should return True for ONLINE unit"
+
+            # RVSD-1 is OFFLINE (not in schedule); should reject
+            rejected = sim.set_unit_target('RVSD-1', 200.0)
+            assert not rejected, \
+                "set_unit_target should return False for OFFLINE unit"
+
+            print(f"  set_unit_target(): ONLINE accepts, OFFLINE rejects — PASS")
+        except AssertionError as e:
+            print(f"  set_unit_target(): FAIL — {e}")
+            all_passed = False
+
+        # ── trip_line() / close_line() toggle status ──────────────────────
+        try:
+            g1 = Grid(1)
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
+
+            lines = g1.get_active_lines()
+            test_line = lines[0].label   # first active line
+
+            # Line starts IN_SERVICE
+            state = sim.get_state()
+            assert state.line_status[test_line] == 'IN_SERVICE', \
+                f"Line {test_line} should start IN_SERVICE"
+
+            # Trip it
+            result = sim.trip_line(test_line)
+            assert result, f"trip_line({test_line!r}) should return True"
+
+            # Advance one tick so state snapshot is rebuilt
+            sim.tick(1.0)
+            state = sim.get_state()
+            assert state.line_status[test_line] == 'TRIPPED', \
+                f"After trip, {test_line} should be TRIPPED, got {state.line_status[test_line]!r}"
+
+            # Trip again — should return False (already out)
+            assert not sim.trip_line(test_line), \
+                "trip_line() on already-tripped line should return False"
+
+            # Close it
+            result = sim.close_line(test_line)
+            assert result, f"close_line({test_line!r}) should return True"
+
+            sim.tick(1.0)
+            state = sim.get_state()
+            assert state.line_status[test_line] == 'IN_SERVICE', \
+                f"After close, {test_line} should be IN_SERVICE, got {state.line_status[test_line]!r}"
+
+            print(f"  trip_line/close_line({test_line}): "
+                  f"IN_SERVICE -> TRIPPED -> IN_SERVICE — PASS")
+        except AssertionError as e:
+            print(f"  trip/close line: FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TEST RUNNER
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1378,6 +1568,7 @@ if __name__ == "__main__":
         test_frequency_model(),
         test_voltage_model(),
         test_cascade_model(),
+        test_simulation_model(),
     ]
     passed = sum(results)
     total = len(results)

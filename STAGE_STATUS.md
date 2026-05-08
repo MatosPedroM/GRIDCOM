@@ -6,13 +6,21 @@
 
 ## Current Stage
 
-**STAGE 6 — Cascade Detection and Island Finding**
+**STAGE 8 — Master Simulation Loop**
 
 ## Current Status
 
-**COMPLETE** — CascadeModel written and validation tests passing.
+**COMPLETE** — GridSimulation written and validation tests passing.
 
 ## Session Log
+
+### Session 9 (Stage 8 — Master Simulation Loop)
+- Written: `src/simulation/simulation.py` — Alarm, SimulationState, ForecastResult dataclasses + GridSimulation
+- Fixed: `FleetModel.get_state_snapshot()` returns per-unit dicts; `_build_state()` now transposes to per-field dicts
+- Fixed: `DCLoadFlow.rebuild()` and `VoltageModel.rebuild()` updated to accept optional `lines_in_service` list; `_build_b_matrix/_build_b_prime` now read from `_active_lines` instead of calling `grid.get_active_lines()` directly
+- Added: `test_simulation_model()` — 6 sub-checks, all PASS
+- Validation: 9/9 tests passed
+- Note: Stage 7 (events.py scripted event system) deferred until after rendering is complete
 
 ### Session 8 (Stage 6 — Cascade Detection and Island Finding)
 - Written: `src/simulation/cascade.py` — CascadeModel (BFS island finding, overload timers, blackout zones)
@@ -128,14 +136,15 @@ STAGE 6 — CASCADE DETECTION AND ISLAND FINDING (complete, validated)
   ✓ src/simulation/cascade.py    — CascadeModel (BFS island finding, overload timers, blackout zones)
   ✓ tests/test_simulation.py     — test_cascade_model() — PASS
 
+STAGE 8 — MASTER SIMULATION LOOP (complete, validated)
+  ✓ src/simulation/simulation.py — Alarm, SimulationState, ForecastResult, GridSimulation
+  ✓ src/simulation/loadflow.py   — rebuild() updated to accept optional lines_in_service list
+  ✓ src/simulation/voltage.py    — rebuild() updated to accept optional lines_in_service list
+  ✓ tests/test_simulation.py     — test_simulation_model() — PASS
+
 SOURCE FILES (empty placeholders — no working code)
   src/main.py
-  src/simulation/loadflow.py
-  src/simulation/units.py
-  src/simulation/demand.py
-  src/simulation/renewables.py
-  src/simulation/events.py
-  src/simulation/simulation.py
+  src/simulation/events.py  (deferred — after rendering stage)
   src/display/renderer.py
   src/display/canvas.py
   src/display/symbols.py
@@ -156,21 +165,20 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 6 complete. Ready to begin Stage 7.
+Nothing. Stage 8 complete. Ready to begin the rendering stage.
 
 ---
 
 ## What Is NOT Yet Built
 
-**Stages 7-14 have empty placeholder files only.**
+**Display and gameplay stages have empty placeholder files only.**
+**Stage 7 (events.py) is deliberately deferred until after rendering is complete.**
 
-Do not reference any simulation, display, or gameplay module as if it
+Do not reference any display or gameplay module as if it
 contains working code unless listed above as complete.
 
 Specifically — these classes and functions DO NOT EXIST YET:
-- `GridSimulation` (src/simulation/simulation.py)
-- `SimulationState` (src/simulation/simulation.py)
-- `EventSystem` / `ScriptedEvent` (src/simulation/events.py)
+- `EventSystem` / `ScriptedEvent` (src/simulation/events.py) — deferred
 - Any display classes (src/display/*)
 - Any gameplay classes (src/gameplay/*)
 
@@ -178,25 +186,20 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 7 — Scripted Event System**
+**Stage 9 — Static Grid Renderer**
 
-Goal: Implement `EventSystem` and `ScriptedEvent` in `src/simulation/events.py`.
-Loads scripted events for a shift, applies timing jitter at load time,
-fires events at the correct sim time, and marks them as fired to prevent
-re-triggering.
+Goal: Implement the static grid schematic renderer. First pygame code in the project.
+Draw all buses, lines, generation unit symbols, and labels on the 1920×844 canvas
+at the correct coordinates from topology.py.
 
 Files to write:
-1. `src/simulation/events.py` — EventSystem + ScriptedEvent
+1. `src/display/palette.py` — already exists with colour constants
+2. `src/display/symbols.py` — all symbol drawing functions (substation square, gen unit, etc.)
+3. `src/display/canvas.py`  — GridCanvas: draws the static grid schematic
+4. `src/display/renderer.py` — Renderer: main render loop, layer management
+5. `src/main.py`             — pygame init, window creation, main loop skeleton
 
-Validation tests (add to tests/test_simulation.py):
-```
-test_event_system...
-  Events fire at correct sim time — PASS
-  Jitter is applied and bounded — PASS
-  Events fire at most once — PASS
-  Difficulty filter excludes events not for current difficulty — PASS
-4/4 tests passed
-```
+See GRID_TOPOLOGY_AND_DISPLAY.md for all coordinate and visual specifications.
 
 ---
 
@@ -223,6 +226,7 @@ None.
 | 4 | test_unit_model() — 5/5 | PASS | 2026-05-07 |
 | 5 | test_demand_model() + test_renewables_model() — 7/7 | PASS | 2026-05-07 |
 | 6 | test_cascade_model() — 8/8 | PASS | 2026-05-08 |
+| 8 | test_simulation_model() — 9/9 | PASS | 2026-05-08 |
 
 ---
 

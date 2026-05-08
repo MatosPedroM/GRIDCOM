@@ -82,6 +82,7 @@ class VoltageModel:
             b.label: i for i, b in enumerate(buses)
         }
 
+        self._active_lines = grid.get_active_lines()
         self._b_prime: np.ndarray = self._build_b_prime()
         self._b_reduced, self._reduced_index, self._mask = self._reduce_b_prime()
 
@@ -99,7 +100,7 @@ class VoltageModel:
         n = len(self._bus_labels)
         b = np.zeros((n, n), dtype=np.float64)
 
-        for line in self.grid.get_active_lines():
+        for line in self._active_lines:
             i = self._bus_index[line.from_bus]
             j = self._bus_index[line.to_bus]
             b_ij = 1.0 / line.reactance_pu
@@ -261,12 +262,20 @@ class VoltageModel:
 
     # ─────── REBUILD ──────────────────────────────────────────────────────
 
-    def rebuild(self) -> None:
+    def rebuild(self, lines_in_service: list | None = None) -> None:
         """
-        Rebuild B' matrix from current grid topology.
+        Rebuild B' matrix from the given in-service line list.
 
         Call after any line trip or close before the next solve.
+
+        Args:
+            lines_in_service: Filtered line list (in-service only). If None,
+                              uses all active lines from the grid.
         """
+        if lines_in_service is not None:
+            self._active_lines = lines_in_service
+        else:
+            self._active_lines = self.grid.get_active_lines()
         self._b_prime = self._build_b_prime()
         self._b_reduced, self._reduced_index, self._mask = self._reduce_b_prime()
 

@@ -14,6 +14,7 @@ See CLAUDE.md Rule 1.
 DEBUG_SIMULATION: bool = False
 DEBUG_DISPLAY:    bool = False
 DEBUG_EVENTS:     bool = False
+EDITOR_MODE:      bool = False
 
 # ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES
@@ -130,6 +131,8 @@ STRIP_HEIGHT:  int = 236        # Bottom portion — instrument strip
 TARGET_FPS:    int = 60
 
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
+FONT_SIZE_LABEL:          int = 12      # bus/station labels on canvas
+FONT_SIZE_OVERLAY:        int = 13      # interconnector labels, debug overlay
 
 # ─────────────────────────────────────────────
 # SIMULATION SPEED MULTIPLIERS

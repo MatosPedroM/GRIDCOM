@@ -22,7 +22,7 @@ from simulation.constants import (
 )
 from data.profiles import (
     get_demand_mw,
-    LOAD_DISTRIBUTION,
+    get_load_distribution,
     ShiftSpec,
 )
 
@@ -68,14 +68,17 @@ class DemandModel:
         self._spec = spec
         self._rng = rng if rng is not None else np.random.default_rng()
 
+        dist = get_load_distribution(spec.shift_number)
+        self._distribution = dist
+
         # Per-bus shed fraction: 0.0 = no shedding, 1.0 = full shed.
         self._shed_fractions: dict[BusLabel, float] = {
-            bus: 0.0 for bus in LOAD_DISTRIBUTION
+            bus: 0.0 for bus in dist
         }
 
         # Current actual demand per bus (MW), initialised to zero.
         self._bus_demand: dict[BusLabel, float] = {
-            bus: 0.0 for bus in LOAD_DISTRIBUTION
+            bus: 0.0 for bus in dist
         }
 
         self._total_demand_mw: float = 0.0
@@ -136,7 +139,7 @@ class DemandModel:
 
         # Distribute across buses, apply shed fractions.
         total_unshed = 0.0
-        for bus, fraction in LOAD_DISTRIBUTION.items():
+        for bus, fraction in self._distribution.items():
             raw = actual_total * fraction
             shed_factor = max(0.0, 1.0 - self._shed_fractions.get(bus, 0.0))
             effective = raw * shed_factor

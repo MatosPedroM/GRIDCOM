@@ -514,3 +514,9 @@ STATION_POSITIONS: dict[str, tuple[int, int]] = {
     'SLST': (1120, 560),
     'SLFD': (1480, 620),
 }
+
+
+def get_station_position(station_label: str) -> tuple[int, int]:
+    """Return canvas position for a station, with layout overrides applied."""
+    from data.layout_override import get_station_pos
+    return get_station_pos(station_label, STATION_POSITIONS[station_label])

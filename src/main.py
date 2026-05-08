@@ -23,10 +23,10 @@ import pygame
 import pygame.freetype
 
 from display.renderer import Renderer
+from data.layout_override import load_layout
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
     TARGET_FPS,
-    DEBUG_DISPLAY,
 )
 import simulation.constants as _const
 
@@ -42,6 +42,8 @@ def _to_native(display_surf: pygame.Surface, pos: tuple[int, int]) -> tuple[int,
 def main() -> None:
     pygame.init()
     pygame.freetype.init()
+
+    load_layout()
 
     # Window: resizable, starts at native resolution
     flags = pygame.RESIZABLE
@@ -63,17 +65,28 @@ def main() -> None:
                 running = False
 
             elif event.type == pygame.KEYDOWN:
+                mods = pygame.key.get_mods()
+                ctrl  = bool(mods & pygame.KMOD_CTRL)
+                shift_held = bool(mods & pygame.KMOD_SHIFT)
+
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
-                    running = False
+                    if _const.EDITOR_MODE:
+                        _const.EDITOR_MODE = False
+                    else:
+                        running = False
+                elif ctrl and shift_held and event.key == pygame.K_e:
+                    _const.EDITOR_MODE = not _const.EDITOR_MODE
+                elif event.key == pygame.K_s and _const.EDITOR_MODE:
+                    renderer.save_layout()
                 elif event.key == pygame.K_d:
                     _const.DEBUG_DISPLAY = not _const.DEBUG_DISPLAY
-                elif event.key == pygame.K_1:
+                elif event.key == pygame.K_1 and not _const.EDITOR_MODE:
                     shift    = 1
                     renderer = Renderer(display_surf, shift=shift)
-                elif event.key == pygame.K_3:
+                elif event.key == pygame.K_3 and not _const.EDITOR_MODE:
                     shift    = 3
                     renderer = Renderer(display_surf, shift=shift)
-                elif event.key == pygame.K_5:
+                elif event.key == pygame.K_5 and not _const.EDITOR_MODE:
                     shift    = 5
                     renderer = Renderer(display_surf, shift=shift)
 
@@ -82,7 +95,15 @@ def main() -> None:
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    renderer.on_click(_to_native(display_surf, event.pos))
+                    native_pos = _to_native(display_surf, event.pos)
+                    if _const.EDITOR_MODE:
+                        renderer.on_mouse_down(native_pos)
+                    else:
+                        renderer.on_click(native_pos)
+
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1 and _const.EDITOR_MODE:
+                    renderer.on_mouse_up(_to_native(display_surf, event.pos))
 
             elif event.type == pygame.VIDEORESIZE:
                 display_surf = pygame.display.set_mode(event.size, flags)

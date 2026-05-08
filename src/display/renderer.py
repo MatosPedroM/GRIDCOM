@@ -25,11 +25,13 @@ import pygame
 import pygame.freetype
 
 from display.canvas import GridCanvas
+from display.editor import GridEditor
 from display.palette import COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID
+import simulation.constants as _sim_const
 from simulation.constants import (
     CANVAS_HEIGHT, STRIP_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
-    DEBUG_DISPLAY,
+    FONT_SIZE_OVERLAY,
 )
 from utils.helpers import resource_path
 
@@ -66,6 +68,7 @@ class Renderer:
             self._font = pygame.freetype.SysFont('monospace', 11)
 
         self._canvas = GridCanvas(shift=shift, font=self._font)
+        self._editor = GridEditor(self._canvas)
 
         self._blink_timer: float = 0.0
         self._blink_on:    bool  = True
@@ -113,8 +116,12 @@ class Renderer:
         # ── Draw instrument strip (Stage 9: plain background) ─────────────────
         self._strip_surf.fill(COL_STRIP_BG)
 
+        # ── Editor overlay ────────────────────────────────────────────────────
+        if _sim_const.EDITOR_MODE:
+            self._editor.draw_overlay(self._canvas_surf, self._font)
+
         # ── Debug overlay ──────────────────────────────────────────────────────
-        if DEBUG_DISPLAY:
+        if _sim_const.DEBUG_DISPLAY:
             self._draw_debug()
 
         # ── Scale to display ───────────────────────────────────────────────────
@@ -129,6 +136,28 @@ class Renderer:
     def on_mouse_move(self, pos: tuple[int, int]) -> None:
         """Call with native-space mouse position each motion event."""
         self._mouse_pos = pos
+        if _sim_const.EDITOR_MODE:
+            self._editor.on_mouse_move(pos)
+
+    def on_mouse_down(self, pos: tuple[int, int]) -> None:
+        """Call with native-space position on mouse button down."""
+        if _sim_const.EDITOR_MODE:
+            self._editor.on_mouse_down(pos)
+
+    def on_mouse_up(self, pos: tuple[int, int]) -> None:
+        """Call with native-space position on mouse button release."""
+        if _sim_const.EDITOR_MODE:
+            self._editor.on_mouse_up(pos)
+            self._editor.set_canvas(self._canvas)
+
+    def save_layout(self) -> None:
+        """Save current layout overrides to layout.json."""
+        self._editor.save()
+
+    def rebuild_canvas(self) -> None:
+        """Reconstruct GridCanvas after layout changes."""
+        self._canvas.rebuild()
+        self._editor.set_canvas(self._canvas)
 
     def on_click(self, pos: tuple[int, int]) -> None:
         """Call with native-space position on mouse click; prints coords."""
@@ -149,13 +178,13 @@ class Renderer:
         # Mouse position — top-left
         mx, my = self._mouse_pos
         font.render_to(self._native, (4, 4),
-                       f'mouse {mx},{my}', COL_DEBUG_TEXT, size=10)
+                       f'mouse {mx},{my}', COL_DEBUG_TEXT, size=FONT_SIZE_OVERLAY)
 
         # FPS / frame time — top-right
         fps_str = f'{self._fps:.0f}fps  {self._frame_time*1000:.1f}ms'
-        tw, _ = font.get_rect(fps_str, size=10)[2:4]
+        tw, _ = font.get_rect(fps_str, size=FONT_SIZE_OVERLAY)[2:4]
         font.render_to(self._native, (NATIVE_WIDTH - tw - 8, 4),
-                       fps_str, COL_DEBUG_TEXT, size=10)
+                       fps_str, COL_DEBUG_TEXT, size=FONT_SIZE_OVERLAY)
 
         # Click position — shown for 3 seconds
         if self._click_pos is not None:
@@ -164,6 +193,6 @@ class Renderer:
                 cx, cy = self._click_pos
                 from display.palette import COL_DEBUG_CLICK
                 font.render_to(self._native, (4, 18),
-                               f'click {cx},{cy}', COL_DEBUG_CLICK, size=10)
+                               f'click {cx},{cy}', COL_DEBUG_CLICK, size=FONT_SIZE_OVERLAY)
             else:
                 self._click_pos = None

@@ -26,7 +26,7 @@ from data.fleet import (
     get_units_at_bus as _fleet_get_units_at_bus,
     STATION_POSITIONS,
 )
-from data.profiles import get_demand_mw, LOAD_DISTRIBUTION
+from data.profiles import get_demand_mw, get_load_distribution
 
 
 class Grid:
@@ -170,16 +170,17 @@ class Grid:
             Forecast load in MW, or 0.0 if not a load bus.
         """
         bus = self._buses.get(bus_label)
-        if bus is None or bus.bus_type != 'LOAD':
+        if bus is None:
             return 0.0
-        if bus_label not in LOAD_DISTRIBUTION:
+        dist = get_load_distribution(self._shift_number)
+        if bus_label not in dist:
             return 0.0
         from data.profiles import SHIFT_SPECS
         spec = SHIFT_SPECS.get(self._shift_number)
         if spec is None:
             return 0.0
         total_demand = get_demand_mw(sim_hour, spec.peak_demand_mw)
-        return total_demand * LOAD_DISTRIBUTION[bus_label]
+        return total_demand * dist[bus_label]
 
     # ─────── CANVAS POSITION QUERY ────────────────────────────────────────
 

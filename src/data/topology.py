@@ -15,6 +15,7 @@ See GRID_TOPOLOGY_AND_DISPLAY.md for visual specification.
 See DOMAIN_GLOSSARY.md for bus type definitions.
 """
 
+import dataclasses
 from dataclasses import dataclass, field
 
 
@@ -27,7 +28,7 @@ class Bus:
         label:            4-char uppercase identifier (e.g. 'MDBY', 'CNTR')
         name:             Human-readable name for display
         voltage_kv:       Nominal voltage level (400, 220, 150, or 60)
-        bus_type:         'TRANSMISSION' or 'LOAD' (60kV load substations)
+        bus_type:         'TRANSMISSION' or 'LOAD' (150kV load substations, shift 5+)
         canvas_x:         X coordinate in native 1920×844 canvas pixels
         canvas_y:         Y coordinate in native 1920×844 canvas pixels
         active_from_shift: First shift in which this bus is active (1, 3, or 5)
@@ -191,24 +192,24 @@ BUSES: list[Bus] = [
     Bus(label='DUND', name='Dunmore Lower',voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=460,  canvas_y=560, active_from_shift=1),
 
-    # ── 60kV LOAD SUBSTATIONS (Shifts 1-2) ───────────────────────────────
-    Bus(label='LD01', name='Load Sub 1',   voltage_kv=60.0, bus_type='LOAD',
-        canvas_x=480,  canvas_y=760, active_from_shift=1),
+    # ── 150kV LOAD SUBSTATIONS (Shift 5+) ────────────────────────────────
+    Bus(label='LD01', name='Load Sub 1',   voltage_kv=150.0, bus_type='LOAD',
+        canvas_x=480,  canvas_y=760, active_from_shift=5),
 
-    Bus(label='LD02', name='Load Sub 2',   voltage_kv=60.0, bus_type='LOAD',
-        canvas_x=720,  canvas_y=780, active_from_shift=1),
+    Bus(label='LD02', name='Load Sub 2',   voltage_kv=150.0, bus_type='LOAD',
+        canvas_x=720,  canvas_y=780, active_from_shift=5),
 
-    Bus(label='LD03', name='Load Sub 3',   voltage_kv=60.0, bus_type='LOAD',
-        canvas_x=960,  canvas_y=760, active_from_shift=1),
+    Bus(label='LD03', name='Load Sub 3',   voltage_kv=150.0, bus_type='LOAD',
+        canvas_x=960,  canvas_y=760, active_from_shift=5),
 
-    Bus(label='LD04', name='Load Sub 4',   voltage_kv=60.0, bus_type='LOAD',
-        canvas_x=1200, canvas_y=780, active_from_shift=1),
+    Bus(label='LD04', name='Load Sub 4',   voltage_kv=150.0, bus_type='LOAD',
+        canvas_x=1200, canvas_y=780, active_from_shift=5),
 
-    Bus(label='LD05', name='Load Sub 5',   voltage_kv=60.0, bus_type='LOAD',
-        canvas_x=1440, canvas_y=760, active_from_shift=1),
+    Bus(label='LD05', name='Load Sub 5',   voltage_kv=150.0, bus_type='LOAD',
+        canvas_x=1440, canvas_y=760, active_from_shift=5),
 
-    Bus(label='LD06', name='Load Sub 6',   voltage_kv=60.0, bus_type='LOAD',
-        canvas_x=240,  canvas_y=760, active_from_shift=3),
+    Bus(label='LD06', name='Load Sub 6',   voltage_kv=150.0, bus_type='LOAD',
+        canvas_x=240,  canvas_y=760, active_from_shift=5),
 ]
 
 
@@ -300,14 +301,57 @@ LINES: list[Line] = [
          reactance_pu=0.145, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
 
     # ── 150kV ↔ RIVER CASCADE FEEDERS (Shifts 5-10) ──────────────────────
+    # River Brent (150kV) — all three stations feed independently to BRCK
     Line(label='L25', from_bus='BRCK', to_bus='BR01',
          reactance_pu=0.160, rating_mw=350.0, active_from_shift=5, voltage_kv=150.0),
 
-    Line(label='L26', from_bus='STAN', to_bus='AR04',
-         reactance_pu=0.130, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
+    Line(label='L30', from_bus='BRCK', to_bus='BR02',
+         reactance_pu=0.175, rating_mw=300.0, active_from_shift=5, voltage_kv=150.0),
 
+    Line(label='L31', from_bus='BRCK', to_bus='BR03',
+         reactance_pu=0.190, rating_mw=250.0, active_from_shift=5, voltage_kv=150.0),
+
+    # River Arden (220kV) — AR01/AR02 feed to DUNM, AR03 to FAIR, AR04 to STAN
+    Line(label='L26', from_bus='STAN', to_bus='AR04',
+         reactance_pu=0.130, rating_mw=400.0, active_from_shift=5, voltage_kv=220.0),
+
+    Line(label='L32', from_bus='DUNM', to_bus='AR01',
+         reactance_pu=0.145, rating_mw=350.0, active_from_shift=5, voltage_kv=220.0),
+
+    Line(label='L33', from_bus='DUNM', to_bus='AR02',
+         reactance_pu=0.155, rating_mw=350.0, active_from_shift=5, voltage_kv=220.0),
+
+    Line(label='L34', from_bus='FAIR', to_bus='AR03',
+         reactance_pu=0.145, rating_mw=350.0, active_from_shift=5, voltage_kv=220.0),
+
+    # River Coln (150kV) — all three stations feed independently to FLDN
     Line(label='L27', from_bus='FLDN', to_bus='CO01',
          reactance_pu=0.155, rating_mw=350.0, active_from_shift=5, voltage_kv=150.0),
+
+    Line(label='L35', from_bus='FLDN', to_bus='CO02',
+         reactance_pu=0.170, rating_mw=300.0, active_from_shift=5, voltage_kv=150.0),
+
+    Line(label='L36', from_bus='FLDN', to_bus='CO03',
+         reactance_pu=0.185, rating_mw=250.0, active_from_shift=5, voltage_kv=150.0),
+
+    # ── 150kV LOAD SUBSTATION FEEDERS (Shift 5+) ─────────────────────────
+    Line(label='L37', from_bus='BRCK', to_bus='LD01',
+         reactance_pu=0.080, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
+
+    Line(label='L38', from_bus='STAN', to_bus='LD02',
+         reactance_pu=0.085, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
+
+    Line(label='L39', from_bus='STAN', to_bus='LD03',
+         reactance_pu=0.075, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
+
+    Line(label='L40', from_bus='STAN', to_bus='LD04',
+         reactance_pu=0.090, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
+
+    Line(label='L41', from_bus='FLDN', to_bus='LD05',
+         reactance_pu=0.080, rating_mw=350.0, active_from_shift=5, voltage_kv=150.0),
+
+    Line(label='L42', from_bus='BRCK', to_bus='LD06',
+         reactance_pu=0.070, rating_mw=300.0, active_from_shift=5, voltage_kv=150.0),
 
     # ── DOWNSTREAM HYDRO CONNECTIONS ─────────────────────────────────────
     Line(label='L28', from_bus='DUNM', to_bus='DUND',
@@ -334,8 +378,16 @@ INTERCONNECTOR_POSITIONS: dict[str, tuple[int, int]] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_buses_by_shift(shift_number: int) -> list[Bus]:
-    """Return all buses active in the given shift number."""
-    return [b for b in BUSES if b.active_from_shift <= shift_number]
+    """Return all buses active in the given shift number, with layout overrides applied."""
+    from data.layout_override import get_bus_pos
+    result = []
+    for b in BUSES:
+        if b.active_from_shift <= shift_number:
+            x, y = get_bus_pos(b.label, b.canvas_x, b.canvas_y)
+            if x != b.canvas_x or y != b.canvas_y:
+                b = dataclasses.replace(b, canvas_x=x, canvas_y=y)
+            result.append(b)
+    return result
 
 
 def get_lines_by_shift(shift_number: int) -> list[Line]:

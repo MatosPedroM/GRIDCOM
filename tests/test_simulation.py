@@ -185,18 +185,19 @@ def test_grid_loads() -> bool:
         # ── Demand profile query ──────────────────────────────────────────
         try:
             g = Grid(1)
-            load_ld01_morning = g.get_load_at_bus('LD01', 9.0)
-            load_ld01_night   = g.get_load_at_bus('LD01', 3.0)
-            load_transmission = g.get_load_at_bus('MDBY', 9.0)
+            # Shift 1 distributes load to 220kV buses (ASHF, WRNT, FAIR, DUNM)
+            load_ashf_morning = g.get_load_at_bus('ASHF', 9.0)
+            load_ashf_night   = g.get_load_at_bus('ASHF', 3.0)
+            load_slack        = g.get_load_at_bus('MDBY', 9.0)
 
-            assert load_ld01_morning > 0.0, "LD01 morning load should be > 0"
-            assert load_ld01_night   > 0.0, "LD01 night load should be > 0"
-            assert load_ld01_morning > load_ld01_night, \
+            assert load_ashf_morning > 0.0, "ASHF morning load should be > 0"
+            assert load_ashf_night   > 0.0, "ASHF night load should be > 0"
+            assert load_ashf_morning > load_ashf_night, \
                 "Morning load should exceed night load"
-            assert load_transmission == 0.0, \
-                "Transmission bus MDBY should have zero load"
-            print(f"  Demand profile query: morning={load_ld01_morning:.1f}MW "
-                  f"night={load_ld01_night:.1f}MW — PASS")
+            assert load_slack == 0.0, \
+                "Slack bus MDBY should have zero load"
+            print(f"  Demand profile query: morning={load_ashf_morning:.1f}MW "
+                  f"night={load_ashf_night:.1f}MW — PASS")
 
         except AssertionError as e:
             print(f"  Demand profile: FAIL — {e}")
@@ -401,7 +402,7 @@ def test_loadflow_solves() -> bool:
             print(f"  Singular fallback: FAIL — {e}")
             all_passed = False
 
-        # ── Full grid Shift 5: all 29 lines get flows ──────────────────────
+        # ── Full grid Shift 5: all lines get flows ────────────────────────
         try:
             g5 = Grid(5)
             lf5 = DCLoadFlow(g5)
@@ -418,16 +419,17 @@ def test_loadflow_solves() -> bool:
 
             result = lf5.solve(buses)
 
-            assert len(result.line_flows_mw) == 29, \
-                f"Expected 29 line flows, got {len(result.line_flows_mw)}"
+            expected_lines = len(g5.get_active_lines())
+            assert len(result.line_flows_mw) == expected_lines, \
+                f"Expected {expected_lines} line flows, got {len(result.line_flows_mw)}"
             assert len(result.bus_angles) == len(g5.get_active_buses()), \
                 "Missing bus angles in full grid solve"
 
             non_zero = sum(1 for f in result.line_flows_mw.values() if abs(f) > 0.1)
             assert non_zero > 10, \
-                f"Expected at least 10 lines to carry flow, only {non_zero}/29 non-zero"
+                f"Expected at least 10 lines to carry flow, only {non_zero}/{expected_lines} non-zero"
 
-            print(f"  Full grid (shift 5): 29 lines solved, "
+            print(f"  Full grid (shift 5): {expected_lines} lines solved, "
                   f"{non_zero} carrying flow — PASS")
 
         except AssertionError as e:
@@ -962,9 +964,9 @@ def test_demand_model() -> bool:
 
     try:
         from simulation.demand import DemandModel
-        from data.profiles import SHIFT_SPECS, LOAD_DISTRIBUTION
+        from data.profiles import SHIFT_SPECS, LOAD_DISTRIBUTION, get_load_distribution
 
-        spec = SHIFT_SPECS[1]   # peak_demand_mw = 2200
+        spec = SHIFT_SPECS[5]   # shift 5 uses LD01-LD06 load substations
 
         # ── Deterministic forecast matches profile ─────────────────────────
         try:
@@ -976,7 +978,7 @@ def test_demand_model() -> bool:
                 f"got {dm.total_demand_mw:.2f} vs {forecast:.2f}"
 
             # Bus demands should sum to total
-            bus_sum = sum(dm.get_bus_demand_mw(b) for b in LOAD_DISTRIBUTION)
+            bus_sum = sum(dm.get_bus_demand_mw(b) for b in get_load_distribution(spec.shift_number))
             assert abs(bus_sum - dm.total_demand_mw) < 0.01, \
                 f"Bus demands {bus_sum:.2f} don't sum to total {dm.total_demand_mw:.2f}"
 
@@ -1236,13 +1238,14 @@ def test_cascade_model() -> bool:
             assert backbone_island is not None, \
                 f"400kV backbone buses should all be in one island"
 
-            # Load substations (no transmission lines) are each isolated.
+            # Load substations each connect to a 150kV feeder — verify they're
+            # reachable from the backbone (same island), not isolated.
             load_labels5 = {b.label for b in buses5 if b.bus_type == 'LOAD'}
             for lb in load_labels5:
                 lb_island = next(i for i in islands5 if lb in i)
-                assert len(lb_island) == 1, \
-                    f"Load sub {lb} should be isolated (1-bus island), " \
-                    f"got island of {len(lb_island)}"
+                assert len(lb_island) > 1, \
+                    f"Load sub {lb} should be connected (not isolated), " \
+                    f"got isolated 1-bus island"
 
             print(f"  Grid(5) partition: {len(islands5)} islands, all "
                   f"{len(all_labels5)} buses covered, backbone connected — PASS")

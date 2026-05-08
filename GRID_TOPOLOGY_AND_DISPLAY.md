@@ -142,27 +142,27 @@ All symbols are drawn procedurally with pygame draw calls — no sprite sheets. 
 
 ### 3.1 Transmission Substation
 
-A **square with an upward triangle** inscribed inside.
+A **plain square** — no inscribed triangle.
 
 ```
 ┌───────┐
-│   △   │   12×12 px at native resolution
+│       │   12×12 px at native resolution
 └───────┘
 ```
 
-- Square border: 1px, colour = voltage level base colour
-- Triangle fill: voltage level base colour at 70% brightness
-- Triangle: pointing upward, vertices at (centre-top, bottom-left, bottom-right) inset 2px from square edges
+- Square border: 2px, colour = voltage level base colour
+- Interior: filled with voltage level base colour at 20% brightness (dark tint)
+- No triangle or other interior symbol
 
 State modifiers on the border:
 
 | State | Border | Effect |
 |-------|--------|--------|
-| Normal | 1px voltage colour | None |
+| Normal | 2px voltage colour | None |
 | Voltage warning (VSI 0.90–0.95) | 2px yellow | None |
 | Voltage critical (VSI 0.85–0.90) | 2px orange | None |
 | Voltage collapse risk (<0.85) | 2px red | Blink 1Hz |
-| Out of service | 1px dark grey | Fill black |
+| Out of service | 2px dark grey | Fill black |
 
 ### 3.2 Load Substation (60kV)
 
@@ -187,54 +187,52 @@ Load state modifiers:
 | 85–100% | `COL_LOAD_HIGH_SUB` orange |
 | > 100% | Red + blink |
 
-### 3.3 Generation Unit Square
+### 3.3 Generation Unit Circle
 
-A **filled square**, 12×12 px. This is the most repeated element on the canvas.
+A **circle**, 12px diameter. This is the most repeated element on the canvas.
 
 ```
-┌───────┐
-│  ░░░  │   Output bar — bottom-aligned, height = output/rated
-│  ░░░  │
-│       │
-└───────┘
+   ___
+  /   \
+ |  ░  |   Arc fill shows output level — filled clockwise from bottom
+  \___/
 ```
 
-**Fill colour**: unit type colour (see palette above)
-**Border**: 2px, state-dependent:
+**Border colour**: unit type colour (see palette above), 2px stroke
+**Interior**: dark fill (near-black), with a clockwise arc fill from the bottom showing output level
+
+**Arc fill**: drawn inside the circle from the bottom, sweeping clockwise proportional to `current_MW / rated_MW`. Full arc = full output. Empty arc = zero output. Arc colour = unit type colour at 80% brightness.
+
+**Border state modifiers**:
 
 | Unit State | Border Colour | Effect |
 |------------|---------------|--------|
-| Online, dispatched | `#FFFFFF` white | None |
+| Online, dispatched | unit type colour | None |
 | Online, zero output | `#666666` dim grey | None |
 | Starting up | `#FFFF00` yellow | Blink slow (0.5Hz) |
 | Shutdown sequence | `#888888` grey | Blink slow |
-| Offline / cold | `#333333` near-black | Fill darkened 70% |
+| Offline / cold | `#333333` near-black | Interior darkened |
 | Fault / tripped | `#FF0000` red | Blink fast (2Hz) |
 
-**Output bar**: drawn inside the square, bottom-aligned.
-- Width: full interior width (8px)
-- Height: proportional to `current_MW / rated_MW`, clamped 0–8px
-- Colour: unit type colour at 160% brightness (brighter than fill)
-
-**Multi-unit stations**: unit squares are drawn side by side with 2px gap between them, connected by a single horizontal collector line at their base before the feeder drop to the substation.
+**Multi-unit stations**: circles are drawn side by side with 2px gap between them, connected by a single horizontal collector line at their base before the feeder drop to the substation.
 
 ```
-  [■][■][■]     ← 3 unit squares, 2px gap
+  (●)(●)(●)     ← 3 unit circles, 2px gap
    └──┬──┘      ← collector line
       │          ← feeder to substation bus
 ```
 
 ### 3.4 Pumped Storage Mode Indicator
 
-Large hydro upper reservoir units have an additional mode arrow drawn in the centre of the unit square, overriding the output bar:
+Large hydro upper reservoir units have an additional mode arrow drawn in the centre of the unit circle, overlaid on the arc fill:
 
-| Mode | Arrow | Fill Colour |
+| Mode | Arrow | Border Colour |
 |------|-------|-------------|
 | Generating | ↑ (upward, 6px) | `COL_HYDRO` cyan |
 | Pumping | ↓ (downward, 6px) | `COL_HYDRO_PUMP` dark blue |
 | Idle | None | Darkened cyan |
 
-The arrow is white, 1px stroke, centred in the square.
+The arrow is white, 1px stroke, centred in the circle.
 
 ### 3.5 Demand Arrow
 
@@ -320,14 +318,16 @@ For 400kV double-lines, markers travel on both parallel lines simultaneously (sa
 
 ### 4.4 Line Crossings
 
-The canvas uses a mattress layout where line crossings are unavoidable and acceptable. The convention is:
+The layout goal is **zero line crossings**. Node positions are chosen specifically to achieve a crossing-free topology. If a crossing appears during layout, it is resolved by adjusting node positions — not by accepting the crossing.
 
+Where crossings cannot be avoided during early layout iterations, the temporary convention is:
 - **No hop symbols** — crossings are drawn as simple overlapping lines
 - **Connection dot** (4px filled circle, white) marks every actual junction
 - Players learn: dot = connected, crossing without dot = not connected
-- This is identical to real one-line diagram convention
 
-Higher voltage lines are drawn on top of lower voltage lines at crossings (draw order: 60kV first, then 150kV, 220kV, 400kV last).
+This convention exists as a fallback only. The target is a fully crossing-free schematic.
+
+Higher voltage lines are drawn on top of lower voltage lines at any temporary crossings (draw order: 60kV first, then 150kV, 220kV, 400kV last).
 
 ---
 
@@ -335,23 +335,21 @@ Higher voltage lines are drawn on top of lower voltage lines at crossings (draw 
 
 ### 5.1 Label Convention
 
-Every bus on the canvas has a **4-character uppercase label**. Labels are unique across the entire grid. The full label list is defined in `src/data/topology.py`; the convention by asset type is:
+Every node on the canvas has a **4-character uppercase label**. Labels are unique across the entire grid. The convention encodes asset type in the prefix:
 
-| Label(s) | Asset Type | Voltage |
-|----------|-----------|---------|
-| `MDBY` | Midbury — slack bus, 400kV backbone | 400kV |
-| `CNTR`, `NRTH`, `EAST`, `WEST`, `STHW` | 400kV backbone substations | 400kV |
-| `ASHF`, `WRNT`, `RDST`, `FAIR`, `COAL`, `DUNM` | 220kV south sub-grid | 220kV |
-| `KELM`, `BARR`, `SLST`, `WNCN`, `ASHG`, `WRNG` | 220kV centre expansion | 220kV |
-| `BARD`, `KELD`, `DUND` | Downstream hydro lower plants | 220kV |
-| `AR01`–`AR04` | River Arden run-of-river cascade | 220kV |
-| `BRCK`, `STAN`, `FLDN` | 150kV regional substations | 150kV |
-| `BR01`–`BR03` | River Brent run-of-river cascade | 150kV |
-| `CO01`–`CO03` | River Coln run-of-river cascade | 150kV |
-| `LD01`–`LD06` | 60kV load substations | 60kV |
-| `INTC-N`, `INTC-S` | Interconnectors (display-only, not electrical nodes) | — |
-
-Generation units are **not separate canvas nodes**. They are drawn as unit squares offset from their host bus. Unit labels follow the format `STATION-N` (e.g. `RVSD-1`, `HART-2`). Station canvas positions are defined in `src/data/fleet.py` → `STATION_POSITIONS`.
+| Prefix | Asset Type | Example |
+|--------|-----------|---------|
+| `S` + 3 chars | Transmission substation | `SNOR`, `SCEN`, `SSUL` |
+| `CA`, `CB`, `CC` + 2 digits | Coal plant (A/B/C) | `CA01`, `CB01` |
+| `GA`, `GB` + 2 digits | CCGT / gas plant | `GA01`, `GB01` |
+| `NU` + 2 digits | Nuclear | `NU01` |
+| `HA`, `HB`, `HC` | Large hydro upper | `HA01`, `HB01` |
+| `DA`, `DB`, `DC` | Large hydro lower (downstream) | `DA01`, `DB01` |
+| `RA`, `RB`, `RC` + digit | Run-of-river cascade | `RA01`–`RA04` |
+| `WN` + 2 digits | Wind farm | `WN01`, `WN02` |
+| `SL` + 2 digits | Solar farm | `SL01`, `SL02` |
+| `LD` + 2 digits | Load substation (60kV) | `LD01`–`LD06` |
+| `SP` + suffix | Spain interconnector | `SPAN`, `SPAS` |
 
 ### 5.2 Label Placement
 
@@ -380,494 +378,347 @@ Live labels use `COL_TEXT_PRIMARY` when within normal range, shift to warning/al
 ### 6.1 Complete Asset List
 
 System peak demand: **8,000 MW**
+Target installed capacity: **~9,600 MW** (20% reserve margin)
 System base: **1,000 MVA**
 
-All station data is authoritative in `src/data/fleet.py`.
-
 ```
-STATION  UNITS  CONFIG       MW    VOLTAGE  BUS    TYPE              SHIFT
-────────────────────────────────────────────────────────────────────────────
+ASSET         LABEL  CONFIG      MW     VOLTAGE  TYPE
+──────────────────────────────────────────────────────────────────
 COAL
-  RVSD   3      3 × 300MW    900   400kV    MDBY   Thermal baseload  1
-  THNF   3      3 × 300MW    900   400kV    NRTH   Thermal baseload  5
+  Coal A      CA     3 × 300MW   900    400kV    Thermal baseload
+  Coal B      CB     3 × 300MW   900    400kV    Thermal baseload
 
 CCGT / GAS
-  ASHG   2      2 × 400MW    800   220kV    ASHG   Mid-merit         3
-  WRNG   2      2 × 400MW    800   220kV    WRNG   Mid-merit         3
+  CCGT A      GA     2 × 400MW   800    220kV    Mid-merit / peaker
+  CCGT B      GB     2 × 400MW   800    220kV    Mid-merit / peaker
 
 NUCLEAR
-  HART   2      2 × 700MW   1400   400kV    CNTR   Baseload          1
+  Nuclear     NU     2 × 700MW  1400    400kV    Baseload
 
-LARGE HYDRO — pumped storage upper (reversible)
-  DUNH   2      2 × 200MW    400   400kV    STHW   Pumped storage    1
-  KELM   2      2 × 250MW    500   400kV    WEST   Pumped storage    3
-  BARR   2      2 × 250MW    500   400kV    EAST   Pumped storage    3
+LARGE HYDRO (pumped storage complexes)
+  Hydro A upper  HA  2 × 250MW   500    400kV    Pumped storage
+  Hydro A lower  DA  2 ×  80MW   160    220kV    Downstream RoR
+  Hydro B upper  HB  2 × 250MW   500    400kV    Pumped storage
+  Hydro B lower  DB  2 ×  80MW   160    220kV    Downstream RoR
+  Hydro C upper  HC  2 × 200MW   400    400kV    Pumped storage
+  Hydro C lower  DC  2 ×  65MW   130    220kV    Downstream RoR
 
-LARGE HYDRO — downstream lower (conventional)
-  DUND   2      2 ×  65MW    130   220kV    DUND   Downstream RoR    1
-  KELD   2      2 ×  80MW    160   220kV    KELD   Downstream RoR    3
-  BARD   2      2 ×  80MW    160   220kV    BARD   Downstream RoR    3
-
-RUN-OF-RIVER CASCADES — River Arden (220kV)
-  AR01   2      2 ×  40MW     80   220kV    AR01   RoR               5
-  AR02   2      2 ×  35MW     70   220kV    AR02   RoR               5
-  AR03   2      2 ×  30MW     60   220kV    AR03   RoR               5
-  AR04   2      2 ×  25MW     50   220kV    AR04   RoR               5
-
-RUN-OF-RIVER CASCADES — River Brent (150kV)
-  BR01   2      2 ×  30MW     60   150kV    BR01   RoR               5
-  BR02   2      2 ×  25MW     50   150kV    BR02   RoR               5
-  BR03   2      2 ×  20MW     40   150kV    BR03   RoR               5
-
-RUN-OF-RIVER CASCADES — River Coln (150kV)
-  CO01   2      2 ×  28MW     56   150kV    CO01   RoR               5
-  CO02   2      2 ×  23MW     46   150kV    CO02   RoR               5
-  CO03   1      1 ×  18MW     18   150kV    CO03   RoR               5
+RUN-OF-RIVER CASCADES
+  Cascade A   RA  4 stations × 60MW   240    220kV    RoR sequential
+  Cascade B   RB  3 stations × 55MW   165    150kV    RoR sequential
+  Cascade C   RC  3 stations × 45MW   135    150kV    RoR sequential
 
 RENEWABLES
-  WNCN   1      aggregated   500   220kV    WNCN   Wind              3
-  WNBR   1      aggregated   300   150kV    BRCK   Wind              5
-  SLST   1      aggregated   600   220kV    SLST   Solar             3
-  SLFD   1      aggregated   400   150kV    FLDN   Solar             5
+  Wind A      WN01   aggregated  500    220kV    Large wind farm
+  Wind B      WN02   aggregated  300    150kV    Medium wind farm
+  Solar A     SL01   aggregated  600    220kV    Large solar farm
+  Solar B     SL02   aggregated  400    150kV    Medium solar farm
 
-INTERCONNECTORS (display-only, not electrical buses)
-  INTC-N  —    ±800MW        —    400kV    —      External ref.     1
-  INTC-S  —    ±600MW        —    400kV    —      External ref.     1
+INTERCONNECTORS
+  Spain North  SPAN  ±800MW     400kV    External reference
+  Spain South  SPAS  ±600MW     400kV    External reference
 
-TOTAL FIRM CAPACITY (excl. wind, solar, interconnectors):  5,490 MW  (full grid)
-TOTAL INSTALLED (all sources, full grid):                  7,240 MW
-PEAK DEMAND:                                               8,000 MW
+TOTAL FIRM CAPACITY (excl. wind, solar, interconnectors): 7,190 MW
+TOTAL INSTALLED (all sources):                            9,990 MW
+PEAK DEMAND:                                              8,000 MW
 ```
-
-Note: peak demand (8,000 MW) exceeds firm capacity — interconnectors and renewables make up the difference. This is an intentional design constraint that creates operational tension.
 
 ### 6.2 Pumped Storage Structure
 
-Three pumped storage complexes exist. Each consists of an upper reservoir plant (reversible, connects to 400kV backbone bus) and a downstream lower plant (conventional, connects to a 220kV bus).
-
-| Complex | Upper station | Upper bus | Lower station | Lower bus |
-|---------|--------------|-----------|--------------|-----------|
-| Dunmore | DUNH (2×200MW) | STHW | DUND (2×65MW) | DUND |
-| Kelmore | KELM (2×250MW) | WEST | KELD (2×80MW) | KELD |
-| Barrow  | BARR (2×250MW) | EAST | BARD (2×80MW) | BARD |
+Each large hydro complex consists of two electrically independent plants sharing a hydraulic connection:
 
 **Upper plant** (reversible pump-turbines):
-- Connects to grid at the named 400kV backbone bus
+- Connects to grid at 400kV
 - Can generate (water releases through turbines) or pump (motor mode, pushes water uphill)
 - In pump mode: appears as a **load** on the network (PQ bus, negative injection)
 - In generate mode: appears as a **generator** (PV bus, positive injection)
 
-**Lower plant** (conventional turbines):
-- Connects to grid at its own dedicated 220kV bus (DUND, KELD, or BARD)
+**Lower plant** (conventional turbines, smaller):
+- Connects to grid at 220kV
 - Generate or idle only — cannot pump
 - Output depends on water released from upper reservoir plus natural inflow
 
 **Hydraulic connection** (penstock):
 - Not an electrical connection
-- Shown as dashed cyan line between upper bus and lower bus on the canvas
+- Shown as dashed cyan line between upper and lower plant nodes
 - Carries no electrical flow — display only
 
-**Operational modes — Dunmore example (DUNH + DUND):**
+**Operational modes and net grid impact:**
 
-| Mode | DUNH upper | DUND lower | Net MW |
+| Mode | Upper Plant | Lower Plant | Net MW |
 |------|------------|------------|--------|
-| Full generate | +400MW gen | +130MW gen | +530MW |
-| Natural flow | idle | +130MW gen | +130MW |
-| Pump + lower gen | −400MW load | +130MW gen | −270MW |
-| Full pump | −400MW load | idle | −400MW |
+| Full generate | +500MW gen | +160MW gen | +660MW |
+| Partial generate | +Xmw gen | +160MW gen | +(X+160)MW |
+| Natural flow | idle | +160MW gen | +160MW |
+| Pump + lower gen | -500MW load | +160MW gen | -340MW |
+| Full pump | -500MW load | idle | -500MW |
 
-The pump mode creates an interesting schematic situation: the upper plant unit squares display in pumping-mode dark blue with downward arrow, while the 400kV substation feeding it shows increased load on its incoming lines.
+The pump mode creates an interesting schematic situation: the upper plant unit squares display in pumping-mode dark blue with downward arrow, while the substation feeding it shows increased load on its incoming lines.
 
 ### 6.3 Run-of-River Cascade Structure
 
-Three river cascades. Each is a sequence of stations on the same river; water flows station 1 → 2 → 3 (→ 4 for Arden). Each station is electrically independent with its own connection to the transmission grid.
+Each cascade is a sequence of stations on the same notional river. Water flows from station 1 → 2 → 3 (→ 4 for Cascade A). Each station is electrically independent — each has its own feeder to the transmission grid.
 
-| Cascade | Stations | Voltage | Connects to |
-|---------|----------|---------|------------|
-| River Arden | AR01, AR02, AR03, AR04 | 220kV | AR04 feeds STAN via L26 |
-| River Brent | BR01, BR02, BR03 | 150kV | BR01 feeds BRCK via L25 |
-| River Coln  | CO01, CO02, CO03 | 150kV | CO01 feeds FLDN via L27 |
-
-On the schematic, cascade stations are drawn in a staircase sequence with short hydraulic connectors (dashed lines) between sequential stations, distinct from electrical lines.
+On the schematic, cascade stations are placed in sequence with short hydraulic connectors (dashed lines) between them, distinct from electrical lines. The sequence reads left-to-right or top-to-bottom depending on available canvas space.
 
 ```
-AR01──┊──AR02──┊──AR03──┊──AR04    River Arden (220kV, 4 stations)
-BR01──┊──BR02──┊──BR03             River Brent (150kV, 3 stations)
-CO01──┊──CO02──┊──CO03             River Coln  (150kV, 3 stations)
-       ┊ = hydraulic connector (dashed, not electrical)
+RA01──┊──RA02──┊──RA03──┊──RA04    Cascade A (220kV, 4 stations)
+       hydraulic connectors (┊)
+       electrical feeders go independently to nearest 220kV bus
 ```
 
-Each cascade station bus has its own electrical feeder in the simulation. AR01–AR03 are radial (no electrical lines other than their single feed); AR04 is the exit point of the Arden cascade, connected to STAN via L26. Brent exit is BR01→BRCK (L25). Coln exit is CO01→FLDN (L27).
+Output of downstream stations depends on upstream release rates. In the simulation this is a simplified dependency — upstream station output increases downstream station's available flow by a time-delayed factor.
 
 ---
 
 ## 7. Network Topology
 
-### 7.1 Bus List (40 buses)
-
-Authoritative source: `src/data/topology.py` → `BUSES`. All 40 buses listed below.
-
-**400kV backbone — 6 buses (Shifts 1–5)**
+### 7.1 Node List (32 nodes)
 
 ```
-LABEL  NAME           SHIFT  NOTES
-─────────────────────────────────────────────────────────────────
-MDBY   Midbury        1      Slack bus — voltage/angle reference
-CNTR   Centrefield    1      HART nuclear station connects here
-STHW   Southwick      1      DUNH pumped storage connects here
-EAST   Eastmoor       3      BARR pumped storage connects here
-WEST   Westham        3      KELM pumped storage connects here
-NRTH   Northgate      5      THNF coal station connects here
+ID    LABEL  VOLTAGE  TYPE                    CONNECTS TO
+────────────────────────────────────────────────────────────────────
+ 1    SNOR   400kV    Transmission substation  Coal A, nuclear, 400kV backbone
+ 2    SCEN   400kV    Transmission substation  400kV backbone, Hydro A upper
+ 3    SEST   400kV    Transmission substation  400kV backbone, Spain North
+ 4    SSUL   400kV    Transmission substation  Coal B, 400kV backbone
+ 5    SWST   400kV    Transmission substation  Hydro B upper, 400kV backbone
+ 6    SMID   400kV    Transmission substation  Nuclear, 400kV backbone hub
+ 7    SA01   220kV    Transmission substation  CCGT A, 220kV network
+ 8    SA02   220kV    Transmission substation  CCGT B, 220kV network
+ 9    SA03   220kV    Transmission substation  Cascade A, Hydro A lower
+10    SA04   220kV    Transmission substation  Wind A, Solar A
+11    SA05   220kV    Transmission substation  Hydro B lower, Hydro C lower
+12    SA06   220kV    Transmission substation  Hydro C upper feed, Spain South
+13    SB01   150kV    Transmission substation  Cascade B, Wind B
+14    SB02   150kV    Transmission substation  Cascade C, Solar B
+15    SB03   150kV    Transmission substation  Regional 150kV link
+16    CA     400kV    Coal A (3×300MW)         SNOR
+17    CB     400kV    Coal B (3×300MW)         SSUL
+18    GA     220kV    CCGT A (2×400MW)         SA01
+19    GB     220kV    CCGT B (2×400MW)         SA02
+20    NU     400kV    Nuclear (2×700MW)         SMID
+21    HA     400kV    Hydro A upper (2×250MW)  SCEN
+22    DA     220kV    Hydro A lower (2×80MW)   SA03
+23    HB     400kV    Hydro B upper (2×250MW)  SWST
+24    DB     220kV    Hydro B lower (2×80MW)   SA05
+25    HC     400kV    Hydro C upper (2×200MW)  SA06 (via 400/220 sub)
+26    DC     220kV    Hydro C lower (2×65MW)   SA05
+27    WN01   220kV    Wind A (500MW)           SA04
+28    WN02   150kV    Wind B (300MW)           SB01
+29    SL01   220kV    Solar A (600MW)          SA04
+30    SL02   150kV    Solar B (400MW)          SB02
+31    SPAN   400kV    Spain North (±800MW)     SEST
+32    SPAS   400kV    Spain South (±600MW)     SA06
 ```
 
-**220kV south sub-grid — 6 buses (Shifts 1–2)**
+Load substations (60kV) — 6 nodes, fed from various 220kV and 400kV buses:
 
 ```
-LABEL  NAME           SHIFT  NOTES
-─────────────────────────────────────────────────────────────────
-ASHF   Ashford        1      ASHG CCGT connects here (Shift 3)
-WRNT   Wrentham       1      WRNG CCGT connects here (Shift 3)
-RDST   Redstone       1      220kV ring, connects to KELM (Shift 3)
-FAIR   Fairfield      1      220kV ring hub
-COAL   Coalton        1      220kV ring, connects to BARR (Shift 3)
-DUNM   Dunmore        1      DUND downstream hydro feeds here
+ID    LABEL  VOLTAGE  PEAK LOAD   FED FROM
+─────────────────────────────────────────────
+33    LD01   60kV     1,800MW     SCEN
+34    LD02   60kV     1,600MW     SMID
+35    LD03   60kV     1,200MW     SA01
+36    LD04   60kV     1,000MW     SA02
+37    LD05   60kV       800MW     SSUL
+38    LD06   60kV       600MW     SA04
 ```
 
-**220kV centre expansion — 6 buses (Shifts 3–4)**
-
-```
-LABEL  NAME           SHIFT  NOTES
-─────────────────────────────────────────────────────────────────
-ASHG   Ashford CCGT   3      Generation bus — ASHG-1, ASHG-2
-WRNG   Wrentham CCGT  3      Generation bus — WRNG-1, WRNG-2
-KELM   Kelmore        3      Generation bus — KELM-1, KELM-2 (pumped storage)
-BARR   Barrow         3      Generation bus — BARR-1, BARR-2 (pumped storage)
-SLST   Stanton Solar  3      Generation bus — SLST-1 (600MW solar)
-WNCN   Cairn Wind     3      Generation bus — WNCN-1 (500MW wind)
-```
-
-**220kV downstream hydro — 3 buses (Shifts 1–3)**
-
-```
-LABEL  NAME           SHIFT  NOTES
-─────────────────────────────────────────────────────────────────
-DUND   Dunmore Lower  1      Generation bus — DUND-1, DUND-2 (2×65MW)
-KELD   Kelmore Lower  3      Generation bus — KELD-1, KELD-2 (2×80MW)
-BARD   Barrow Lower   3      Generation bus — BARD-1, BARD-2 (2×80MW)
-```
-
-**150kV regional substations — 3 buses (Shift 5)**
-
-```
-LABEL  NAME     SHIFT  NOTES
-─────────────────────────────────────────────────────────────────
-BRCK   Brackley   5    WNBR wind (300MW) connects here
-STAN   Stanton    5    Receives AR04 cascade via L26; SLST solar via L29
-FLDN   Feldon     5    SLFD solar (400MW) connects here; receives CO01 via L27
-```
-
-**220kV River Arden cascade — 4 buses (Shift 5)**
-
-```
-LABEL  NAME      SHIFT  UNITS          NOTES
-─────────────────────────────────────────────────────────────────
-AR01   Arden 1   5      AR01-1, AR01-2  (2×40MW)   Radial — no exit line
-AR02   Arden 2   5      AR02-1, AR02-2  (2×35MW)   Radial
-AR03   Arden 3   5      AR03-1, AR03-2  (2×30MW)   Radial
-AR04   Arden 4   5      AR04-1, AR04-2  (2×25MW)   Connects to STAN via L26
-```
-
-**150kV River Brent cascade — 3 buses (Shift 5)**
-
-```
-LABEL  NAME      SHIFT  UNITS          NOTES
-─────────────────────────────────────────────────────────────────
-BR01   Brent 1   5      BR01-1, BR01-2  (2×30MW)   Connects to BRCK via L25
-BR02   Brent 2   5      BR02-1, BR02-2  (2×25MW)   Radial
-BR03   Brent 3   5      BR03-1, BR03-2  (2×20MW)   Radial
-```
-
-**150kV River Coln cascade — 3 buses (Shift 5)**
-
-```
-LABEL  NAME      SHIFT  UNITS          NOTES
-─────────────────────────────────────────────────────────────────
-CO01   Coln 1    5      CO01-1, CO01-2  (2×28MW)   Connects to FLDN via L27
-CO02   Coln 2    5      CO02-1, CO02-2  (2×23MW)   Radial
-CO03   Coln 3    5      CO03-1           (1×18MW)   Radial
-```
-
-**60kV load substations — 6 buses (Shifts 1–3)**
-
-```
-LABEL  NAME        SHIFT  PEAK LOAD  FED FROM (electrical line)
-────────────────────────────────────────────────────────────────
-LD01   Load Sub 1  1      ~1,400MW   ASHF  (no explicit line modelled)
-LD02   Load Sub 2  1      ~1,200MW   WRNT  (no explicit line modelled)
-LD03   Load Sub 3  1      ~1,000MW   DUNM  (no explicit line modelled)
-LD04   Load Sub 4  1      ~  800MW   FAIR  (no explicit line modelled)
-LD05   Load Sub 5  1      ~  700MW   COAL  (no explicit line modelled)
-LD06   Load Sub 6  3      ~  500MW   SLST  (no explicit line modelled)
-```
-
-Note: 60kV lines are not modelled in the electrical network. Load is represented as P-injection at the 220kV/400kV parent bus. The 60kV substation symbols are drawn on the canvas as demand nodes, but are electrically isolated in the simulation (no 60kV lines in `LINES`). This is intentional.
+Total load substation peak: 7,000MW (remaining 1,000MW spread as hanging demand arrows on various 220kV buses).
 
 ### 7.2 Transmission Line List
 
-Authoritative source: `src/data/topology.py` → `LINES`. 29 lines total.
-
-**400kV backbone — 7 lines (Shift 5), double-line cyan rendering**
+**400kV backbone lines** (double-line rendering, cyan):
 
 ```
-LINE  FROM   TO     RATING   X(pu)  SHIFT  NOTES
-──────────────────────────────────────────────────────
-L01   MDBY   CNTR   2000MW   0.050  5      Central spine
-L02   CNTR   NRTH   1800MW   0.055  5      North extension
-L03   NRTH   EAST   2000MW   0.040  5      North-east ring
-L04   MDBY   WEST   1800MW   0.045  5      West branch
-L05   WEST   STHW   1600MW   0.050  5      West-centre link
-L06   STHW   CNTR   1800MW   0.045  5      South-centre link
-L07   EAST   STHW   1600MW   0.060  5      Cross-ring (N-1 support)
+LINE   FROM   TO     RATING   REACTANCE(pu)   LENGTH NOTES
+L01    SNOR   SCEN   1200MW   0.04            North-centre backbone
+L02    SCEN   SMID   1400MW   0.03            Central hub link
+L03    SMID   SSUL   1200MW   0.05            Centre-south backbone
+L04    SNOR   SEST   1000MW   0.06            North-east link
+L05    SEST   SMID   1200MW   0.04            East backbone
+L06    SMID   SWST   1000MW   0.05            West hub link
+L07    SWST   SSUL   1000MW   0.06            South-west link
+L08    SCEN   SWST    800MW   0.07            Cross link (N-1 support)
 ```
 
-**400kV ↔ 220kV transformer links — 4 lines (Shifts 1–5)**
-Modelled as low-reactance lines (not explicit transformer elements).
+**220kV lines** (single-line, 3px, green):
 
 ```
-LINE  FROM   TO     RATING   X(pu)  SHIFT  NOTES
-──────────────────────────────────────────────────────
-L08   STHW   ASHF   1200MW   0.020  1      Primary south infeed
-L09   CNTR   WRNT   1200MW   0.020  1      Secondary south infeed
-L10   NRTH   COAL   1000MW   0.022  5      North → 220kV east
-L11   WEST   RDST   1000MW   0.022  3      West → 220kV south
+LINE   FROM   TO     RATING   REACTANCE(pu)
+L09    SCEN   SA01   600MW    0.08
+L10    SMID   SA02   600MW    0.08
+L11    SA01   SA02   400MW    0.10
+L12    SA02   SA03   400MW    0.09
+L13    SA03   SA04   400MW    0.11
+L14    SA04   SA05   400MW    0.10
+L15    SA05   SA06   400MW    0.09
+L16    SA06   SSUL   500MW    0.07
+L17    SNOR   SA01   500MW    0.08
+L18    SSUL   SA05   400MW    0.09
 ```
 
-**220kV south sub-grid — 5 lines (Shift 1), single 3px green**
+**150kV lines** (single-line, 2px, amber):
 
 ```
-LINE  FROM   TO     RATING  X(pu)  SHIFT
-──────────────────────────────────────────
-L12   ASHF   FAIR    800MW  0.090  1
-L13   FAIR   WRNT    800MW  0.095  1
-L14   ASHF   DUNM    700MW  0.100  1
-L15   DUNM   RDST    600MW  0.110  1
-L16   WRNT   COAL    800MW  0.085  1
+LINE   FROM   TO     RATING   REACTANCE(pu)
+L19    SA03   SB01   250MW    0.12
+L20    SA04   SB02   250MW    0.13
+L21    SB01   SB02   200MW    0.15
+L22    SB02   SB03   200MW    0.14
+L23    SA05   SB03   200MW    0.13
 ```
 
-**220kV centre expansion — 5 lines (Shifts 1–3), single 3px green**
+**60kV load feeds** (dotted, 1px, dark amber):
 
 ```
-LINE  FROM   TO     RATING  X(pu)  SHIFT  NOTES
-─────────────────────────────────────────────────────
-L17   RDST   KELM    600MW  0.120  3      220kV west extension
-L18   COAL   BARR    700MW  0.100  3      220kV east extension
-L19   FAIR   SLST    700MW  0.095  3      Stanton Solar infeed
-L20   WRNT   WRNG    900MW  0.030  3      WRNG CCGT transformer link
-L21   ASHF   ASHG    900MW  0.025  3      ASHG CCGT transformer link
-```
-
-**150kV regional — 3 lines (Shift 5), single 2px amber**
-
-```
-LINE  FROM   TO     RATING  X(pu)  SHIFT
-──────────────────────────────────────────
-L22   RDST   BRCK    450MW  0.150  5
-L23   FAIR   STAN    450MW  0.140  5
-L24   COAL   FLDN    400MW  0.145  5
-```
-
-**150kV cascade feeders — 3 lines (Shift 5), single 2px amber**
-These are the only electrical connections to the cascade buses.
-
-```
-LINE  FROM   TO     RATING  X(pu)  SHIFT  NOTES
-───────────────────────────────────────────────────────
-L25   BRCK   BR01    350MW  0.160  5      Brent exit → 150kV ring
-L26   STAN   AR04    400MW  0.130  5      Arden exit → 150kV ring
-L27   FLDN   CO01    350MW  0.155  5      Coln exit → 150kV ring
-```
-
-**Downstream hydro and cross-voltage links — 2 lines (Shifts 1/5)**
-
-```
-LINE  FROM   TO     RATING  X(pu)  SHIFT  NOTES
-───────────────────────────────────────────────────────
-L28   DUNM   DUND    200MW  0.080  1      Dunmore downstream hydro feed
-L29   SLST   STAN    500MW  0.075  5      Stanton Solar → 150kV ring
+LINE   FROM   TO     RATING   NOTES
+L24    SCEN   LD01   600MW    Major load feed (double circuit implied)
+L25    SMID   LD02   600MW    Major load feed
+L26    SA01   LD03   400MW    
+L27    SA02   LD04   400MW    
+L28    SSUL   LD05   300MW    
+L29    SA04   LD06   250MW    
 ```
 
 ### 7.3 Slack Bus
 
-**MDBY** (Midbury, 400kV) is the slack bus — it absorbs the system imbalance and provides the voltage angle reference (θ = 0). In simulation terms it represents the system's balancing point. In game terms, it is the electrical centre of gravity of the network. Riverside Coal (RVSD) connects here.
+**SMID** (central 400kV substation) is the slack bus — it absorbs the system imbalance and provides the voltage angle reference (θ = 0). In simulation terms it represents the system's balancing point. In game terms, it is the electrical centre of gravity of the network.
 
-Interconnectors (INTC-N ±800MW, INTC-S ±600MW) are external references not part of the network topology. Their scheduled flow is folded into the MDBY slack injection. They are shown on the canvas as chevron markers at the right edge.
+Spain interconnectors (SPAN, SPAS) are external reference buses — they have fixed voltage and absorb/inject power based on the interconnector schedule set by the player.
 
 ---
 
 ## 8. Canvas Layout
 
-### 8.1 Layout Philosophy
+### 8.1 Layout Doctrine
 
-The mattress layout distributes nodes across the full 1920×844 canvas without strict regional boundaries. Nodes that are electrically adjacent are placed close together. The layout respects a minimum inter-node distance of **60px** and a maximum local density of **5 nodes within any 200×200px area**.
+Node positions follow four rules, in priority order. These rules are **authoritative** — the coordinates in Section 8.2 are starting references only, and must be adjusted until all four rules are satisfied.
+
+**Rule 1 — Vertical axis encodes voltage hierarchy.**
+Higher voltage assets sit higher on the canvas. Lower voltage assets descend toward the bottom. The general flow reads top-to-bottom: generation and 400kV backbone at the top, 220kV in the middle tier, 150kV below that, 60kV load substations at the bottom. This maps the electrical hierarchy directly onto the visual hierarchy.
+
+**Rule 2 — Horizontal axis encodes lateral spread.**
+When multiple assets exist at the same voltage tier, they spread left and right from a central spine. The centre of the canvas is the primary trunk. Assets branch outward as the grid fans out. Asymmetric placement is acceptable — assets do not need to be mirror-symmetric. The constraint is direction (centre-outward), not balance.
+
+**Rule 3 — No diagonal lines.**
+All transmission line segments are strictly horizontal or vertical. A connection that must move in both axes uses a staircase route: one horizontal segment followed by one vertical segment (or vice versa), with a single right-angle bend. Multiple bends are permitted only when a single bend cannot avoid a crossing or collision. Acute angles are never acceptable.
+
+**Rule 4 — No line crossings.**
+Node positions are chosen to produce a crossing-free topology. If two lines would cross, the lower-voltage node is repositioned to eliminate the crossing. This rule is the primary driver of layout decisions and takes precedence over the starting coordinates in Section 8.2.
+
+**Minimum inter-node distance**: 80px centre-to-centre.
+**Maximum local density**: 4 nodes within any 200×200px area.
 
 ### 8.2 Node Positions (native 1920×844)
 
 Positions are (X, Y) in pixels from top-left corner of the grid canvas.
-Authoritative source: `src/data/topology.py` → `Bus.canvas_x / canvas_y`.
-Station positions: `src/data/fleet.py` → `STATION_POSITIONS`.
 
-**400kV backbone buses** (drawn as cyan △-in-square):
+**400kV backbone substations** (drawn as plain cyan squares):
 
 ```
-LABEL  NAME           (X,    Y)   NOTES
-──────────────────────────────────────────────
-MDBY   Midbury        (520,  160)  Slack bus — RVSD coal station above
-CNTR   Centrefield    (960,  120)  HART nuclear above
-STHW   Southwick      (760,  280)  DUNH pumped storage above
-EAST   Eastmoor       (1640, 280)  BARR pumped storage above
-WEST   Westham        (280,  280)  KELM pumped storage above
-NRTH   Northgate      (1400, 160)  THNF coal above
+SNOR   (240,  180)   North
+SCEN   (720,  240)   Centre-north
+SMID   (960,  420)   Central hub (slack bus)
+SEST   (480,  320)   East
+SWST   (580,  560)   West
+SSUL   (1200, 620)   South
 ```
 
-**220kV south sub-grid buses** (drawn as green △-in-square):
+**220kV substations** (drawn as plain green squares):
 
 ```
-LABEL  NAME           (X,    Y)
-─────────────────────────────────────
-ASHF   Ashford        (640,  400)
-WRNT   Wrentham       (1080, 400)
-RDST   Redstone       (360,  500)
-FAIR   Fairfield      (860,  480)
-COAL   Coalton        (1280, 460)
-DUNM   Dunmore        (520,  520)
+SA01   (380,  480)   
+SA02   (720,  580)   
+SA03   (480,  680)   
+SA04   (1100, 380)   
+SA05   (900,  680)   
+SA06   (1380, 520)   
 ```
 
-**220kV centre expansion buses** (drawn as green △-in-square):
+**150kV substations** (drawn as plain amber squares):
 
 ```
-LABEL  NAME           (X,    Y)   NOTES
-────────────────────────────────────────────────
-ASHG   Ashford CCGT   (680,  340)  Generation bus (ASHG station)
-WRNG   Wrentham CCGT  (1180, 340)  Generation bus (WRNG station)
-KELM   Kelmore        (160,  360)  Generation bus (KELM pumped storage)
-BARR   Barrow         (1560, 360)  Generation bus (BARR pumped storage)
-SLST   Stanton Solar  (1160, 520)  Generation bus (SLST solar)
-WNCN   Cairn Wind     (1760, 420)  Generation bus (WNCN wind)
+SB01   (340,  740)   
+SB02   (1020, 760)   
+SB03   (780,  760)   
 ```
 
-**220kV downstream hydro buses** (drawn as green △-in-square):
+**Generation nodes** (drawn as circles, adjacent to host substation):
 
 ```
-LABEL  NAME           (X,    Y)
-─────────────────────────────────────
-DUND   Dunmore Lower  (460,  560)
-KELD   Kelmore Lower  (120,  460)
-BARD   Barrow Lower   (1680, 460)
+CA     (180,  130)   above SNOR — 3 squares horizontal
+CB     (1140, 560)   above SSUL — 3 squares horizontal
+GA     (300,  520)   left of SA01 — 2 squares
+GB     (660,  630)   left of SA02 — 2 squares
+NU     (960,  320)   above SMID — 2 squares
+HA     (680,  180)   above SCEN, left — 2 squares
+DA     (440,  700)   near SA03 — 2 squares
+HB     (520,  500)   near SWST — 2 squares
+DB     (860,  700)   near SA05 — 2 squares
+HC     (1360, 460)   near SA06 — 2 squares
+DC     (940,  720)   near SA05 — 2 squares
 ```
 
-**150kV regional buses** (drawn as amber △-in-square):
+**Renewable nodes** (drawn as circles at their bus):
 
 ```
-LABEL  NAME     (X,    Y)
-───────────────────────────
-BRCK   Brackley (240,  580)
-STAN   Stanton  (1080, 580)
-FLDN   Feldon   (1480, 580)
+WN01   (1100, 320)   above SA04 — wind symbol
+WN02   (280,  760)   at SB01 — wind symbol
+SL01   (1160, 440)   right of SA04 — solar symbol
+SL02   (1020, 800)   at SB02 — solar symbol
 ```
 
-**River Arden cascade buses** (220kV, staircase layout):
+**Run-of-river cascades** (sequential, 80px spacing):
 
 ```
-LABEL  NAME    (X,    Y)
-──────────────────────────
-AR01   Arden 1 (440,  620)
-AR02   Arden 2 (540,  660)
-AR03   Arden 3 (640,  700)
-AR04   Arden 4 (740,  660)
+Cascade A (220kV, 4 stations):
+  RA01  (380, 760)
+  RA02  (460, 760)
+  RA03  (540, 760)
+  RA04  (620, 760)
+  hydraulic connectors between sequential stations
+
+Cascade B (150kV, 3 stations):
+  RB01  (140, 680)
+  RB02  (220, 680)
+  RB03  (300, 680)
+
+Cascade C (150kV, 3 stations):
+  RC01  (1200, 760)
+  RC02  (1280, 760)
+  RC03  (1360, 760)
 ```
 
-**River Brent cascade buses** (150kV, staircase descending):
+**Load substations** (drawn as amber ▽-in-square):
 
 ```
-LABEL  NAME    (X,    Y)
-──────────────────────────
-BR01   Brent 1 (300,  640)
-BR02   Brent 2 (200,  680)
-BR03   Brent 3 (140,  720)
+LD01   (760,  300)   near SCEN
+LD02   (1020, 480)   near SMID
+LD03   (340,  560)   near SA01
+LD04   (740,  640)   near SA02
+LD05   (1260, 680)   near SSUL
+LD06   (1140, 460)   near SA04
 ```
 
-**River Coln cascade buses** (150kV, staircase descending):
+**Interconnectors** (at canvas edges):
 
 ```
-LABEL  NAME    (X,    Y)
-──────────────────────────
-CO01   Coln 1  (1360, 640)
-CO02   Coln 2  (1460, 680)
-CO03   Coln 3  (1540, 720)
-```
-
-**60kV load substation buses** (drawn as amber ▽-in-square):
-
-```
-LABEL  NAME       (X,    Y)
-────────────────────────────
-LD01   Load Sub 1 (480,  760)
-LD02   Load Sub 2 (720,  780)
-LD03   Load Sub 3 (960,  760)
-LD04   Load Sub 4 (1200, 780)
-LD05   Load Sub 5 (1440, 760)
-LD06   Load Sub 6 (240,  760)
-```
-
-**Interconnector display markers** (not electrical buses):
-
-```
-LABEL   (X,    Y)   NOTES
-────────────────────────────────────────────────
-INTC-N  (1840, 120)  Top-right — chevron pointing right
-INTC-S  (1840, 300)  Right side — chevron pointing right
-```
-
-**Station positions** (unit squares drawn offset from host bus):
-
-```
-STATION  (X,    Y)   HOST BUS  UNITS
-─────────────────────────────────────────────────────────────────
-RVSD     (520,  220)  MDBY      3 squares horizontal, above bus
-THNF     (1400, 220)  NRTH      3 squares horizontal, above bus
-HART     (960,  180)  CNTR      2 squares horizontal, above bus
-ASHG     (640,  320)  ASHG      2 squares horizontal, above bus
-WRNG     (1120, 320)  WRNG      2 squares horizontal, above bus
-DUNH     (760,  340)  STHW      2 squares horizontal, above bus
-KELM     (200,  340)  WEST      2 squares horizontal, above bus
-BARR     (1640, 340)  EAST      2 squares horizontal, above bus
-DUND     (460,  600)  DUND      2 squares horizontal, above bus
-KELD     (100,  500)  KELD      2 squares horizontal, above bus
-BARD     (1700, 500)  BARD      2 squares horizontal, above bus
-AR01     (440,  640)  AR01      2 squares
-AR02     (540,  680)  AR02      2 squares
-AR03     (640,  720)  AR03      2 squares
-AR04     (740,  680)  AR04      2 squares
-BR01     (300,  660)  BR01      2 squares
-BR02     (200,  700)  BR02      2 squares
-BR03     (140,  740)  BR03      2 squares
-CO01     (1360, 660)  CO01      2 squares
-CO02     (1460, 700)  CO02      2 squares
-CO03     (1540, 740)  CO03      1 square
-WNCN     (1800, 460)  WNCN      1 square
-WNBR     (200,  560)  BRCK      1 square
-SLST     (1120, 560)  SLST      1 square
-SLFD     (1480, 620)  FLDN      1 square
+SPAN   (1780, 180)   right edge, north — chevron pointing right
+SPAS   (1780, 620)   right edge, south — chevron pointing right
 ```
 
 ### 8.3 Layout Adjustment Rules
 
-These positions are a starting reference. During implementation, adjust for:
+These positions are a starting reference. During implementation, apply the doctrine from Section 8.1 to adjust them:
 
-- **Label collision**: if two node labels overlap, move the label of the lower-priority node (lower voltage = lower priority)
-- **Line routing**: lines should prefer horizontal/vertical/45° angles. Avoid acute angles.
-- **Unit square clearance**: generation unit squares need 20px clearance above or below their host substation to avoid overlapping feeder lines
-- **Cascade readability**: cascade stations must have enough horizontal space that their individual labels are legible — minimum 80px centre-to-centre
+- **No crossings** — if any two lines would cross, reposition the lower-voltage node to eliminate the crossing. This takes priority over all other placement preferences.
+- **No diagonals** — all line segments must be horizontal or vertical. If a connection requires movement in both axes, use a staircase route (one bend only where possible).
+- **Voltage hierarchy** — if a node sits at the wrong vertical tier for its voltage level, move it. Correct hierarchy is more important than proximity to the starting coordinate.
+- **Label collision** — if two node labels overlap, move the label of the lower-priority node (lower voltage = lower priority). If the label cannot move without ambiguity, move the node itself.
+- **Generation circle clearance** — generation circles need 20px clearance above or below their host substation to avoid overlapping feeder lines.
+- **Cascade readability** — cascade stations must have enough horizontal space that their individual labels are legible — minimum 80px centre-to-centre.
 
 ---
 
@@ -1192,8 +1043,8 @@ Step 5  Loading state colours
         Test blink timing on overloaded lines
 
 Step 6  Node state display
-        Unit square states (online/offline/fault/starting)
-        Output bars with fake values
+        Unit circle states (online/offline/fault/starting)
+        Arc fill with fake values
         Pumped storage mode arrows
 
 Step 7  Voltage overlays
@@ -1220,4 +1071,4 @@ Step 11 Animation polish
 
 ---
 
-*Document version 1.0 — covers grid topology, display specification, and visual language for all game levels. Cross-reference GRID_SIMULATION_MECHANICS.md for physics engine detail. Update node positions in Section 8.2 after Step 1 layout validation.*
+*Document version 1.1 — revised symbol vocabulary (Section 3.1: plain square substations; Section 3.3: circle generation units) and layout doctrine (Section 8.1: voltage hierarchy top-to-bottom, centre-to-lateral spread, no diagonals, no crossings). Cross-reference GRID_SIMULATION_MECHANICS.md for physics engine detail. Update node positions in Section 8.2 after Step 1 layout validation.*

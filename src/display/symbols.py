@@ -13,15 +13,16 @@ See display/palette.py for all colour constants.
 
 import pygame
 
+from simulation.constants import FONT_SIZE_OVERLAY
 from display.palette import (
     COL_BUS_400KV, COL_BUS_220KV, COL_BUS_150KV, COL_BUS_60KV,
     COL_BUS_BLACKED, COL_BUS_SELECTED,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
-    COL_UNIT_HYDRO, COL_UNIT_WIND, COL_UNIT_SOLAR,
+    COL_UNIT_HYDRO, COL_UNIT_HYDRO_PUMP, COL_UNIT_WIND, COL_UNIT_SOLAR,
     COL_UNIT_ONLINE, COL_UNIT_OFFLINE, COL_UNIT_STARTING,
     COL_UNIT_SHUTDOWN, COL_UNIT_TRIPPED, COL_UNIT_BORDER,
     COL_INTC_IMPORT, COL_INTC_EXPORT, COL_INTC_IDLE,
-    COL_LINE_HYDRAULIC,
+    COL_LINE_HYDRAULIC, COL_LOAD_SUB,
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
     COL_SELECTION,
 )
@@ -39,7 +40,7 @@ _UNIT_TYPE_COLOUR: dict[str, tuple] = {
     'CCGT':      COL_UNIT_CCGT,
     'NUCLEAR':   COL_UNIT_NUCLEAR,
     'HYDRO':     COL_UNIT_HYDRO,
-    'HYDRO_PUMP':COL_UNIT_HYDRO,
+    'HYDRO_PUMP':COL_UNIT_HYDRO_PUMP,
     'HYDRO_ROR': COL_UNIT_HYDRO,
     'WIND':      COL_UNIT_WIND,
     'SOLAR':     COL_UNIT_SOLAR,
@@ -65,7 +66,7 @@ def draw_substation(
     selected: bool = False,
 ) -> None:
     """
-    Draw a transmission substation symbol: square with upward triangle inside.
+    Draw a transmission substation symbol: plain square with filled interior.
 
     Args:
         surf:       Target surface (canvas).
@@ -80,23 +81,13 @@ def draw_substation(
     x = cx - HALF_BUS
     y = cy - HALF_BUS
 
-    # Square border
-    pygame.draw.rect(surf, border_col, (x, y, BUS_SIZE, BUS_SIZE), 1)
-
     if not blacked:
-        # Upward triangle — inset 2px from square edges
-        inset = 2
-        tx = x + inset
-        ty = y + inset
-        tw = BUS_SIZE - inset * 2
-        th = BUS_SIZE - inset * 2
-        dim_col = _dim(col, 0.55)
-        pts = [
-            (tx + tw // 2, ty),           # apex
-            (tx,           ty + th),       # bottom-left
-            (tx + tw,      ty + th),       # bottom-right
-        ]
-        pygame.draw.polygon(surf, dim_col, pts)
+        # Interior fill at 20% brightness of voltage colour
+        fill_col = _dim(col, 0.20)
+        pygame.draw.rect(surf, fill_col, (x + 2, y + 2, BUS_SIZE - 4, BUS_SIZE - 4))
+
+    # Square border — 2px
+    pygame.draw.rect(surf, border_col, (x, y, BUS_SIZE, BUS_SIZE), 2)
 
 
 def draw_load_substation(
@@ -124,7 +115,7 @@ def draw_load_substation(
         ty = y + inset
         tw = BUS_SIZE - inset * 2
         th = BUS_SIZE - inset * 2
-        dim_col = _dim(col, 0.55)
+        dim_col = _dim(COL_LOAD_SUB, 0.70)
         pts = [
             (tx,           ty),            # top-left
             (tx + tw,      ty),            # top-right
@@ -210,28 +201,37 @@ def draw_station_collector(
         bus_cx, bus_cy:  Centre of the host substation bus symbol.
         voltage_kv:      Determines line colour.
     """
-    col = _VOLTAGE_COLOUR.get(voltage_kv, COL_BUS_220KV)
-    col = _dim(col, 0.6)
+    col = _dim(_VOLTAGE_COLOUR.get(voltage_kv, COL_BUS_220KV), 0.6)
 
     if not unit_positions:
         return
 
-    # Bottom-centre of each unit square
-    bottoms = [(ux, uy + HALF_UNIT) for ux, uy in unit_positions]
-
-    if len(bottoms) == 1:
-        # Single unit — straight feeder to bus
-        ux, ub = bottoms[0]
-        pygame.draw.line(surf, col, (ux, ub), (bus_cx, bus_cy), 1)
+    # Exit from the unit side that faces the bus
+    unit_cy = unit_positions[0][1]
+    if bus_cy < unit_cy:
+        exits = [(ux, uy - HALF_UNIT) for ux, uy in unit_positions]
     else:
-        # Collector: horizontal line across all unit bottoms
-        leftmost  = min(ux for ux, _ in bottoms)
-        rightmost = max(ux for ux, _ in bottoms)
-        coll_y    = bottoms[0][1]
+        exits = [(ux, uy + HALF_UNIT) for ux, uy in unit_positions]
+
+    if len(exits) == 1:
+        ex, ey = exits[0]
+        # Orthogonal feeder: vertical first, then horizontal
+        if ey != bus_cy:
+            pygame.draw.line(surf, col, (ex, ey), (ex, bus_cy), 1)
+        if ex != bus_cx:
+            pygame.draw.line(surf, col, (ex, bus_cy), (bus_cx, bus_cy), 1)
+    else:
+        # Horizontal collector bar across all exit points
+        leftmost  = min(ex for ex, _ in exits)
+        rightmost = max(ex for ex, _ in exits)
+        coll_y    = exits[0][1]
         pygame.draw.line(surf, col, (leftmost, coll_y), (rightmost, coll_y), 1)
-        # Feeder drop from collector midpoint to bus
+        # Orthogonal feeder from collector midpoint to bus
         mid_x = (leftmost + rightmost) // 2
-        pygame.draw.line(surf, col, (mid_x, coll_y), (bus_cx, bus_cy), 1)
+        if coll_y != bus_cy:
+            pygame.draw.line(surf, col, (mid_x, coll_y), (mid_x, bus_cy), 1)
+        if mid_x != bus_cx:
+            pygame.draw.line(surf, col, (mid_x, bus_cy), (bus_cx, bus_cy), 1)
 
 
 # ─────── INTERCONNECTOR MARKER ───────────────────────────────────────────────
@@ -276,8 +276,8 @@ def draw_interconnector(
 
     # Flow label
     flow_str = f'{flow_mw:+.0f}MW' if abs(flow_mw) > 1.0 else '0MW'
-    font.render_to(surf, (cx - line_len, cy - 14), label, COL_TEXT_SECONDARY, size=10)
-    font.render_to(surf, (cx - line_len, cy + 4),  flow_str, col, size=10)
+    font.render_to(surf, (cx - line_len, cy - 14), label, COL_TEXT_SECONDARY, size=FONT_SIZE_OVERLAY)
+    font.render_to(surf, (cx - line_len, cy + 4),  flow_str, col, size=FONT_SIZE_OVERLAY)
 
 
 # ─────── HYDRAULIC CONNECTOR ─────────────────────────────────────────────────
@@ -325,13 +325,16 @@ def draw_transmission_line(
     """
     from display.palette import (
         COL_400KV, COL_220KV, COL_150KV, COL_60KV,
-        COL_LINE_TRIPPED, COL_LINE_LOADED, COL_LINE_OVERLOAD,
+        COL_LINE_TRIPPED, COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     )
 
     if tripped:
-        col   = COL_LINE_TRIPPED
-        width = 1
-        _draw_dashed_line(surf, col, (x1, y1), (x2, y2), dash=6, gap=4, width=1)
+        # Route tripped dashed lines orthogonally (vertical first, then horizontal)
+        bx, by = x1, y2
+        if y1 != y2:
+            _draw_dashed_line(surf, COL_LINE_TRIPPED, (x1, y1), (bx, by), dash=6, gap=4, width=1)
+        if x1 != x2:
+            _draw_dashed_line(surf, COL_LINE_TRIPPED, (bx, by), (x2, y2), dash=6, gap=4, width=1)
         return
 
     # Determine colour from loading
@@ -342,21 +345,39 @@ def draw_transmission_line(
         60.0:  COL_60KV,
     }.get(voltage_kv, COL_220KV)
 
-    if loading_pct >= 100.0:
-        col = base_col if not blink_on else COL_LINE_OVERLOAD
-    elif loading_pct >= 85.0:
-        col = COL_LINE_LOADED
+    if loading_pct > 100.0:
+        col = COL_LOAD_CRIT if blink_on else base_col
+    elif loading_pct >= 95.0:
+        col = COL_LOAD_CRIT
+    elif loading_pct >= 80.0:
+        col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
     elif loading_pct >= 60.0:
-        col = _blend(base_col, COL_LINE_LOADED, (loading_pct - 60.0) / 25.0)
+        col = _blend(base_col, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
     else:
         col = base_col
 
+    # Route: vertical first, then horizontal
+    bx, by = x1, y2
+    if y1 != y2:
+        _draw_line_segment(surf, x1, y1, bx, by, voltage_kv, col)
+    if x1 != x2:
+        _draw_line_segment(surf, bx, by, x2, y2, voltage_kv, col)
+
+
+def _draw_line_segment(
+    surf: pygame.Surface,
+    x1: int, y1: int,
+    x2: int, y2: int,
+    voltage_kv: float,
+    col: tuple,
+) -> None:
+    """Draw one styled orthogonal segment. No routing logic here."""
     if voltage_kv == 400.0:
-        # Double parallel line, 2px each, 3px apart
+        # Double parallel line, 2px each, 4px gap
         dx, dy = y2 - y1, x1 - x2   # perpendicular direction (unnormalised)
         length = max(1, (dx*dx + dy*dy) ** 0.5)
-        ox = int(dx / length * 2.5)
-        oy = int(dy / length * 2.5)
+        ox = int(dx / length * 2.0)
+        oy = int(dy / length * 2.0)
         pygame.draw.line(surf, col, (x1 + ox, y1 + oy), (x2 + ox, y2 + oy), 2)
         pygame.draw.line(surf, col, (x1 - ox, y1 - oy), (x2 - ox, y2 - oy), 2)
     elif voltage_kv == 220.0:
@@ -364,7 +385,7 @@ def draw_transmission_line(
     elif voltage_kv == 150.0:
         pygame.draw.line(surf, col, (x1, y1), (x2, y2), 2)
     else:  # 60kV
-        _draw_dashed_line(surf, col, (x1, y1), (x2, y2), dash=4, gap=3, width=1)
+        _draw_dashed_line(surf, col, (x1, y1), (x2, y2), dash=3, gap=3, width=1)
 
 
 # ─────── PRIVATE HELPERS ─────────────────────────────────────────────────────

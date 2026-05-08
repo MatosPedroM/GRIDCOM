@@ -215,14 +215,47 @@ DEMAND_PROFILE_NORMALISED: dict[float, float] = {
 # Must sum to 1.0.
 # ─────────────────────────────────────────────────────────────────────────────
 
-LOAD_DISTRIBUTION: dict[str, float] = {
-    'LD01': 0.18,   # Ashford city centre
-    'LD02': 0.22,   # Fairfield industrial
-    'LD03': 0.20,   # Wrentham / Coalton
-    'LD04': 0.16,   # Eastmoor / Barrow region
-    'LD05': 0.14,   # Northgate region
-    'LD06': 0.10,   # Kelmore / Redstone rural
+# Shifts 1-2: south sub-grid only — load distributed to active 220kV buses
+_LOAD_DIST_SHIFT1: dict[str, float] = {
+    'ASHF': 0.30,
+    'WRNT': 0.25,
+    'FAIR': 0.25,
+    'DUNM': 0.20,
 }
+
+# Shifts 3-4: south + centre — load spread across expanded 220kV network
+_LOAD_DIST_SHIFT3: dict[str, float] = {
+    'ASHF': 0.20,
+    'WRNT': 0.20,
+    'FAIR': 0.18,
+    'DUNM': 0.12,
+    'RDST': 0.12,
+    'COAL': 0.10,
+    'BARR': 0.08,
+}
+
+# Shifts 5-10: full grid with dedicated 150kV load substations
+_LOAD_DIST_SHIFT5: dict[str, float] = {
+    'LD01': 0.18,
+    'LD02': 0.22,
+    'LD03': 0.20,
+    'LD04': 0.16,
+    'LD05': 0.14,
+    'LD06': 0.10,
+}
+
+# Backwards-compatible alias — points to the full-grid distribution
+LOAD_DISTRIBUTION: dict[str, float] = _LOAD_DIST_SHIFT5
+
+
+def get_load_distribution(shift: int) -> dict[str, float]:
+    """Return the load distribution dict appropriate for the given shift."""
+    if shift >= 5:
+        return _LOAD_DIST_SHIFT5
+    elif shift >= 3:
+        return _LOAD_DIST_SHIFT3
+    else:
+        return _LOAD_DIST_SHIFT1
 
 
 # ─────────────────────────────────────────────────────────────────────────────

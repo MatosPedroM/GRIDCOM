@@ -30,7 +30,7 @@ from data.topology import (
     get_buses_by_shift, get_lines_by_shift,
     Bus, Line,
 )
-from data.fleet import UNITS, STATION_POSITIONS, get_units_at_bus
+from data.fleet import UNITS, STATION_POSITIONS, get_units_at_bus, get_unit, get_station_position
 from display.palette import (
     COL_BACKGROUND,
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
@@ -42,7 +42,7 @@ from display.symbols import (
     draw_interconnector,
     UNIT_SIZE, UNIT_GAP,
 )
-from simulation.constants import CANVAS_HEIGHT
+from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL
 from utils.helpers import resource_path
 
 
@@ -62,7 +62,7 @@ def _unit_positions(station_label: str, n_units: int) -> list[tuple[int, int]]:
     Return (cx, cy) for each unit square at a station.
     Units are laid out horizontally, centred on the station anchor.
     """
-    ax, ay = STATION_POSITIONS[station_label]
+    ax, ay = get_station_position(station_label)
     total_w = n_units * UNIT_SIZE + (n_units - 1) * UNIT_GAP
     start_x = ax - total_w // 2 + UNIT_SIZE // 2
     return [(start_x + i * (UNIT_SIZE + UNIT_GAP), ay) for i in range(n_units)]
@@ -120,6 +120,12 @@ class GridCanvas:
                     (self._bus_map[from_lbl], self._bus_map[to_lbl])
                 )
 
+    def rebuild(self, shift: int | None = None) -> None:
+        """Re-run __init__ pre-computation after layout overrides change."""
+        if shift is not None:
+            self._shift = shift
+        self.__init__(self._shift, self._font)
+
     # ─── Main draw entry point ────────────────────────────────────────────────
 
     def draw(
@@ -159,7 +165,6 @@ class GridCanvas:
             unit_states  = state.unit_states
             for lbl, mw in state.unit_outputs_mw.items():
                 # Compute output fraction against rated_mw from fleet
-                from data.fleet import get_unit
                 try:
                     unit_obj = get_unit(lbl)
                     unit_outputs[lbl] = mw / unit_obj.rated_mw if unit_obj.rated_mw > 0 else 0.0
@@ -201,13 +206,9 @@ class GridCanvas:
         for bus in self._buses:
             blacked  = bus_blacked.get(bus.label, False)
             selected = (selected_label == bus.label)
-            if bus.bus_type == 'LOAD':
-                draw_load_substation(surf, bus.canvas_x, bus.canvas_y,
-                                     blacked=blacked, selected=selected)
-            else:
-                draw_substation(surf, bus.canvas_x, bus.canvas_y,
-                                voltage_kv=bus.voltage_kv,
-                                blacked=blacked, selected=selected)
+            draw_substation(surf, bus.canvas_x, bus.canvas_y,
+                            voltage_kv=bus.voltage_kv,
+                            blacked=blacked, selected=selected)
 
         # ── Layer 7: Generation unit squares + collectors ──────────────────────
         for sl, units in self._station_units.items():
@@ -253,13 +254,13 @@ class GridCanvas:
     def _draw_labels(self, surf: pygame.Surface) -> None:
         """Draw bus and station labels at positions offset from symbols."""
         font = self._font
-        label_size = 9
+        label_size = FONT_SIZE_LABEL
 
         for bus in self._buses:
             # Offset label below the symbol for most buses, above for 400kV backbone
             lx = bus.canvas_x + 9
             ly = bus.canvas_y - 5
-            col = COL_TEXT_DIM if bus.bus_type == 'LOAD' else COL_TEXT_SECONDARY
+            col = COL_TEXT_SECONDARY
             font.render_to(surf, (lx, ly), bus.label, col, size=label_size)
 
         # Station labels below unit row

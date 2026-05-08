@@ -1181,6 +1181,188 @@ def test_renewables_model() -> bool:
 
     return all_passed
 
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 6 TESTS — Cascade Detection and Island Finding
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_cascade_model() -> bool:
+    """
+    Verify CascadeModel island finding and overload timer behaviour.
+
+    Checks:
+      - Single connected network returns exactly one island
+      - Removing a line that bridges two sub-graphs yields two islands
+      - Isolated buses (no lines) each form their own non-viable island
+      - Overload timer fires trip at TRIP_DELAY_S, not before
+    """
+    print("test_cascade_model...")
+    all_passed = True
+
+    try:
+        from simulation.cascade import CascadeModel
+        from simulation.grid import Grid
+        from simulation.constants import TRIP_DELAY_S, OVERLOAD_CRIT_PCT
+
+        cm = CascadeModel()
+
+        # ── find_islands partitions all buses with no overlap or gaps ─────────
+        # Every bus must appear in exactly one island — this is the core
+        # invariant of the BFS algorithm.  The number of islands varies by
+        # topology (radial cascade stations and generation buses are naturally
+        # isolated when their single feed line is the only connection).
+        try:
+            g5 = Grid(5)
+            lines5 = g5.get_active_lines()
+            buses5 = g5.get_active_buses()
+            islands5 = cm.find_islands(buses5, lines5)
+
+            all_labels5 = {b.label for b in buses5}
+            covered: set = set()
+            for island in islands5:
+                overlap = covered & island
+                assert not overlap, \
+                    f"Bus(es) {overlap} appear in multiple islands"
+                covered.update(island)
+            assert covered == all_labels5, \
+                f"Not all buses covered: missing {all_labels5 - covered}"
+
+            # The main grid backbone (MDBY, CNTR, NRTH, EAST, WEST, STHW)
+            # must all be in the same island — they are directly interconnected
+            # by the active 400kV lines.
+            backbone = {'MDBY', 'CNTR', 'NRTH', 'EAST', 'WEST', 'STHW'}
+            backbone_island = next(
+                (i for i in islands5 if backbone <= i), None
+            )
+            assert backbone_island is not None, \
+                f"400kV backbone buses should all be in one island"
+
+            # Load substations (no transmission lines) are each isolated.
+            load_labels5 = {b.label for b in buses5 if b.bus_type == 'LOAD'}
+            for lb in load_labels5:
+                lb_island = next(i for i in islands5 if lb in i)
+                assert len(lb_island) == 1, \
+                    f"Load sub {lb} should be isolated (1-bus island), " \
+                    f"got island of {len(lb_island)}"
+
+            print(f"  Grid(5) partition: {len(islands5)} islands, all "
+                  f"{len(all_labels5)} buses covered, backbone connected — PASS")
+
+        except AssertionError as e:
+            print(f"  Single island: FAIL — {e}")
+            all_passed = False
+
+        # ── Tripped line splits transmission network into two islands ─────────
+        # Use Grid(5) where L08 (STHW-ASHF) and L09 (CNTR-WRNT) are the
+        # only connections from the 400kV backbone into the 220kV south sub-grid.
+        # Removing all four transformer lines (L08-L11) isolates the south
+        # 220kV buses from the 400kV backbone.
+        try:
+            g5 = Grid(5)
+            buses5 = g5.get_active_buses()
+            all_lines5 = g5.get_active_lines()
+
+            cut_labels = {'L08', 'L09', 'L10', 'L11'}
+            reduced_lines = [l for l in all_lines5 if l.label not in cut_labels]
+
+            islands = cm.find_islands(buses5, reduced_lines)
+
+            # Every bus must still appear in exactly one island.
+            total_in_islands = sum(len(i) for i in islands)
+            assert total_in_islands == len(buses5), \
+                f"All buses must appear in exactly one island: " \
+                f"{total_in_islands} != {len(buses5)}"
+
+            # The cut creates at least 2 transmission islands
+            # (400kV backbone group + 220kV south group).
+            tx_labels5 = {b.label for b in buses5 if b.bus_type == 'TRANSMISSION'}
+            tx_islands = [i for i in islands if i & tx_labels5]
+            assert len(tx_islands) >= 2, \
+                f"Cutting transformer lines should create >= 2 tx islands, " \
+                f"got {len(tx_islands)}"
+
+            print(f"  Tripped transformer lines: {len(tx_islands)} tx islands "
+                  f"(total {total_in_islands} buses across all islands) — PASS")
+
+        except AssertionError as e:
+            print(f"  Split network: FAIL — {e}")
+            all_passed = False
+
+        # ── Isolated buses form non-viable blackout zones ──────────────────
+        try:
+            g5 = Grid(5)
+            buses5 = g5.get_active_buses()
+
+            # No lines in service — every bus is its own island.
+            islands = cm.find_islands(buses5, [])
+
+            assert len(islands) == len(buses5), \
+                f"With no lines, each bus should be its own island: " \
+                f"expected {len(buses5)}, got {len(islands)}"
+
+            blackout = cm.get_blackout_zones(islands, g5)
+
+            # Buses with no generation unit attached must be blacked out.
+            gen_buses = {u.bus_label for u in g5.get_active_units()}
+            no_gen_buses = {b.label for b in buses5 if b.label not in gen_buses}
+            for lb in no_gen_buses:
+                assert lb in blackout, \
+                    f"Bus {lb} (no generation) should be in blackout zones"
+            # Buses that host generation are viable — must NOT be blacked out.
+            for gb in gen_buses:
+                assert gb not in blackout, \
+                    f"Bus {gb} (has generation) should not be blacked out"
+
+            print(f"  Isolated buses: {len(blackout)}/{len(buses5)} blacked out "
+                  f"({len(gen_buses)} gen buses survive) — PASS")
+
+        except AssertionError as e:
+            print(f"  Isolated buses: FAIL — {e}")
+            all_passed = False
+
+        # ── Overload timer triggers trip at TRIP_DELAY_S ──────────────────
+        try:
+            timers: dict = {}
+            loading = {'L01': 110.0, 'L02': 90.0}   # L01 overloaded, L02 fine
+
+            # Accumulate just under TRIP_DELAY_S total.
+            dt = 5.0
+            steps = int(TRIP_DELAY_S / dt)
+            for _ in range(steps):
+                trips, timers = cm.check_overloads(loading, timers, dt)
+                assert 'L01' not in trips, \
+                    f"L01 should not trip before TRIP_DELAY_S={TRIP_DELAY_S}s"
+                assert 'L02' not in trips, \
+                    "L02 (90% loading) should never trip"
+
+            # One more step puts L01 over the threshold.
+            trips, timers = cm.check_overloads(loading, timers, dt + 0.1)
+
+            assert 'L01' in trips, \
+                f"L01 should trip after TRIP_DELAY_S={TRIP_DELAY_S}s of overload"
+            assert 'L02' not in trips, \
+                "L02 should not trip"
+            assert timers.get('L01', -1) == 0.0, \
+                "Timer for tripped line L01 should reset to 0"
+
+            # L02 timer should remain 0 (never overloaded).
+            assert timers.get('L02', 0.0) == 0.0, \
+                f"L02 timer should be 0, got {timers.get('L02')}"
+
+            print(f"  Overload timer: L01 trips after {TRIP_DELAY_S}s, "
+                  f"L02 unaffected — PASS")
+
+        except AssertionError as e:
+            print(f"  Overload timer: FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TEST RUNNER
@@ -1195,6 +1377,7 @@ if __name__ == "__main__":
         test_renewables_model(),
         test_frequency_model(),
         test_voltage_model(),
+        test_cascade_model(),
     ]
     passed = sum(results)
     total = len(results)

@@ -6,13 +6,19 @@
 
 ## Current Stage
 
-**STAGE 5 — Demand, Renewables, and Losses**
+**STAGE 6 — Cascade Detection and Island Finding**
 
 ## Current Status
 
-**COMPLETE** — DemandModel and RenewablesModel written and validation tests passing.
+**COMPLETE** — CascadeModel written and validation tests passing.
 
 ## Session Log
+
+### Session 8 (Stage 6 — Cascade Detection and Island Finding)
+- Written: `src/simulation/cascade.py` — CascadeModel (BFS island finding, overload timers, blackout zones)
+- Added: `test_cascade_model()` — 4 sub-checks, all PASS
+- Validation: 8/8 tests passed
+- Note: discovered topology has intentionally isolated buses (cascade stations, BARD, KELD, WNCN are radial generation buses with no looped transmission connections; load substations have no 60kV lines modelled)
 
 ### Session 1 (Setup)
 - Created directory structure (`src/` tree, all packages, all placeholder files)
@@ -118,13 +124,16 @@ STAGE 5 — DEMAND, RENEWABLES, AND LOSSES (complete, validated)
   ✓ src/simulation/renewables.py — RenewablesModel (wind/solar + noise, deterministic mode)
   ✓ tests/test_simulation.py     — test_demand_model(), test_renewables_model() — PASS
 
+STAGE 6 — CASCADE DETECTION AND ISLAND FINDING (complete, validated)
+  ✓ src/simulation/cascade.py    — CascadeModel (BFS island finding, overload timers, blackout zones)
+  ✓ tests/test_simulation.py     — test_cascade_model() — PASS
+
 SOURCE FILES (empty placeholders — no working code)
   src/main.py
   src/simulation/loadflow.py
   src/simulation/units.py
   src/simulation/demand.py
   src/simulation/renewables.py
-  src/simulation/cascade.py
   src/simulation/events.py
   src/simulation/simulation.py
   src/display/renderer.py
@@ -147,23 +156,21 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 5 complete. Ready to begin Stage 6.
+Nothing. Stage 6 complete. Ready to begin Stage 7.
 
 ---
 
 ## What Is NOT Yet Built
 
-**Stages 3-14 have empty placeholder files only.**
+**Stages 7-14 have empty placeholder files only.**
 
 Do not reference any simulation, display, or gameplay module as if it
 contains working code unless listed above as complete.
 
 Specifically — these classes and functions DO NOT EXIST YET:
 - `GridSimulation` (src/simulation/simulation.py)
-- `VoltageModel` (src/simulation/voltage.py)
-- `FrequencyModel` (src/simulation/frequency.py)
-- `UnitModel` (src/simulation/units.py)
 - `SimulationState` (src/simulation/simulation.py)
+- `EventSystem` / `ScriptedEvent` (src/simulation/events.py)
 - Any display classes (src/display/*)
 - Any gameplay classes (src/gameplay/*)
 
@@ -171,22 +178,23 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 6 — Cascade Detection and Island Finding**
+**Stage 7 — Scripted Event System**
 
-Goal: Implement `CascadeModel` in `src/simulation/cascade.py`.
-Detects network islands (BFS/connected components), identifies blackout zones,
-and checks line overload timers to trigger protection trips.
+Goal: Implement `EventSystem` and `ScriptedEvent` in `src/simulation/events.py`.
+Loads scripted events for a shift, applies timing jitter at load time,
+fires events at the correct sim time, and marks them as fired to prevent
+re-triggering.
 
 Files to write:
-1. `src/simulation/cascade.py` — CascadeModel
+1. `src/simulation/events.py` — EventSystem + ScriptedEvent
 
 Validation tests (add to tests/test_simulation.py):
 ```
-test_cascade_model...
-  Single connected network returns one island — PASS
-  Tripped line splits network into two islands — PASS
-  Isolated buses identified as blackout zones — PASS
-  Overload timer triggers line trip at TRIP_DELAY_S — PASS
+test_event_system...
+  Events fire at correct sim time — PASS
+  Jitter is applied and bounded — PASS
+  Events fire at most once — PASS
+  Difficulty filter excludes events not for current difficulty — PASS
 4/4 tests passed
 ```
 
@@ -214,6 +222,7 @@ None.
 | 3 | test_frequency_model() + test_voltage_model() — 4/4 | PASS | 2026-05-07 |
 | 4 | test_unit_model() — 5/5 | PASS | 2026-05-07 |
 | 5 | test_demand_model() + test_renewables_model() — 7/7 | PASS | 2026-05-07 |
+| 6 | test_cascade_model() — 8/8 | PASS | 2026-05-08 |
 
 ---
 

@@ -6,13 +6,23 @@
 
 ## Current Stage
 
-**STAGE 8 — Master Simulation Loop**
+**STAGE 9 — Static Grid Renderer**
 
 ## Current Status
 
-**COMPLETE** — GridSimulation written and validation tests passing.
+**COMPLETE** — Static renderer written; window opens, grid draws, 9/9 tests pass.
 
 ## Session Log
+
+### Session 10 (Stage 9 — Static Grid Renderer)
+- Written: `src/display/symbols.py` — all procedural drawing functions (substation, unit squares, collector lines, transmission lines, hydraulic connectors, interconnector markers)
+- Written: `src/display/canvas.py` — GridCanvas: draws all buses, lines, and unit squares by shift onto the 1920×844 canvas surface
+- Written: `src/display/renderer.py` — Renderer: native 1920×1080 surface, layer compositing, blink phase, debug overlay, scales to display
+- Written: `src/main.py` — pygame init, window, main loop; keys 1/3/5 switch shift, D toggles debug overlay
+- Fixed: `src/utils/helpers.py` — `resource_path()` base was `src/utils/` instead of `src/`; corrected to `Path(__file__).parent.parent`
+- Added: font fallback in Renderer — uses `pygame.freetype.SysFont('monospace', 11)` when JetBrainsMono is not yet installed
+- Validated: window opens clean; 9/9 tests still pass
+- Note: Stage 7 (events.py scripted event system) remains deferred until after rendering is complete
 
 ### Session 9 (Stage 8 — Master Simulation Loop)
 - Written: `src/simulation/simulation.py` — Alarm, SimulationState, ForecastResult dataclasses + GridSimulation
@@ -142,12 +152,17 @@ STAGE 8 — MASTER SIMULATION LOOP (complete, validated)
   ✓ src/simulation/voltage.py    — rebuild() updated to accept optional lines_in_service list
   ✓ tests/test_simulation.py     — test_simulation_model() — PASS
 
+STAGE 9 — STATIC GRID RENDERER (complete, validated)
+  ✓ src/display/symbols.py  — draw_substation, draw_load_substation, draw_unit_square,
+                               draw_station_collector, draw_transmission_line,
+                               draw_hydraulic_connector, draw_interconnector
+  ✓ src/display/canvas.py   — GridCanvas: layer-ordered schematic render, shift-aware
+  ✓ src/display/renderer.py — Renderer: native 1920×1080, blink, debug overlay, display scaling
+  ✓ src/main.py             — pygame init, main loop, 1/3/5 shift keys, D debug toggle
+  ✓ src/utils/helpers.py    — resource_path() base path corrected to src/
+
 SOURCE FILES (empty placeholders — no working code)
-  src/main.py
   src/simulation/events.py  (deferred — after rendering stage)
-  src/display/renderer.py
-  src/display/canvas.py
-  src/display/symbols.py
   src/display/animation.py
   src/display/panels.py
   src/display/context.py
@@ -165,13 +180,13 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 8 complete. Ready to begin the rendering stage.
+Nothing. Stage 9 complete.
 
 ---
 
 ## What Is NOT Yet Built
 
-**Display and gameplay stages have empty placeholder files only.**
+**Gameplay stages have empty placeholder files only.**
 **Stage 7 (events.py) is deliberately deferred until after rendering is complete.**
 
 Do not reference any display or gameplay module as if it
@@ -179,27 +194,24 @@ contains working code unless listed above as complete.
 
 Specifically — these classes and functions DO NOT EXIST YET:
 - `EventSystem` / `ScriptedEvent` (src/simulation/events.py) — deferred
-- Any display classes (src/display/*)
+- `AnimationSystem` (src/display/animation.py)
+- Panel classes (src/display/panels.py, context.py, debug.py)
 - Any gameplay classes (src/gameplay/*)
 
 ---
 
 ## Next Session Objective
 
-**Stage 9 — Static Grid Renderer**
+**Stage 10 — Simulation-Connected Renderer**
 
-Goal: Implement the static grid schematic renderer. First pygame code in the project.
-Draw all buses, lines, generation unit symbols, and labels on the 1920×844 canvas
-at the correct coordinates from topology.py.
+Goal: Wire the running GridSimulation into the renderer so the canvas
+reflects live simulation state (line loadings, unit states, bus voltages).
+Add the instrument strip panels (frequency meter, generation/load totals).
 
-Files to write:
-1. `src/display/palette.py` — already exists with colour constants
-2. `src/display/symbols.py` — all symbol drawing functions (substation square, gen unit, etc.)
-3. `src/display/canvas.py`  — GridCanvas: draws the static grid schematic
-4. `src/display/renderer.py` — Renderer: main render loop, layer management
-5. `src/main.py`             — pygame init, window creation, main loop skeleton
-
-See GRID_TOPOLOGY_AND_DISPLAY.md for all coordinate and visual specifications.
+Files to write/extend:
+1. `src/display/panels.py`   — Frequency panel, generation/load summary strip
+2. `src/display/renderer.py` — Accept live SimulationState; pass to GridCanvas
+3. `src/main.py`             — Instantiate GridSimulation(shift=1), tick sim + renderer each frame
 
 ---
 
@@ -227,6 +239,7 @@ None.
 | 5 | test_demand_model() + test_renewables_model() — 7/7 | PASS | 2026-05-07 |
 | 6 | test_cascade_model() — 8/8 | PASS | 2026-05-08 |
 | 8 | test_simulation_model() — 9/9 | PASS | 2026-05-08 |
+| 9 | Window opens, 9/9 tests still pass | PASS | 2026-05-08 |
 
 ---
 

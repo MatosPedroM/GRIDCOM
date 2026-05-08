@@ -29,5 +29,5 @@ def resource_path(relative_path: str) -> Path:
     if hasattr(sys, '_MEIPASS'):
         base = Path(sys._MEIPASS)
     else:
-        base = Path(__file__).parent
+        base = Path(__file__).parent.parent   # src/utils/ → src/
     return base / relative_path

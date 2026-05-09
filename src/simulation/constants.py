@@ -15,6 +15,7 @@ DEBUG_SIMULATION: bool = False
 DEBUG_DISPLAY:    bool = False
 DEBUG_EVENTS:     bool = False
 EDITOR_MODE:      bool = False
+FLOW_ANIMATION:   bool = False
 
 # ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES

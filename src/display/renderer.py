@@ -41,6 +41,7 @@ from simulation.constants import (
     PANEL_POWER_X, PANEL_POWER_W,
     PANEL_DISPATCH_X, PANEL_DISPATCH_W,
     PANEL_ALARM_X, PANEL_ALARM_W,
+    FLOW_ANIMATION,
 )
 from utils.helpers import resource_path
 
@@ -159,7 +160,7 @@ class Renderer:
         )
 
         # ── Flow markers (drawn on top of canvas) ─────────────────────────────
-        if state is not None:
+        if state is not None and FLOW_ANIMATION:
             self._flow.update(dt_real_s, speed_mult)
             self._flow.draw(self._canvas_surf, state,
                             self._canvas._bus_map, self._canvas._lines)

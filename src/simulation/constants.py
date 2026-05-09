@@ -133,6 +133,20 @@ TARGET_FPS:    int = 60
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
 FONT_SIZE_LABEL:          int = 12      # bus/station labels on canvas
 FONT_SIZE_OVERLAY:        int = 13      # interconnector labels, debug overlay
+FONT_SIZE_PANEL:          int = 11      # standard instrument strip text
+FONT_SIZE_PANEL_LARGE:    int = 28      # frequency Hz readout
+
+# ─────────────────────────────────────────────
+# INSTRUMENT STRIP PANEL LAYOUT
+# ─────────────────────────────────────────────
+PANEL_FREQ_X:     int = 0
+PANEL_FREQ_W:     int = 280
+PANEL_POWER_X:    int = 280
+PANEL_POWER_W:    int = 280
+PANEL_DISPATCH_X: int = 560
+PANEL_DISPATCH_W: int = 640
+PANEL_ALARM_X:    int = 1200
+PANEL_ALARM_W:    int = 720
 
 # ─────────────────────────────────────────────
 # SIMULATION SPEED MULTIPLIERS

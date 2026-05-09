@@ -9,7 +9,7 @@ At the end of each frame the native surface is scaled to the display surface.
 
 Layers (bottom to top):
   1. Canvas background + grid schematic (GridCanvas)
-  2. Instrument strip background  (placeholder — filled black for Stage 9)
+  2. Instrument strip — four panels (frequency, power, dispatch, alarms)
   3. Debug overlay                 (when DEBUG_DISPLAY = True)
 
 Usage:
@@ -26,17 +26,28 @@ import pygame.freetype
 
 from display.canvas import GridCanvas
 from display.editor import GridEditor
+from display.panels import (
+    draw_frequency_panel, draw_power_panel,
+    draw_dispatch_panel, draw_alarm_panel,
+)
 from display.palette import COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID
 import simulation.constants as _sim_const
 from simulation.constants import (
     CANVAS_HEIGHT, STRIP_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
     FONT_SIZE_OVERLAY,
+    PANEL_FREQ_X, PANEL_FREQ_W,
+    PANEL_POWER_X, PANEL_POWER_W,
+    PANEL_DISPATCH_X, PANEL_DISPATCH_W,
+    PANEL_ALARM_X, PANEL_ALARM_W,
 )
 from utils.helpers import resource_path
 
 
-_BLINK_PERIOD = 1.0   # seconds per blink cycle
+_BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
+
+
+_BLINK_PERIOD = 1.0   # seconds per blink cycle (canvas, dispatch panel)
 
 
 class Renderer:
@@ -73,6 +84,14 @@ class Renderer:
         self._blink_timer: float = 0.0
         self._blink_on:    bool  = True
 
+        # 2Hz blink for alarm panel
+        self._blink_2hz_timer: float = 0.0
+        self._blink_2hz_on:    bool  = True
+
+        # Panel scroll offsets
+        self._dispatch_scroll: int = 0
+        self._alarm_scroll:    int = 0
+
         # Debug state
         self._mouse_pos:   tuple[int, int] = (0, 0)
         self._click_pos:   tuple[int, int] | None = None
@@ -96,11 +115,16 @@ class Renderer:
             state:          Current SimulationState, or None for static view.
             selected_label: Currently selected bus/unit label, or None.
         """
-        # Update blink phase
+        # Update blink phases
         self._blink_timer += dt_real_s
         if self._blink_timer >= _BLINK_PERIOD:
             self._blink_timer -= _BLINK_PERIOD
         self._blink_on = self._blink_timer < _BLINK_PERIOD * 0.5
+
+        self._blink_2hz_timer += dt_real_s
+        if self._blink_2hz_timer >= _BLINK_2HZ_PERIOD:
+            self._blink_2hz_timer -= _BLINK_2HZ_PERIOD
+        self._blink_2hz_on = self._blink_2hz_timer < _BLINK_2HZ_PERIOD * 0.5
 
         self._frame_time = dt_real_s
         self._fps = 1.0 / dt_real_s if dt_real_s > 0.0 else 0.0
@@ -113,8 +137,20 @@ class Renderer:
             selected_label=selected_label,
         )
 
-        # ── Draw instrument strip (Stage 9: plain background) ─────────────────
-        self._strip_surf.fill(COL_STRIP_BG)
+        # ── Draw instrument strip panels ──────────────────────────────────────
+        freq_surf     = self._strip_surf.subsurface(
+            pygame.Rect(PANEL_FREQ_X,     0, PANEL_FREQ_W,     STRIP_HEIGHT))
+        power_surf    = self._strip_surf.subsurface(
+            pygame.Rect(PANEL_POWER_X,    0, PANEL_POWER_W,    STRIP_HEIGHT))
+        dispatch_surf = self._strip_surf.subsurface(
+            pygame.Rect(PANEL_DISPATCH_X, 0, PANEL_DISPATCH_W, STRIP_HEIGHT))
+        alarm_surf    = self._strip_surf.subsurface(
+            pygame.Rect(PANEL_ALARM_X,    0, PANEL_ALARM_W,    STRIP_HEIGHT))
+
+        draw_frequency_panel(freq_surf,     self._font, self._blink_on)
+        draw_power_panel(power_surf,        self._font)
+        draw_dispatch_panel(dispatch_surf,  self._font, self._blink_on,     self._dispatch_scroll)
+        draw_alarm_panel(alarm_surf,        self._font, self._blink_2hz_on, self._alarm_scroll)
 
         # ── Editor overlay ────────────────────────────────────────────────────
         if _sim_const.EDITOR_MODE:

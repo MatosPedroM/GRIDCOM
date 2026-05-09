@@ -6,13 +6,20 @@
 
 ## Current Stage
 
-**STAGE 9 — Static Grid Renderer**
+**STAGE 10 — Instrument Strip Panels**
 
 ## Current Status
 
-**COMPLETE** — Static renderer written; window opens, grid draws, 9/9 tests pass.
+**COMPLETE** — Four instrument strip panels drawn with static test data; 9/9 tests pass.
 
 ## Session Log
+
+### Session 11 (Stage 10 — Instrument Strip Panels)
+- Written: `src/display/panels.py` — four draw functions: frequency (large Hz readout, analog bar, trend), power balance (6-row MW summary), unit dispatch (scrollable list with state colours, output bars), alarm feed (scrollable list, 2Hz blink on unacked)
+- Edited: `src/display/renderer.py` — replace plain strip fill with four panel subsurfaces; add 2Hz blink timer and dispatch/alarm scroll offsets
+- Edited: `src/simulation/constants.py` — add FONT_SIZE_PANEL, FONT_SIZE_PANEL_LARGE, PANEL_FREQ_X/W, PANEL_POWER_X/W, PANEL_DISPATCH_X/W, PANEL_ALARM_X/W
+- Stage 10 uses static test constants (marked # TEST DATA); Stage 11 swaps to live SimulationState fields
+- Validated: window opens, strip draws all four panels; 9/9 tests still pass
 
 ### Session 10 (Stage 9 — Static Grid Renderer)
 - Written: `src/display/symbols.py` — all procedural drawing functions (substation, unit squares, collector lines, transmission lines, hydraulic connectors, interconnector markers)
@@ -161,10 +168,16 @@ STAGE 9 — STATIC GRID RENDERER (complete, validated)
   ✓ src/main.py             — pygame init, main loop, 1/3/5 shift keys, D debug toggle
   ✓ src/utils/helpers.py    — resource_path() base path corrected to src/
 
+STAGE 10 — INSTRUMENT STRIP PANELS (complete, validated)
+  ✓ src/display/panels.py      — draw_frequency_panel, draw_power_panel,
+                                  draw_dispatch_panel, draw_alarm_panel
+                                  (static test data; Stage 11 wires live SimulationState)
+  ✓ src/display/renderer.py    — four panel subsurfaces; 2Hz alarm blink; scroll offsets
+  ✓ src/simulation/constants.py — FONT_SIZE_PANEL, FONT_SIZE_PANEL_LARGE, PANEL_* layout constants
+
 SOURCE FILES (empty placeholders — no working code)
   src/simulation/events.py  (deferred — after rendering stage)
   src/display/animation.py
-  src/display/panels.py
   src/display/context.py
   src/display/debug.py
   src/gameplay/campaign.py
@@ -180,7 +193,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 9 complete.
+Nothing. Stage 10 complete.
 
 ---
 
@@ -195,23 +208,24 @@ contains working code unless listed above as complete.
 Specifically — these classes and functions DO NOT EXIST YET:
 - `EventSystem` / `ScriptedEvent` (src/simulation/events.py) — deferred
 - `AnimationSystem` (src/display/animation.py)
-- Panel classes (src/display/panels.py, context.py, debug.py)
+- Context panel (src/display/context.py)
 - Any gameplay classes (src/gameplay/*)
 
 ---
 
 ## Next Session Objective
 
-**Stage 10 — Simulation-Connected Renderer**
+**Stage 11 — Simulation to Display Connection**
 
-Goal: Wire the running GridSimulation into the renderer so the canvas
-reflects live simulation state (line loadings, unit states, bus voltages).
-Add the instrument strip panels (frequency meter, generation/load totals).
+Goal: Wire the live GridSimulation into the renderer. Canvas and panels
+reflect real simulation state every frame.
 
 Files to write/extend:
-1. `src/display/panels.py`   — Frequency panel, generation/load summary strip
-2. `src/display/renderer.py` — Accept live SimulationState; pass to GridCanvas
-3. `src/main.py`             — Instantiate GridSimulation(shift=1), tick sim + renderer each frame
+1. `src/main.py`             — Instantiate GridSimulation(shift=1); tick sim each frame;
+                               wire speed keys 0/Space=PAUSE, 1=SLOW, 2=NORMAL, 3=FAST, 4=VERY_FAST
+2. `src/display/renderer.py` — Accept live SimulationState; pass to GridCanvas + panels
+3. `src/display/panels.py`   — Replace # TEST DATA constants with live state field reads
+4. `src/display/animation.py`— Flow markers on lines (speed ∝ loading, direction from flow sign)
 
 ---
 
@@ -240,6 +254,7 @@ None.
 | 6 | test_cascade_model() — 8/8 | PASS | 2026-05-08 |
 | 8 | test_simulation_model() — 9/9 | PASS | 2026-05-08 |
 | 9 | Window opens, 9/9 tests still pass | PASS | 2026-05-08 |
+| 10 | Strip draws 4 panels, 9/9 tests still pass | PASS | 2026-05-09 |
 
 ---
 

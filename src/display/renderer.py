@@ -25,6 +25,7 @@ import pygame
 import pygame.freetype
 
 from display.canvas import GridCanvas
+from display.context import draw_unit_context
 from display.editor import GridEditor
 from display.animation import FlowAnimator
 from display.panels import (
@@ -100,6 +101,10 @@ class Renderer:
         # Selection state
         self._selected_label: str | None = None
 
+        # Unit dispatch input state
+        self._input_buffer: str  = ''
+        self._input_active: bool = False
+
         # Debug state
         self._mouse_pos:   tuple[int, int] = (0, 0)
         self._click_pos:   tuple[int, int] | None = None
@@ -124,8 +129,68 @@ class Renderer:
             self._alarm_scroll = max(0, self._alarm_scroll - delta)
 
     def clear_selection(self) -> None:
-        """Clear the currently selected element."""
+        """Clear the currently selected element and reset input state."""
         self._selected_label = None
+        self._input_buffer   = ''
+        self._input_active   = False
+
+    def _get_selected_unit(self):
+        """Return the GenerationUnit for _selected_label if it is a unit, else None."""
+        if self._selected_label is None:
+            return None
+        for units in self._canvas._station_units.values():
+            for unit in units:
+                if unit.label == self._selected_label:
+                    return unit
+        return None
+
+    def on_key_digit(self, ch: str) -> None:
+        """Feed one digit character to the unit target input buffer."""
+        if self._get_selected_unit() is None:
+            return
+        self._input_active = True
+        if len(self._input_buffer) < 4:
+            self._input_buffer += ch
+
+    def on_backspace(self) -> None:
+        """Remove last character from input buffer."""
+        if self._input_active and self._input_buffer:
+            self._input_buffer = self._input_buffer[:-1]
+
+    def on_enter(self, sim) -> None:
+        """
+        Commit the input buffer as a dispatch target.
+        Activates input mode if Enter is pressed with no buffer.
+        Clamps target to [min_mw, rated_mw] before dispatching.
+        """
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        if not self._input_active or not self._input_buffer:
+            self._input_active = True
+            return
+        try:
+            raw = int(self._input_buffer)
+        except ValueError:
+            self._input_buffer = ''
+            return
+        clamped = max(int(unit.min_mw), min(int(unit.rated_mw), raw))
+        sim.set_unit_target(unit.label, float(clamped))
+        self._input_buffer = ''
+        self._input_active = False
+
+    def on_escape(self) -> None:
+        """
+        Cancel input if active; otherwise deselect the current element.
+        No-op when nothing is selected — main.py handles global quit.
+        """
+        if self._input_active:
+            self._input_buffer = ''
+            self._input_active = False
+        elif self._selected_label is not None:
+            self.clear_selection()
+
+    # ─── Per-frame entry point ────────────────────────────────────────────────
 
     def tick(
         self,
@@ -185,6 +250,20 @@ class Renderer:
                             self._grid, self._dispatch_scroll)
         draw_alarm_panel(alarm_surf,        self._font, self._blink_2hz_on, state,
                          self._alarm_scroll)
+
+        # ── Unit context overlay ──────────────────────────────────────────────
+        selected_unit = self._get_selected_unit()
+        if selected_unit is not None and state is not None:
+            draw_unit_context(
+                self._canvas_surf, self._font,
+                unit=selected_unit,
+                unit_state=state.unit_states.get(selected_unit.label, 'OFFLINE'),
+                output_mw=state.unit_outputs_mw.get(selected_unit.label, 0.0),
+                target_mw=state.unit_targets_mw.get(selected_unit.label, 0.0),
+                input_buffer=self._input_buffer,
+                input_active=self._input_active,
+                blink_on=self._blink_on,
+            )
 
         # ── Editor overlay ────────────────────────────────────────────────────
         if _sim_const.EDITOR_MODE:
@@ -256,6 +335,10 @@ class Renderer:
 
         # Toggle deselect when clicking the same element
         self._selected_label = None if best_label == self._selected_label else best_label
+
+        # Selection change always resets input state
+        self._input_buffer = ''
+        self._input_active = False
 
         if _sim_const.DEBUG_DISPLAY:
             self._click_pos   = pos

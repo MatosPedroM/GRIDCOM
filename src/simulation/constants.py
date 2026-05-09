@@ -136,6 +136,17 @@ FONT_SIZE_LABEL:          int = 12      # bus/station labels on canvas
 FONT_SIZE_OVERLAY:        int = 13      # interconnector labels, debug overlay
 FONT_SIZE_PANEL:          int = 11      # standard instrument strip text
 FONT_SIZE_PANEL_LARGE:    int = 28      # frequency Hz readout
+FONT_SIZE_CONTEXT:        int = 11      # unit context overlay text
+
+# ─────────────────────────────────────────────
+# UNIT CONTEXT OVERLAY
+# ─────────────────────────────────────────────
+CONTEXT_OVERLAY_X:     int = 8     # px from canvas left edge
+CONTEXT_OVERLAY_Y:     int = 8     # px from canvas top edge
+CONTEXT_OVERLAY_W:     int = 240   # panel width in px
+CONTEXT_OVERLAY_PAD:   int = 6     # inner padding
+CONTEXT_OVERLAY_ROW_H: int = 16    # text row height
+CONTEXT_OVERLAY_HDR_H: int = 18    # header row height
 
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANEL LAYOUT

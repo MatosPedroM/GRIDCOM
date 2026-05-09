@@ -157,3 +157,10 @@ COL_EDITOR_LABEL:     Colour = (255, 220, 60)   # Editor banner and drag label �
 COL_EDITOR_DIRTY:     Colour = (255, 160, 40)   # Save indicator — unsaved changes
 COL_EDITOR_CLEAN:     Colour = (60, 80, 100)    # Save indicator — all saved
 COL_EDITOR_HIGHLIGHT: Colour = (255, 255, 100)  # Hovered / dragged element ring
+
+# ─────────────────────────────────────────────
+# UNIT CONTEXT OVERLAY
+# ─────────────────────────────────────────────
+COL_CONTEXT_FIELD_BG:     Colour = (18, 28, 36)   # Input field background
+COL_CONTEXT_FIELD_ACTIVE: Colour = (0, 80, 40)    # Active input border — dim green
+COL_CONTEXT_CURSOR:       Colour = (0, 200, 120)   # Text cursor — bright green

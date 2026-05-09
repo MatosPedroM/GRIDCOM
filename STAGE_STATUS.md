@@ -6,13 +6,21 @@
 
 ## Current Stage
 
-**STAGE 12 — Canvas Selection (Hit Detection)**
+**STAGE 13 — Unit Output Control**
 
 ## Current Status
 
-**COMPLETE** — Click a bus or unit square to select it; Escape clears selection; 9/9 tests pass.
+**COMPLETE** — Selected unit shows context overlay top-left; player types MW target, Enter dispatches; 9/9 tests pass.
 
 ## Session Log
+
+### Session 14 (Stage 13 — Unit Output Control)
+- Written: `src/display/context.py` — draw_unit_context(): fixed top-left panel with header (label/type/state), output row, target input field with cursor and range hint, non-dispatchable fallback
+- Edited: `src/simulation/constants.py` — CONTEXT_OVERLAY_X/Y/W/PAD/ROW_H/HDR_H, FONT_SIZE_CONTEXT
+- Edited: `src/display/palette.py` — COL_CONTEXT_FIELD_BG, COL_CONTEXT_FIELD_ACTIVE, COL_CONTEXT_CURSOR
+- Edited: `src/display/renderer.py` — _input_buffer/_input_active state; _get_selected_unit(); on_key_digit(), on_backspace(), on_enter(), on_escape(); context overlay in tick(); updated clear_selection() and on_click()
+- Edited: `src/main.py` — Escape → on_escape(); speed keys guarded by not _input_active; digit/backspace/enter routed to renderer
+- Validated: 9/9 tests pass
 
 ### Session 13 (Stage 12 — Canvas Selection)
 - Edited: `src/display/renderer.py` — added `_HIT_RADIUS = 10`, `self._selected_label`, `clear_selection()`; replaced on_click() stub with full Chebyshev hit detection (units first, then buses); removed `selected_label` parameter from `tick()` — selection now owned internally
@@ -199,6 +207,14 @@ STAGE 12 — CANVAS SELECTION (complete, validated)
                                  _selected_label state; clear_selection(); tick() uses internal state
   ✓ src/main.py               — Escape clears selection before quitting
 
+STAGE 13 — UNIT OUTPUT CONTROL (complete, validated)
+  ✓ src/display/context.py    — draw_unit_context(): panel with output, target field, range hint
+  ✓ src/simulation/constants.py — CONTEXT_OVERLAY_* layout constants; FONT_SIZE_CONTEXT
+  ✓ src/display/palette.py    — COL_CONTEXT_FIELD_BG, COL_CONTEXT_FIELD_ACTIVE, COL_CONTEXT_CURSOR
+  ✓ src/display/renderer.py   — input state; on_key_digit/on_backspace/on_enter/on_escape;
+                                 _get_selected_unit(); context overlay in tick()
+  ✓ src/main.py               — digit/backspace/enter routed; speed keys guarded by _input_active
+
 SOURCE FILES (empty placeholders — no working code)
   src/simulation/events.py  (deferred — after rendering stage)
   src/display/context.py
@@ -216,7 +232,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 12 complete.
+Nothing. Stage 13 complete.
 
 ---
 
@@ -237,17 +253,17 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 13 — Unit Output Control**
+**Stage 14 — Unit Start/Stop Commands**
 
-Goal: Player can select a unit square, type a MW target, and press Enter to set dispatch.
+Goal: Player can start (online) and stop (shutdown) generation units from the context panel or keyboard shortcuts.
 
 Files to write/extend:
-1. `src/display/context.py`  — context panel near selected unit (label, state, MW readout, target input)
-2. `src/main.py`             — numeric key input → MW target buffer; Enter commits; Escape cancels
-3. `src/simulation/simulation.py` — verify `set_unit_target()` accepts player commands
+1. `src/display/context.py`  — add START / STOP buttons to context panel for OFFLINE / ONLINE units
+2. `src/display/renderer.py` — on_start_unit(), on_stop_unit() methods calling sim.start_unit/stop_unit
+3. `src/main.py`             — keyboard shortcut routing (e.g. S = start, X = stop when unit selected)
 
-Deferred to later stage:
-- Tab/Arrow navigation
+Deferred:
+- Tab/Arrow keyboard navigation
 - Line selection and context panel
 - ACK alarm shortcut (A)
 
@@ -281,6 +297,7 @@ None.
 | 10 | Strip draws 4 panels, 9/9 tests still pass | PASS | 2026-05-09 |
 | 11 | Live sim running, panels update, flow markers animate, 9/9 pass | PASS | 2026-05-09 |
 | 12 | Click selects bus/unit, Escape deselects, 9/9 tests pass | PASS | 2026-05-09 |
+| 13 | Unit context overlay, MW target input, Enter dispatches, 9/9 pass | PASS | 2026-05-09 |
 
 ---
 

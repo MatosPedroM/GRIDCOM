@@ -96,8 +96,8 @@ def main() -> None:
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
                     if _const.EDITOR_MODE:
                         _const.EDITOR_MODE = False
-                    elif renderer._selected_label is not None:
-                        renderer.clear_selection()
+                    elif renderer._selected_label is not None or renderer._input_active:
+                        renderer.on_escape()
                     else:
                         running = False
 
@@ -121,17 +121,32 @@ def main() -> None:
                     shift = 5
                     sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
 
-                # Speed keys: 0/Space=pause, 1-4=speeds
-                elif event.key in (pygame.K_0, pygame.K_SPACE) and not _const.EDITOR_MODE:
+                # Speed keys: 0/Space=pause, 1-4=speeds (suppressed when typing a MW target)
+                elif event.key in (pygame.K_0, pygame.K_SPACE) and not _const.EDITOR_MODE and not renderer._input_active:
                     speed = SPEED_PAUSE
-                elif event.key == pygame.K_1 and not _const.EDITOR_MODE:
+                elif event.key == pygame.K_1 and not _const.EDITOR_MODE and not renderer._input_active:
                     speed = SPEED_SLOW
-                elif event.key == pygame.K_2 and not _const.EDITOR_MODE:
+                elif event.key == pygame.K_2 and not _const.EDITOR_MODE and not renderer._input_active:
                     speed = SPEED_NORMAL
-                elif event.key == pygame.K_3 and not _const.EDITOR_MODE:
+                elif event.key == pygame.K_3 and not _const.EDITOR_MODE and not renderer._input_active:
                     speed = SPEED_FAST
-                elif event.key == pygame.K_4 and not _const.EDITOR_MODE:
+                elif event.key == pygame.K_4 and not _const.EDITOR_MODE and not renderer._input_active:
                     speed = SPEED_VERY_FAST
+
+                # Unit target input: digits feed buffer, backspace/enter commit
+                elif (not _const.EDITOR_MODE and not ctrl and not shift_held
+                      and event.key in (
+                          pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3,
+                          pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7,
+                          pygame.K_8, pygame.K_9,
+                      )):
+                    renderer.on_key_digit(pygame.key.name(event.key))
+
+                elif not _const.EDITOR_MODE and event.key == pygame.K_BACKSPACE:
+                    renderer.on_backspace()
+
+                elif not _const.EDITOR_MODE and event.key == pygame.K_RETURN:
+                    renderer.on_enter(sim)
 
             elif event.type == pygame.MOUSEMOTION:
                 renderer.on_mouse_move(_to_native(display_surf, event.pos))

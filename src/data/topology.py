@@ -140,7 +140,7 @@ BUSES: list[Bus] = [
 
     # ── 150kV REGIONAL (Shifts 5-10) ─────────────────────────────────────
     Bus(label='BRCK', name='Brackley',     voltage_kv=150.0, bus_type='TRANSMISSION',
-        canvas_x=240,  canvas_y=580, active_from_shift=5),
+        canvas_x=240,  canvas_y=580, active_from_shift=1),
 
     Bus(label='STAN', name='Stanton',      voltage_kv=150.0, bus_type='TRANSMISSION',
         canvas_x=1080, canvas_y=580, active_from_shift=5),
@@ -194,7 +194,7 @@ BUSES: list[Bus] = [
 
     # ── 150kV LOAD SUBSTATIONS (Shift 5+) ────────────────────────────────
     Bus(label='LD01', name='Load Sub 1',   voltage_kv=150.0, bus_type='LOAD',
-        canvas_x=480,  canvas_y=760, active_from_shift=5),
+        canvas_x=480,  canvas_y=760, active_from_shift=1),
 
     Bus(label='LD02', name='Load Sub 2',   voltage_kv=150.0, bus_type='LOAD',
         canvas_x=720,  canvas_y=780, active_from_shift=5),
@@ -292,7 +292,7 @@ LINES: list[Line] = [
 
     # ── 150kV REGIONAL (Shifts 5-10) ─────────────────────────────────────
     Line(label='L22', from_bus='RDST', to_bus='BRCK',
-         reactance_pu=0.150, rating_mw=450.0, active_from_shift=5, voltage_kv=150.0),
+         reactance_pu=0.150, rating_mw=450.0, active_from_shift=1, voltage_kv=150.0),
 
     Line(label='L23', from_bus='FAIR', to_bus='STAN',
          reactance_pu=0.140, rating_mw=450.0, active_from_shift=5, voltage_kv=150.0),
@@ -336,7 +336,7 @@ LINES: list[Line] = [
 
     # ── 150kV LOAD SUBSTATION FEEDERS (Shift 5+) ─────────────────────────
     Line(label='L37', from_bus='BRCK', to_bus='LD01',
-         reactance_pu=0.080, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
+         reactance_pu=0.080, rating_mw=400.0, active_from_shift=1, voltage_kv=150.0),
 
     Line(label='L38', from_bus='STAN', to_bus='LD02',
          reactance_pu=0.085, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),

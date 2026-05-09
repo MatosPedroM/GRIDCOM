@@ -215,12 +215,13 @@ DEMAND_PROFILE_NORMALISED: dict[float, float] = {
 # Must sum to 1.0.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Shifts 1-2: south sub-grid only — load distributed to active 220kV buses
+# Shifts 1-2: south sub-grid + BRCK/LD01 — load on 220kV buses and LD01
 _LOAD_DIST_SHIFT1: dict[str, float] = {
-    'ASHF': 0.30,
-    'WRNT': 0.25,
+    'ASHF': 0.25,
+    'WRNT': 0.20,
     'FAIR': 0.25,
     'DUNM': 0.20,
+    'LD01': 0.10,
 }
 
 # Shifts 3-4: south + centre — load spread across expanded 220kV network

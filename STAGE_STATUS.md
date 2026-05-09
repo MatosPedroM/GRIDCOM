@@ -6,13 +6,21 @@
 
 ## Current Stage
 
-**STAGE 10 — Instrument Strip Panels**
+**STAGE 11 — Simulation to Display Connection**
 
 ## Current Status
 
-**COMPLETE** — Four instrument strip panels drawn with static test data; 9/9 tests pass.
+**COMPLETE** — Live GridSimulation wired into renderer; panels and canvas reflect real state; flow markers animate; 9/9 tests pass.
 
 ## Session Log
+
+### Session 12 (Stage 11 — Simulation to Display Connection)
+- Written: `src/display/animation.py` — FlowAnimator: directional flow markers on all active lines (speed ∝ loading, direction from flow sign, colour by voltage level)
+- Edited: `src/display/panels.py` — all four functions accept live state; static fallbacks preserved for state=None
+- Edited: `src/display/renderer.py` — set_grid(), on_scroll(); tick() accepts speed_mult; FlowAnimator driven after canvas draw
+- Edited: `src/main.py` — GridSimulation instantiated per session; speed keys 0-4; shift-switch F1/F3/F5; mouse wheel scroll
+- Fixed: `src/display/canvas.py` — state.blackout_buses → state.blackout_zones
+- Validated: simulation runs live; all panels update each frame; 9/9 tests pass
 
 ### Session 11 (Stage 10 — Instrument Strip Panels)
 - Written: `src/display/panels.py` — four draw functions: frequency (large Hz readout, analog bar, trend), power balance (6-row MW summary), unit dispatch (scrollable list with state colours, output bars), alarm feed (scrollable list, 2Hz blink on unacked)
@@ -169,15 +177,20 @@ STAGE 9 — STATIC GRID RENDERER (complete, validated)
   ✓ src/utils/helpers.py    — resource_path() base path corrected to src/
 
 STAGE 10 — INSTRUMENT STRIP PANELS (complete, validated)
-  ✓ src/display/panels.py      — draw_frequency_panel, draw_power_panel,
-                                  draw_dispatch_panel, draw_alarm_panel
-                                  (static test data; Stage 11 wires live SimulationState)
-  ✓ src/display/renderer.py    — four panel subsurfaces; 2Hz alarm blink; scroll offsets
+  ✓ src/display/panels.py       — draw_frequency_panel, draw_power_panel,
+                                   draw_dispatch_panel, draw_alarm_panel
+  ✓ src/display/renderer.py     — four panel subsurfaces; 2Hz alarm blink; scroll offsets
   ✓ src/simulation/constants.py — FONT_SIZE_PANEL, FONT_SIZE_PANEL_LARGE, PANEL_* layout constants
+
+STAGE 11 — SIMULATION TO DISPLAY CONNECTION (complete, validated)
+  ✓ src/display/animation.py  — FlowAnimator: directional flow markers on active lines
+  ✓ src/display/panels.py     — live state wired; static fallback preserved for state=None
+  ✓ src/display/renderer.py   — set_grid(), on_scroll(), speed_mult; FlowAnimator integrated
+  ✓ src/display/canvas.py     — fix blackout_buses → blackout_zones
+  ✓ src/main.py               — GridSimulation per session; speed keys 0-4; F1/F3/F5 shift
 
 SOURCE FILES (empty placeholders — no working code)
   src/simulation/events.py  (deferred — after rendering stage)
-  src/display/animation.py
   src/display/context.py
   src/display/debug.py
   src/gameplay/campaign.py
@@ -193,7 +206,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 10 complete.
+Nothing. Stage 11 complete.
 
 ---
 
@@ -207,7 +220,6 @@ contains working code unless listed above as complete.
 
 Specifically — these classes and functions DO NOT EXIST YET:
 - `EventSystem` / `ScriptedEvent` (src/simulation/events.py) — deferred
-- `AnimationSystem` (src/display/animation.py)
 - Context panel (src/display/context.py)
 - Any gameplay classes (src/gameplay/*)
 
@@ -215,15 +227,15 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 11 — Simulation to Display Connection**
+**Stage 12 — Player Interaction**
 
-Goal: Wire the live GridSimulation into the renderer. Canvas and panels
-reflect real simulation state every frame.
+Goal: All player controls for Shift 1 via both mouse and keyboard.
 
 Files to write/extend:
-1. `src/main.py`             — Instantiate GridSimulation(shift=1); tick sim each frame;
-                               wire speed keys 0/Space=PAUSE, 1=SLOW, 2=NORMAL, 3=FAST, 4=VERY_FAST
-2. `src/display/renderer.py` — Accept live SimulationState; pass to GridCanvas + panels
+1. `src/display/context.py` — context panels near selected element (bus, unit, line, load)
+2. `src/display/canvas.py`  — hit detection: click → select bus/unit/line
+3. `src/main.py`            — Tab/Enter/Escape/Arrow navigation; A = ACK alarm
+4. Unit controls: SET OUTPUT target (numeric input)
 3. `src/display/panels.py`   — Replace # TEST DATA constants with live state field reads
 4. `src/display/animation.py`— Flow markers on lines (speed ∝ loading, direction from flow sign)
 
@@ -255,6 +267,7 @@ None.
 | 8 | test_simulation_model() — 9/9 | PASS | 2026-05-08 |
 | 9 | Window opens, 9/9 tests still pass | PASS | 2026-05-08 |
 | 10 | Strip draws 4 panels, 9/9 tests still pass | PASS | 2026-05-09 |
+| 11 | Live sim running, panels update, flow markers animate, 9/9 pass | PASS | 2026-05-09 |
 
 ---
 

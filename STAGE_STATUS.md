@@ -6,13 +6,18 @@
 
 ## Current Stage
 
-**STAGE 11 — Simulation to Display Connection**
+**STAGE 12 — Canvas Selection (Hit Detection)**
 
 ## Current Status
 
-**COMPLETE** — Live GridSimulation wired into renderer; panels and canvas reflect real state; flow markers animate; 9/9 tests pass.
+**COMPLETE** — Click a bus or unit square to select it; Escape clears selection; 9/9 tests pass.
 
 ## Session Log
+
+### Session 13 (Stage 12 — Canvas Selection)
+- Edited: `src/display/renderer.py` — added `_HIT_RADIUS = 10`, `self._selected_label`, `clear_selection()`; replaced on_click() stub with full Chebyshev hit detection (units first, then buses); removed `selected_label` parameter from `tick()` — selection now owned internally
+- Edited: `src/main.py` — Escape key checks `renderer._selected_label is not None` before quitting; calls `clear_selection()` to deselect
+- Validated: 9/9 tests pass
 
 ### Session 12 (Stage 11 — Simulation to Display Connection)
 - Written: `src/display/animation.py` — FlowAnimator: directional flow markers on all active lines (speed ∝ loading, direction from flow sign, colour by voltage level)
@@ -189,6 +194,11 @@ STAGE 11 — SIMULATION TO DISPLAY CONNECTION (complete, validated)
   ✓ src/display/canvas.py     — fix blackout_buses → blackout_zones
   ✓ src/main.py               — GridSimulation per session; speed keys 0-4; F1/F3/F5 shift
 
+STAGE 12 — CANVAS SELECTION (complete, validated)
+  ✓ src/display/renderer.py   — hit detection in on_click() (Chebyshev, units before buses);
+                                 _selected_label state; clear_selection(); tick() uses internal state
+  ✓ src/main.py               — Escape clears selection before quitting
+
 SOURCE FILES (empty placeholders — no working code)
   src/simulation/events.py  (deferred — after rendering stage)
   src/display/context.py
@@ -206,7 +216,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 11 complete.
+Nothing. Stage 12 complete.
 
 ---
 
@@ -227,17 +237,19 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 12 — Player Interaction**
+**Stage 13 — Unit Output Control**
 
-Goal: All player controls for Shift 1 via both mouse and keyboard.
+Goal: Player can select a unit square, type a MW target, and press Enter to set dispatch.
 
 Files to write/extend:
-1. `src/display/context.py` — context panels near selected element (bus, unit, line, load)
-2. `src/display/canvas.py`  — hit detection: click → select bus/unit/line
-3. `src/main.py`            — Tab/Enter/Escape/Arrow navigation; A = ACK alarm
-4. Unit controls: SET OUTPUT target (numeric input)
-3. `src/display/panels.py`   — Replace # TEST DATA constants with live state field reads
-4. `src/display/animation.py`— Flow markers on lines (speed ∝ loading, direction from flow sign)
+1. `src/display/context.py`  — context panel near selected unit (label, state, MW readout, target input)
+2. `src/main.py`             — numeric key input → MW target buffer; Enter commits; Escape cancels
+3. `src/simulation/simulation.py` — verify `set_unit_target()` accepts player commands
+
+Deferred to later stage:
+- Tab/Arrow navigation
+- Line selection and context panel
+- ACK alarm shortcut (A)
 
 ---
 
@@ -268,6 +280,7 @@ None.
 | 9 | Window opens, 9/9 tests still pass | PASS | 2026-05-08 |
 | 10 | Strip draws 4 panels, 9/9 tests still pass | PASS | 2026-05-09 |
 | 11 | Live sim running, panels update, flow markers animate, 9/9 pass | PASS | 2026-05-09 |
+| 12 | Click selects bus/unit, Escape deselects, 9/9 tests pass | PASS | 2026-05-09 |
 
 ---
 

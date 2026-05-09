@@ -96,6 +96,8 @@ def main() -> None:
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
                     if _const.EDITOR_MODE:
                         _const.EDITOR_MODE = False
+                    elif renderer._selected_label is not None:
+                        renderer.clear_selection()
                     else:
                         running = False
 

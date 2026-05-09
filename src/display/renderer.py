@@ -47,9 +47,8 @@ from utils.helpers import resource_path
 
 
 _BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
-
-
-_BLINK_PERIOD = 1.0   # seconds per blink cycle (canvas, dispatch panel)
+_BLINK_PERIOD     = 1.0   # seconds per blink cycle (canvas, dispatch panel)
+_HIT_RADIUS       = 10    # px — Chebyshev hit radius for bus/unit selection
 
 
 class Renderer:
@@ -98,6 +97,9 @@ class Renderer:
         self._dispatch_scroll: int = 0
         self._alarm_scroll:    int = 0
 
+        # Selection state
+        self._selected_label: str | None = None
+
         # Debug state
         self._mouse_pos:   tuple[int, int] = (0, 0)
         self._click_pos:   tuple[int, int] | None = None
@@ -121,21 +123,23 @@ class Renderer:
         elif PANEL_ALARM_X <= nx < PANEL_ALARM_X + PANEL_ALARM_W:
             self._alarm_scroll = max(0, self._alarm_scroll - delta)
 
+    def clear_selection(self) -> None:
+        """Clear the currently selected element."""
+        self._selected_label = None
+
     def tick(
         self,
         dt_real_s:  float,
         state=None,
-        selected_label: str | None = None,
         speed_mult: float = 1.0,
     ) -> None:
         """
         Render one frame.
 
         Args:
-            dt_real_s:      Real-time delta in seconds since last frame.
-            state:          Current SimulationState, or None for static view.
-            selected_label: Currently selected bus/unit label, or None.
-            speed_mult:     Current simulation speed multiplier (for flow markers).
+            dt_real_s:  Real-time delta in seconds since last frame.
+            state:      Current SimulationState, or None for static view.
+            speed_mult: Current simulation speed multiplier (for flow markers).
         """
         # Update blink phases
         self._blink_timer += dt_real_s
@@ -156,7 +160,7 @@ class Renderer:
             self._canvas_surf,
             state=state,
             blink_on=self._blink_on,
-            selected_label=selected_label,
+            selected_label=self._selected_label,
         )
 
         # ── Flow markers (drawn on top of canvas) ─────────────────────────────
@@ -226,10 +230,38 @@ class Renderer:
         self._editor.set_canvas(self._canvas)
 
     def on_click(self, pos: tuple[int, int]) -> None:
-        """Call with native-space position on mouse click; prints coords."""
-        self._click_pos   = pos
-        self._click_timer = 3.0
-        print(f'[DEBUG CLICK] x={pos[0]}, y={pos[1]}')
+        """Hit-test buses and unit squares; update selection. Canvas clicks only."""
+        nx, ny = pos
+        if ny >= CANVAS_HEIGHT:
+            return
+
+        best_label: str | None = None
+        best_dist:  float       = float('inf')
+
+        # Units first — drawn on top of buses
+        for station_label, positions in self._canvas._station_pos.items():
+            units = self._canvas._station_units.get(station_label, [])
+            for unit, (cx, cy) in zip(units, positions):
+                dist = max(abs(nx - cx), abs(ny - cy))
+                if dist <= _HIT_RADIUS and dist < best_dist:
+                    best_dist  = dist
+                    best_label = unit.label
+
+        # Buses
+        for bus in self._canvas._buses:
+            dist = max(abs(nx - bus.canvas_x), abs(ny - bus.canvas_y))
+            if dist <= _HIT_RADIUS and dist < best_dist:
+                best_dist  = dist
+                best_label = bus.label
+
+        # Toggle deselect when clicking the same element
+        self._selected_label = None if best_label == self._selected_label else best_label
+
+        if _sim_const.DEBUG_DISPLAY:
+            self._click_pos   = pos
+            self._click_timer = 3.0
+            suffix = f'  →  {self._selected_label}' if self._selected_label else ''
+            print(f'[DEBUG CLICK] x={nx}, y={ny}{suffix}')
 
     def _draw_debug(self) -> None:
         grid_spacing = 120

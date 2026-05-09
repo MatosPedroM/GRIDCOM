@@ -294,7 +294,7 @@ def test_loadflow_solves() -> bool:
             # Slack absorbs +1000 MW. Flows should be non-zero and symmetric.
             buses = {b.label: 0.0 for b in g1.get_active_buses()}
             buses['ASHF'] = -500.0
-            buses['WRNT'] = -500.0
+            buses['DUNM'] = -500.0
 
             result = lf.solve(buses)
 
@@ -316,33 +316,31 @@ def test_loadflow_solves() -> bool:
                 assert result.line_loading_pct[l.label] >= 0.0, \
                     f"Line {l.label} loading should be >= 0"
 
-            # Lines connecting STHW→ASHF and CNTR→WRNT must carry non-zero flow
+            # Lines connecting STHW→ASHF and ASHF→DUNM must carry non-zero flow
             assert abs(result.line_flows_mw['L08']) > 1.0, \
                 f"L08 (STHW-ASHF) should carry flow, got {result.line_flows_mw['L08']:.2f} MW"
-            assert abs(result.line_flows_mw['L09']) > 1.0, \
-                f"L09 (CNTR-WRNT) should carry flow, got {result.line_flows_mw['L09']:.2f} MW"
+            assert abs(result.line_flows_mw['L14']) > 1.0, \
+                f"L14 (ASHF-DUNM) should carry flow, got {result.line_flows_mw['L14']:.2f} MW"
 
             print(f"  Grid(1) solve: slack angle=0, all angles/flows present — PASS")
             print(f"    L08 flow={result.line_flows_mw['L08']:.1f} MW  "
                   f"loading={result.line_loading_pct['L08']:.1f}%")
-            print(f"    L09 flow={result.line_flows_mw['L09']:.1f} MW  "
-                  f"loading={result.line_loading_pct['L09']:.1f}%")
+            print(f"    L14 flow={result.line_flows_mw['L14']:.1f} MW  "
+                  f"loading={result.line_loading_pct['L14']:.1f}%")
 
         except AssertionError as e:
             print(f"  Grid(1) solve: FAIL — {e}")
             all_passed = False
 
         # ── Flow direction consistency ─────────────────────────────────────
-        # Inject generation at MDBY side (via STHW/CNTR), load at ASHF/WRNT.
+        # Inject generation at MDBY side (via STHW), load at ASHF.
         # L08 goes STHW→ASHF: flow should be positive (toward load).
-        # L09 goes CNTR→WRNT: flow should be positive (toward load).
         try:
             g1 = Grid(1)
             lf = DCLoadFlow(g1)
 
             buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['ASHF'] = -800.0   # load at ASHF
-            buses['WRNT'] = -200.0   # small load at WRNT
+            buses['ASHF'] = -1000.0  # load at ASHF
 
             result = lf.solve(buses)
 

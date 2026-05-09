@@ -497,7 +497,7 @@ ID    LABEL  VOLTAGE  TYPE                    CONNECTS TO
 17    CB     400kV    Coal B (3×300MW)         SSUL
 18    GA     220kV    CCGT A (2×400MW)         SA01
 19    GB     220kV    CCGT B (2×400MW)         SA02
-20    NU     400kV    Nuclear (2×700MW)         SMID
+20    NU     400kV    Nuclear (2×700MW)        SMID
 21    HA     400kV    Hydro A upper (2×250MW)  SCEN
 22    DA     220kV    Hydro A lower (2×80MW)   SA03
 23    HB     400kV    Hydro B upper (2×250MW)  SWST

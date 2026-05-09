@@ -168,5 +168,5 @@ FLOW_SPEED_MAX:        float = 120.0        # px/s at 100%+ loading
 # ─────────────────────────────────────────────
 # DEBUG OVERLAY
 # ─────────────────────────────────────────────
-DEBUG_GRID_SPACING:    int = 120            # px — coordinate grid spacing
+DEBUG_GRID_SPACING:    int = 30            # px — coordinate grid spacing
 DEBUG_CLICK_DISPLAY_S: float = 3.0         # seconds to display clicked coordinates

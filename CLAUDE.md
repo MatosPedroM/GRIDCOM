@@ -145,7 +145,7 @@ DUNM    Dunmore 220kV
 BRCK    Brackley 150kV
 STAN    Stanton 150kV
 FLDN    Feldon 150kV
-LD01-LD06   Load substations (60kV)
+LD01-LD06   Load substations (150kV)
 INTC-N      Interconnection North
 INTC-S      Interconnection South
 ```
@@ -183,7 +183,7 @@ SLFD    Feldon Solar (400MW, 150kV)
 
 ### Line Labels
 ```
-Format:  L + 2-digit number (L01, L02 ... L29)
+Format:  L + 2-digit number (L01, L02 ... L45)
 ```
 
 ### Python Naming
@@ -210,14 +210,14 @@ Type aliases:   PascalCase          (BusLabel = str, LoadingPct = float)
 
 **Slack bus:** MDBY (Midbury 400kV) — voltage angle reference (θ = 0), absorbs imbalance
 
-**Total nodes:** 32 transmission + 6 load substations = 38 nodes
+**Total nodes:** 40 transmission + 6 load substations = 46 nodes
 **Total units:** 47 generation units across all stations
-**Total lines:** 29 transmission lines
+**Total lines:** 45 transmission lines
 
 **Grid activation by shift:**
-- Shifts 1-2: 12 nodes (south sub-grid)
-- Shifts 3-4: 20 nodes (south + centre)
-- Shifts 5-10: 32 nodes (full grid)
+- Shifts 1-2:  9 buses,  8 lines, 11 units (south sub-grid)
+- Shifts 3-4: 28 buses, 29 lines, 29 units (south + centre)
+- Shifts 5-10: 40 buses, 45 lines, 47 units (full grid)
 
 **Interconnectors:** INTC-N (±800MW) and INTC-S (±600MW) — external reference buses, not part of the internal network topology
 

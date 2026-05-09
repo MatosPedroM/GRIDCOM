@@ -331,7 +331,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_ROR', rated_mw=30.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=12.0, q_min_mvar=-6.0,
-        can_pump=False, active_from_shift=5,
+        can_pump=False, active_from_shift=1,
         description='River Brent Station 1 Unit 1 — 30MW run-of-river, 150kV.'),
 
     GenerationUnit(
@@ -339,7 +339,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_ROR', rated_mw=30.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=12.0, q_min_mvar=-6.0,
-        can_pump=False, active_from_shift=5,
+        can_pump=False, active_from_shift=1,
         description='River Brent Station 1 Unit 2 — 30MW run-of-river, 150kV.'),
 
     GenerationUnit(
@@ -347,7 +347,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_ROR', rated_mw=25.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=10.0, q_min_mvar=-5.0,
-        can_pump=False, active_from_shift=5,
+        can_pump=False, active_from_shift=3,
         description='River Brent Station 2 Unit 1 — 25MW run-of-river, 150kV.'),
 
     GenerationUnit(
@@ -355,7 +355,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_ROR', rated_mw=25.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=10.0, q_min_mvar=-5.0,
-        can_pump=False, active_from_shift=5,
+        can_pump=False, active_from_shift=3,
         description='River Brent Station 2 Unit 2 — 25MW run-of-river, 150kV.'),
 
     GenerationUnit(
@@ -363,7 +363,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_ROR', rated_mw=20.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=8.0, q_min_mvar=-4.0,
-        can_pump=False, active_from_shift=5,
+        can_pump=False, active_from_shift=3,
         description='River Brent Station 3 Unit 1 — 20MW run-of-river, 150kV.'),
 
     GenerationUnit(
@@ -371,7 +371,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_ROR', rated_mw=20.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=8.0, q_min_mvar=-4.0,
-        can_pump=False, active_from_shift=5,
+        can_pump=False, active_from_shift=3,
         description='River Brent Station 3 Unit 2 — 20MW run-of-river, 150kV.'),
 
     # ── RIVER COLN CASCADE — CO01-CO03 (150kV, run-of-river) ─────────────

@@ -1,15 +1,15 @@
 """
 src/data/topology.py
 
-Complete 32-node transmission network definition for GRIDCOM.
-Defines Bus and Line dataclasses plus all 38 buses (32 transmission +
-6 load substations) and 29 transmission lines.
+Complete network definition for GRIDCOM.
+Defines Bus and Line dataclasses plus all 40 buses (32 transmission +
+2 cascade-only + 6 load substations) and 45 transmission lines.
 
 Canvas positions are in native 1920×844 pixels (the grid schematic area).
 active_from_shift controls which shifts each element is available in:
-  Shifts 1-2: 12 nodes (south sub-grid)
-  Shifts 3-4: 20 nodes (south + centre)
-  Shifts 5-10: 32 nodes (full grid)
+  Shifts 1-2:  9 buses,  8 lines  (south sub-grid: MDBY/CNTR/STHW/ASHF/RDST/DUNM/BRCK/DUND/LD01)
+  Shifts 3-4: 28 buses, 29 lines  (south + centre expansion)
+  Shifts 5-10: 40 buses, 45 lines (full grid)
 
 See GRID_TOPOLOGY_AND_DISPLAY.md for visual specification.
 See DOMAIN_GLOSSARY.md for bus type definitions.
@@ -28,7 +28,7 @@ class Bus:
         label:            4-char uppercase identifier (e.g. 'MDBY', 'CNTR')
         name:             Human-readable name for display
         voltage_kv:       Nominal voltage level (400, 220, 150, or 60)
-        bus_type:         'TRANSMISSION' or 'LOAD' (150kV load substations, shift 5+)
+        bus_type:         'TRANSMISSION' or 'LOAD' (150kV load substations)
         canvas_x:         X coordinate in native 1920×844 canvas pixels
         canvas_y:         Y coordinate in native 1920×844 canvas pixels
         active_from_shift: First shift in which this bus is active (1, 3, or 5)
@@ -81,7 +81,10 @@ class Line:
 
 BUSES: list[Bus] = [
 
-    # ── 400kV BACKBONE (Shifts 5-10) ──────────────────────────────────────
+    # ── 400kV BACKBONE ────────────────────────────────────────────────────
+    # Shift 1: MDBY, CNTR, STHW
+    # Shift 3: EAST, WEST
+    # Shift 5: NRTH
     Bus(label='MDBY', name='Midbury',      voltage_kv=400.0, bus_type='TRANSMISSION',
         canvas_x=520,  canvas_y=160, active_from_shift=1, is_slack=True),
 
@@ -100,26 +103,28 @@ BUSES: list[Bus] = [
     Bus(label='STHW', name='Southwick',    voltage_kv=400.0, bus_type='TRANSMISSION',
         canvas_x=760,  canvas_y=280, active_from_shift=1),
 
-    # ── 220kV RING — South sub-grid (Shifts 1-2) ─────────────────────────
+    # ── 220kV RING ────────────────────────────────────────────────────────
+    # Shift 1: ASHF, RDST, DUNM
+    # Shift 3: WRNT, FAIR, COAL
     Bus(label='ASHF', name='Ashford',      voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=640,  canvas_y=400, active_from_shift=1),
 
     Bus(label='WRNT', name='Wrentham',     voltage_kv=220.0, bus_type='TRANSMISSION',
-        canvas_x=1080, canvas_y=400, active_from_shift=1),
+        canvas_x=1080, canvas_y=400, active_from_shift=3),
 
     Bus(label='RDST', name='Redstone',     voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=360,  canvas_y=500, active_from_shift=1),
 
     Bus(label='FAIR', name='Fairfield',    voltage_kv=220.0, bus_type='TRANSMISSION',
-        canvas_x=860,  canvas_y=480, active_from_shift=1),
+        canvas_x=860,  canvas_y=480, active_from_shift=3),
 
     Bus(label='COAL', name='Coalton',      voltage_kv=220.0, bus_type='TRANSMISSION',
-        canvas_x=1280, canvas_y=460, active_from_shift=1),
+        canvas_x=1280, canvas_y=460, active_from_shift=3),
 
     Bus(label='DUNM', name='Dunmore',      voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=520,  canvas_y=520, active_from_shift=1),
 
-    # ── 220kV — Centre expansion (Shifts 3-4) ────────────────────────────
+    # ── 220kV — Centre expansion (Shifts 3+) ─────────────────────────────
     Bus(label='KELM', name='Kelmore',      voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=160,  canvas_y=360, active_from_shift=3),
 
@@ -138,18 +143,21 @@ BUSES: list[Bus] = [
     Bus(label='WRNG', name='Wrentham CCGT',voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=1180, canvas_y=340, active_from_shift=3),
 
-    # ── 150kV REGIONAL (Shifts 5-10) ─────────────────────────────────────
+    # ── 150kV REGIONAL ────────────────────────────────────────────────────
+    # Shift 1: BRCK
+    # Shift 3: STAN
+    # Shift 5: FLDN
     Bus(label='BRCK', name='Brackley',     voltage_kv=150.0, bus_type='TRANSMISSION',
         canvas_x=240,  canvas_y=580, active_from_shift=1),
 
     Bus(label='STAN', name='Stanton',      voltage_kv=150.0, bus_type='TRANSMISSION',
-        canvas_x=1080, canvas_y=580, active_from_shift=5),
+        canvas_x=1080, canvas_y=580, active_from_shift=3),
 
     Bus(label='FLDN', name='Feldon',       voltage_kv=150.0, bus_type='TRANSMISSION',
         canvas_x=1480, canvas_y=580, active_from_shift=5),
 
-    # ── RUN-OF-RIVER CASCADE NODES (Shifts 5-10) ─────────────────────────
-    # River Arden (220kV)
+    # ── RUN-OF-RIVER CASCADE NODES ───────────────────────────────────────
+    # River Arden (220kV) — Shift 5
     Bus(label='AR01', name='Arden 1',      voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=440,  canvas_y=620, active_from_shift=5),
 
@@ -162,17 +170,17 @@ BUSES: list[Bus] = [
     Bus(label='AR04', name='Arden 4',      voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=740,  canvas_y=660, active_from_shift=5),
 
-    # River Brent (150kV)
+    # River Brent (150kV) — Shift 3
     Bus(label='BR01', name='Brent 1',      voltage_kv=150.0, bus_type='TRANSMISSION',
-        canvas_x=300,  canvas_y=640, active_from_shift=5),
+        canvas_x=300,  canvas_y=640, active_from_shift=3),
 
     Bus(label='BR02', name='Brent 2',      voltage_kv=150.0, bus_type='TRANSMISSION',
-        canvas_x=200,  canvas_y=680, active_from_shift=5),
+        canvas_x=200,  canvas_y=680, active_from_shift=3),
 
     Bus(label='BR03', name='Brent 3',      voltage_kv=150.0, bus_type='TRANSMISSION',
-        canvas_x=140,  canvas_y=720, active_from_shift=5),
+        canvas_x=140,  canvas_y=720, active_from_shift=3),
 
-    # River Coln (150kV)
+    # River Coln (150kV) — Shift 5
     Bus(label='CO01', name='Coln 1',       voltage_kv=150.0, bus_type='TRANSMISSION',
         canvas_x=1360, canvas_y=640, active_from_shift=5),
 
@@ -182,7 +190,8 @@ BUSES: list[Bus] = [
     Bus(label='CO03', name='Coln 3',       voltage_kv=150.0, bus_type='TRANSMISSION',
         canvas_x=1540, canvas_y=720, active_from_shift=5),
 
-    # ── DOWNSTREAM HYDRO (220kV, Shifts 1-2 / 3-4) ───────────────────────
+    # ── DOWNSTREAM HYDRO (220kV) ──────────────────────────────────────────
+    # Shift 1: DUND  |  Shift 3: BARD, KELD
     Bus(label='BARD', name='Barrow Lower', voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=1680, canvas_y=460, active_from_shift=3),
 
@@ -192,12 +201,13 @@ BUSES: list[Bus] = [
     Bus(label='DUND', name='Dunmore Lower',voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=460,  canvas_y=560, active_from_shift=1),
 
-    # ── 150kV LOAD SUBSTATIONS (Shift 5+) ────────────────────────────────
+    # ── 150kV LOAD SUBSTATIONS ───────────────────────────────────────────
+    # Shift 1: LD01  |  Shift 3: LD02, LD06  |  Shift 5: LD03, LD04, LD05
     Bus(label='LD01', name='Load Sub 1',   voltage_kv=150.0, bus_type='LOAD',
         canvas_x=480,  canvas_y=760, active_from_shift=1),
 
     Bus(label='LD02', name='Load Sub 2',   voltage_kv=150.0, bus_type='LOAD',
-        canvas_x=720,  canvas_y=780, active_from_shift=5),
+        canvas_x=720,  canvas_y=780, active_from_shift=3),
 
     Bus(label='LD03', name='Load Sub 3',   voltage_kv=150.0, bus_type='LOAD',
         canvas_x=960,  canvas_y=760, active_from_shift=5),
@@ -209,12 +219,12 @@ BUSES: list[Bus] = [
         canvas_x=1440, canvas_y=760, active_from_shift=5),
 
     Bus(label='LD06', name='Load Sub 6',   voltage_kv=150.0, bus_type='LOAD',
-        canvas_x=240,  canvas_y=760, active_from_shift=5),
+        canvas_x=240,  canvas_y=760, active_from_shift=3),
 ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LINES — 29 transmission lines
+# LINES — 45 transmission lines
 #
 # Reactance values are in per-unit on S_BASE = 1000 MVA.
 # Typical values: 400kV long = 0.05-0.10 pu, 220kV = 0.08-0.15 pu, 150kV = 0.12-0.20 pu
@@ -225,7 +235,7 @@ LINES: list[Line] = [
 
     # ── 400kV BACKBONE ────────────────────────────────────────────────────
     Line(label='L01', from_bus='MDBY', to_bus='CNTR',
-         reactance_pu=0.050, rating_mw=2000.0, active_from_shift=5, voltage_kv=400.0),
+         reactance_pu=0.050, rating_mw=2000.0, active_from_shift=1, voltage_kv=400.0),
 
     Line(label='L02', from_bus='CNTR', to_bus='NRTH',
          reactance_pu=0.055, rating_mw=1800.0, active_from_shift=5, voltage_kv=400.0),
@@ -239,18 +249,18 @@ LINES: list[Line] = [
     Line(label='L05', from_bus='WEST', to_bus='STHW',
          reactance_pu=0.050, rating_mw=1600.0, active_from_shift=5, voltage_kv=400.0),
 
-    Line(label='L06', from_bus='STHW', to_bus='CNTR',
-         reactance_pu=0.045, rating_mw=1800.0, active_from_shift=5, voltage_kv=400.0),
+    Line(label='L06', from_bus='STHW', to_bus='MDBY',
+         reactance_pu=0.045, rating_mw=1800.0, active_from_shift=1, voltage_kv=400.0),
 
     Line(label='L07', from_bus='EAST', to_bus='STHW',
-         reactance_pu=0.060, rating_mw=1600.0, active_from_shift=5, voltage_kv=400.0),
+         reactance_pu=0.060, rating_mw=1600.0, active_from_shift=3, voltage_kv=400.0),
 
     # ── 400kV ↔ 220kV TRANSFORMER LINKS (modelled as low-reactance lines) ─
     Line(label='L08', from_bus='STHW', to_bus='ASHF',
          reactance_pu=0.020, rating_mw=1200.0, active_from_shift=1, voltage_kv=400.0),
 
     Line(label='L09', from_bus='CNTR', to_bus='WRNT',
-         reactance_pu=0.020, rating_mw=1200.0, active_from_shift=1, voltage_kv=400.0),
+         reactance_pu=0.020, rating_mw=1200.0, active_from_shift=3, voltage_kv=400.0),
 
     Line(label='L10', from_bus='NRTH', to_bus='COAL',
          reactance_pu=0.022, rating_mw=1000.0, active_from_shift=5, voltage_kv=400.0),
@@ -258,12 +268,12 @@ LINES: list[Line] = [
     Line(label='L11', from_bus='WEST', to_bus='RDST',
          reactance_pu=0.022, rating_mw=1000.0, active_from_shift=3, voltage_kv=400.0),
 
-    # ── 220kV SOUTH SUB-GRID (Shifts 1-2) ────────────────────────────────
+    # ── 220kV SOUTH / CENTRE ──────────────────────────────────────────────
     Line(label='L12', from_bus='ASHF', to_bus='FAIR',
-         reactance_pu=0.090, rating_mw=800.0, active_from_shift=1, voltage_kv=220.0),
+         reactance_pu=0.090, rating_mw=800.0, active_from_shift=3, voltage_kv=220.0),
 
     Line(label='L13', from_bus='FAIR', to_bus='WRNT',
-         reactance_pu=0.095, rating_mw=800.0, active_from_shift=1, voltage_kv=220.0),
+         reactance_pu=0.095, rating_mw=800.0, active_from_shift=3, voltage_kv=220.0),
 
     Line(label='L14', from_bus='ASHF', to_bus='DUNM',
          reactance_pu=0.100, rating_mw=700.0, active_from_shift=1, voltage_kv=220.0),
@@ -272,9 +282,9 @@ LINES: list[Line] = [
          reactance_pu=0.110, rating_mw=600.0, active_from_shift=1, voltage_kv=220.0),
 
     Line(label='L16', from_bus='WRNT', to_bus='COAL',
-         reactance_pu=0.085, rating_mw=800.0, active_from_shift=1, voltage_kv=220.0),
+         reactance_pu=0.085, rating_mw=800.0, active_from_shift=3, voltage_kv=220.0),
 
-    # ── 220kV CENTRE EXPANSION (Shifts 3-4) ──────────────────────────────
+    # ── 220kV CENTRE EXPANSION (Shift 3+) ────────────────────────────────
     Line(label='L17', from_bus='RDST', to_bus='KELM',
          reactance_pu=0.120, rating_mw=600.0, active_from_shift=3, voltage_kv=220.0),
 
@@ -290,26 +300,27 @@ LINES: list[Line] = [
     Line(label='L21', from_bus='ASHF', to_bus='ASHG',
          reactance_pu=0.025, rating_mw=900.0, active_from_shift=3, voltage_kv=220.0),
 
-    # ── 150kV REGIONAL (Shifts 5-10) ─────────────────────────────────────
+    # ── 150kV REGIONAL ────────────────────────────────────────────────────
+    # L22 RDST→BRCK: Shift 1  |  L23 FLDN→STAN: Shift 3  |  L24 COAL→FLDN: Shift 5
     Line(label='L22', from_bus='RDST', to_bus='BRCK',
          reactance_pu=0.150, rating_mw=450.0, active_from_shift=1, voltage_kv=150.0),
 
-    Line(label='L23', from_bus='FAIR', to_bus='STAN',
-         reactance_pu=0.140, rating_mw=450.0, active_from_shift=5, voltage_kv=150.0),
+    Line(label='L23', from_bus='FLDN', to_bus='STAN',
+         reactance_pu=0.140, rating_mw=450.0, active_from_shift=3, voltage_kv=150.0),
 
     Line(label='L24', from_bus='COAL', to_bus='FLDN',
          reactance_pu=0.145, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
 
-    # ── 150kV ↔ RIVER CASCADE FEEDERS (Shifts 5-10) ──────────────────────
-    # River Brent (150kV) — all three stations feed independently to BRCK
+    # ── 150kV ↔ RIVER CASCADE FEEDERS ────────────────────────────────────
+    # River Brent (150kV) — all three stations feed independently to BRCK (Shift 3)
     Line(label='L25', from_bus='BRCK', to_bus='BR01',
-         reactance_pu=0.160, rating_mw=350.0, active_from_shift=5, voltage_kv=150.0),
+         reactance_pu=0.160, rating_mw=350.0, active_from_shift=3, voltage_kv=150.0),
 
     Line(label='L30', from_bus='BRCK', to_bus='BR02',
-         reactance_pu=0.175, rating_mw=300.0, active_from_shift=5, voltage_kv=150.0),
+         reactance_pu=0.175, rating_mw=300.0, active_from_shift=3, voltage_kv=150.0),
 
     Line(label='L31', from_bus='BRCK', to_bus='BR03',
-         reactance_pu=0.190, rating_mw=250.0, active_from_shift=5, voltage_kv=150.0),
+         reactance_pu=0.190, rating_mw=250.0, active_from_shift=3, voltage_kv=150.0),
 
     # River Arden (220kV) — AR01/AR02 feed to DUNM, AR03 to FAIR, AR04 to STAN
     Line(label='L26', from_bus='STAN', to_bus='AR04',
@@ -334,12 +345,14 @@ LINES: list[Line] = [
     Line(label='L36', from_bus='FLDN', to_bus='CO03',
          reactance_pu=0.185, rating_mw=250.0, active_from_shift=5, voltage_kv=150.0),
 
-    # ── 150kV LOAD SUBSTATION FEEDERS (Shift 5+) ─────────────────────────
+    # ── 150kV LOAD SUBSTATION FEEDERS ────────────────────────────────────
+    # L37 BRCK→LD01: Shift 1  |  L38 STAN→LD02, L42 BRCK→LD06: Shift 3
+    # L39/L40 STAN→LD03/LD04, L41 FLDN→LD05: Shift 5
     Line(label='L37', from_bus='BRCK', to_bus='LD01',
          reactance_pu=0.080, rating_mw=400.0, active_from_shift=1, voltage_kv=150.0),
 
     Line(label='L38', from_bus='STAN', to_bus='LD02',
-         reactance_pu=0.085, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
+         reactance_pu=0.085, rating_mw=400.0, active_from_shift=3, voltage_kv=150.0),
 
     Line(label='L39', from_bus='STAN', to_bus='LD03',
          reactance_pu=0.075, rating_mw=400.0, active_from_shift=5, voltage_kv=150.0),
@@ -351,14 +364,14 @@ LINES: list[Line] = [
          reactance_pu=0.080, rating_mw=350.0, active_from_shift=5, voltage_kv=150.0),
 
     Line(label='L42', from_bus='BRCK', to_bus='LD06',
-         reactance_pu=0.070, rating_mw=300.0, active_from_shift=5, voltage_kv=150.0),
+         reactance_pu=0.070, rating_mw=300.0, active_from_shift=3, voltage_kv=150.0),
 
     # ── DOWNSTREAM HYDRO CONNECTIONS ─────────────────────────────────────
     Line(label='L28', from_bus='DUNM', to_bus='DUND',
          reactance_pu=0.080, rating_mw=200.0, active_from_shift=1, voltage_kv=220.0),
 
     Line(label='L29', from_bus='SLST', to_bus='STAN',
-         reactance_pu=0.075, rating_mw=500.0, active_from_shift=5, voltage_kv=220.0),
+         reactance_pu=0.075, rating_mw=500.0, active_from_shift=3, voltage_kv=220.0),
 
     # ── ISOLATED BUS FEEDERS (shift 3) ───────────────────────────────────
     Line(label='L43', from_bus='BARR', to_bus='BARD',

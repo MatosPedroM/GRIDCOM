@@ -111,16 +111,16 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
   ✓ src/utils/helpers.py       — resource_path()
   ✓ src/simulation/constants.py — all constants (debug, physics, display, timing)
   ✓ src/display/palette.py     — all colour constants
-  ✓ src/data/topology.py       — Bus + Line dataclasses, 40 buses, 29 lines
+  ✓ src/data/topology.py       — Bus + Line dataclasses, 40 buses, 45 lines
   ✓ src/data/fleet.py          — GenerationUnit dataclass, 47 units
   ✓ src/data/profiles.py       — demand/wind/solar profiles, 10 ShiftSpecs
   ✓ src/simulation/grid.py     — Grid class (full public interface per API contract)
   ✓ tests/test_simulation.py   — test_grid_loads() — PASS
 
   Grid sizes by shift:
-    Shift 1: 15 buses, 8 lines, 9 units
-    Shift 3: 26 buses, 14 lines, 23 units
-    Shift 5: 40 buses, 29 lines, 47 units
+    Shift 1:  9 buses,  8 lines, 11 units
+    Shift 3: 28 buses, 29 lines, 29 units
+    Shift 5: 40 buses, 45 lines, 47 units
 
 STAGE 2 — DC LOAD FLOW SOLVER (complete, validated)
   ✓ src/simulation/loadflow.py — DCLoadFlow class + LoadFlowResult

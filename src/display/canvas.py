@@ -159,7 +159,7 @@ class GridCanvas:
                 line_loading[lbl] = pct
             for lbl, status in state.line_status.items():
                 line_tripped[lbl] = (status == 'TRIPPED')
-            blacked = state.blackout_buses
+            blacked = state.blackout_zones
             for b in self._buses:
                 bus_blacked[b.label] = (b.label in blacked)
             unit_states  = state.unit_states

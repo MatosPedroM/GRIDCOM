@@ -26,6 +26,7 @@ import pygame.freetype
 
 from display.canvas import GridCanvas
 from display.editor import GridEditor
+from display.animation import FlowAnimator
 from display.panels import (
     draw_frequency_panel, draw_power_panel,
     draw_dispatch_panel, draw_alarm_panel,
@@ -80,6 +81,10 @@ class Renderer:
 
         self._canvas = GridCanvas(shift=shift, font=self._font)
         self._editor = GridEditor(self._canvas)
+        self._flow   = FlowAnimator()
+
+        # Grid reference for dispatch panel (set by main via set_grid)
+        self._grid = None
 
         self._blink_timer: float = 0.0
         self._blink_on:    bool  = True
@@ -101,11 +106,26 @@ class Renderer:
 
     # ─── Per-frame entry point ────────────────────────────────────────────────
 
+    def set_grid(self, grid) -> None:
+        """Store the Grid reference used by the dispatch panel."""
+        self._grid = grid
+
+    def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:
+        """Route mouse wheel to dispatch or alarm panel based on native-space position."""
+        if pos[1] < CANVAS_HEIGHT:
+            return
+        nx = pos[0]
+        if PANEL_DISPATCH_X <= nx < PANEL_DISPATCH_X + PANEL_DISPATCH_W:
+            self._dispatch_scroll = max(0, self._dispatch_scroll - delta)
+        elif PANEL_ALARM_X <= nx < PANEL_ALARM_X + PANEL_ALARM_W:
+            self._alarm_scroll = max(0, self._alarm_scroll - delta)
+
     def tick(
         self,
-        dt_real_s: float,
+        dt_real_s:  float,
         state=None,
         selected_label: str | None = None,
+        speed_mult: float = 1.0,
     ) -> None:
         """
         Render one frame.
@@ -114,6 +134,7 @@ class Renderer:
             dt_real_s:      Real-time delta in seconds since last frame.
             state:          Current SimulationState, or None for static view.
             selected_label: Currently selected bus/unit label, or None.
+            speed_mult:     Current simulation speed multiplier (for flow markers).
         """
         # Update blink phases
         self._blink_timer += dt_real_s
@@ -137,6 +158,12 @@ class Renderer:
             selected_label=selected_label,
         )
 
+        # ── Flow markers (drawn on top of canvas) ─────────────────────────────
+        if state is not None:
+            self._flow.update(dt_real_s, speed_mult)
+            self._flow.draw(self._canvas_surf, state,
+                            self._canvas._bus_map, self._canvas._lines)
+
         # ── Draw instrument strip panels ──────────────────────────────────────
         freq_surf     = self._strip_surf.subsurface(
             pygame.Rect(PANEL_FREQ_X,     0, PANEL_FREQ_W,     STRIP_HEIGHT))
@@ -147,10 +174,12 @@ class Renderer:
         alarm_surf    = self._strip_surf.subsurface(
             pygame.Rect(PANEL_ALARM_X,    0, PANEL_ALARM_W,    STRIP_HEIGHT))
 
-        draw_frequency_panel(freq_surf,     self._font, self._blink_on)
-        draw_power_panel(power_surf,        self._font)
-        draw_dispatch_panel(dispatch_surf,  self._font, self._blink_on,     self._dispatch_scroll)
-        draw_alarm_panel(alarm_surf,        self._font, self._blink_2hz_on, self._alarm_scroll)
+        draw_frequency_panel(freq_surf,     self._font, self._blink_on,     state)
+        draw_power_panel(power_surf,        self._font,                     state)
+        draw_dispatch_panel(dispatch_surf,  self._font, self._blink_on,     state,
+                            self._grid, self._dispatch_scroll)
+        draw_alarm_panel(alarm_surf,        self._font, self._blink_2hz_on, state,
+                         self._alarm_scroll)
 
         # ── Editor overlay ────────────────────────────────────────────────────
         if _sim_const.EDITOR_MODE:

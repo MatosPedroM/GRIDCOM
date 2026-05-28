@@ -246,7 +246,7 @@ class Renderer:
         state = sim.get_state()
         if state is None:
             return
-        if state.line_status.get(line.label) != 'IN SERVICE':
+        if state.line_status.get(line.label) != 'IN_SERVICE':
             return
         sim.trip_line(line.label)
         self._line_cmd_active = False
@@ -491,9 +491,10 @@ class Renderer:
                 tb = self._canvas._bus_map.get(line.to_bus)
                 if fb is None or tb is None:
                     continue
-                dist = _point_segment_dist(nx, ny,
-                                           fb.canvas_x, fb.canvas_y,
-                                           tb.canvas_x, tb.canvas_y)
+                bx, by = fb.canvas_x, tb.canvas_y  # bend point: vertical-first routing
+                d1 = _point_segment_dist(nx, ny, fb.canvas_x, fb.canvas_y, bx, by)
+                d2 = _point_segment_dist(nx, ny, bx, by, tb.canvas_x, tb.canvas_y)
+                dist = min(d1, d2)
                 if dist <= _LINE_HIT_PX and dist < best_dist:
                     best_dist  = dist
                     best_label = line.label

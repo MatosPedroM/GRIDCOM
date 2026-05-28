@@ -256,12 +256,12 @@ def draw_line_context(
     sz  = FONT_SIZE_CONTEXT
 
     if state is not None:
-        line_status = state.line_status.get(line.label, 'IN SERVICE')
+        line_status = state.line_status.get(line.label, 'IN_SERVICE')
     else:
         line_status = None
 
     # Button row shown when status is known (IN SERVICE → TRIP, TRIPPED → CLOSE)
-    show_btn = line_status in ('IN SERVICE', 'TRIPPED')
+    show_btn = line_status in ('IN_SERVICE', 'TRIPPED')
     n_rows   = 6 + (1 if show_btn else 0)  # from/to + voltage + rating + flow + loading + status [+ button]
     panel_h  = CONTEXT_OVERLAY_HDR_H + n_rows * CONTEXT_OVERLAY_ROW_H + pad * 2
 
@@ -336,24 +336,27 @@ def draw_line_context(
 
     # ── Row 5: Status ─────────────────────────────────────────────────────────
     font.render_to(surf, (x + pad, _ry(5)), 'Status:', COL_TEXT_PRIMARY, size=sz)
-    status     = line_status if line_status is not None else '--'
-    if status == 'TRIPPED':
-        status_col = COL_LINE_TRIPPED
-    elif status == 'IN SERVICE':
-        status_col = COL_UNIT_ONLINE
+    status_raw = line_status if line_status is not None else '--'
+    if status_raw == 'TRIPPED':
+        status_col  = COL_LINE_TRIPPED
+        status_disp = 'TRIPPED'
+    elif status_raw == 'IN_SERVICE':
+        status_col  = COL_UNIT_ONLINE
+        status_disp = 'IN SERVICE'
     else:
-        status_col = COL_TEXT_DIM
-    status_rect = font.get_rect(status, size=sz)
-    font.render_to(surf, (x + w - pad - status_rect.width, _ry(5)), status, status_col, size=sz)
+        status_col  = COL_TEXT_DIM
+        status_disp = status_raw
+    status_rect = font.get_rect(status_disp, size=sz)
+    font.render_to(surf, (x + w - pad - status_rect.width, _ry(5)), status_disp, status_col, size=sz)
 
     # ── Row 6: TRIP / CLOSE button ────────────────────────────────────────────
     if show_btn:
-        if line_status == 'IN SERVICE':
-            btn_label  = '[ TRIP ]'
+        if line_status == 'IN_SERVICE':
+            btn_label  = '[ T ] TRIP'
             border_col = COL_ALARM_CRIT if cmd_active else COL_PANEL_BORDER
             text_col   = COL_ALARM_CRIT
         else:
-            btn_label  = '[ CLOSE ]'
+            btn_label  = '[ C ] CLOSE'
             border_col = COL_UNIT_ONLINE if cmd_active else COL_PANEL_BORDER
             text_col   = COL_UNIT_ONLINE
 

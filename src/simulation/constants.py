@@ -29,6 +29,11 @@ V_NOMINAL_150: float = 150.0    # kV
 V_NOMINAL_60:  float = 60.0     # kV
 
 # ─────────────────────────────────────────────
+# NETWORK TOPOLOGY
+# ─────────────────────────────────────────────
+SLACK_BUS: str = 'MDBY'         # Slack bus — voltage angle reference (θ = 0)
+
+# ─────────────────────────────────────────────
 # LOAD FLOW NUMERICAL
 # ─────────────────────────────────────────────
 YSHUNT_REG:  float = 1e-6   # DC load flow B matrix: diagonal shunt for numerical stability
@@ -187,8 +192,8 @@ SPEED_VERY_FAST: float = 10.00
 # ─────────────────────────────────────────────
 # DEMAND NOISE
 # ─────────────────────────────────────────────
-DEMAND_NOISE_STD_FRACTION: float = 0.0001    # Std dev of demand noise as fraction of mean
-DEMAND_NOISE_UPDATE_S:     float = 120.0     # Simulated seconds between noise re-samples
+DEMAND_NOISE_STD_FRACTION: float = 0.000001    # Std dev of demand noise as fraction of mean
+DEMAND_NOISE_UPDATE_S:     float = 60.0     # Simulated seconds between noise re-samples
 WIND_NOISE_STD_FRACTION:   float = 0.03     # Wind forecast noise
 SOLAR_NOISE_STD_FRACTION:  float = 0.01     # Solar forecast noise (small)
 

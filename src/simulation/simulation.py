@@ -34,6 +34,7 @@ from simulation.constants import (
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION,
     AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ,
+    SLACK_BUS,
 )
 import simulation.constants as _sim_const
 from simulation.grid import Grid
@@ -337,9 +338,10 @@ class GridSimulation:
             lf_result = self._loadflow.solve(p_injections)
             vr_result = self._voltage.solve(q_injections, pv_buses=pv_buses)
 
-        # 11. Island detection
-        islands      = self._cascade.find_islands(self._grid.get_active_buses(),
-                                                   in_service)
+        # 11. Island detection and isolated unit protection
+        self._trip_isolated_units(in_service)
+        islands        = self._cascade.find_islands(self._grid.get_active_buses(),
+                                                     in_service)
         blackout_zones = self._cascade.get_blackout_zones(islands, self._grid)
 
         # 12. Alarms
@@ -404,6 +406,7 @@ class GridSimulation:
             element_label=line_label,
             detail=f'Operator manually opened line {line_label}.',
         )
+        self._trip_isolated_units(in_service)
         return True
 
     def close_line(self, line_label: str) -> bool:
@@ -622,6 +625,30 @@ class GridSimulation:
             l for l in self._grid.get_active_lines()
             if self._line_in_service.get(l.label, True)
         ]
+
+    def _trip_isolated_units(self, in_service: list) -> None:
+        """Trip any non-OFFLINE unit whose bus has been cut off from the slack bus."""
+        islands = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
+        if len(islands) <= 1:
+            return
+        slack_island = next((isl for isl in islands if SLACK_BUS in isl), None)
+        if slack_island is None:
+            return
+        for unit in self._grid.get_active_units():
+            if unit.bus_label not in slack_island:
+                model = self._fleet._units.get(unit.label)
+                if model is not None and model.state != 'OFFLINE':
+                    self._fleet.trip_unit(unit.label)
+                    self._raise_alarm(
+                        priority='CRITICAL',
+                        message=f'{unit.label} tripped — isolated from grid',
+                        element_label=unit.label,
+                        detail=(f'Unit {unit.label} lost grid connection '
+                                f'after line trip. Protection relay operated.'),
+                    )
+                    if DEBUG_SIMULATION:
+                        print(f'[CASCADE] {unit.label} tripped — isolated '
+                              f'at t={self._sim_time_min:.1f} min')
 
     # ─────── ALARM MANAGEMENT ─────────────────────────────────────────────
 

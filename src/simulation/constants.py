@@ -163,13 +163,17 @@ CONTEXT_OVERLAY_HDR_H: int = 18    # header row height
 # INSTRUMENT STRIP PANEL LAYOUT
 # ─────────────────────────────────────────────
 PANEL_FREQ_X:     int = 0
-PANEL_FREQ_W:     int = 280
-PANEL_POWER_X:    int = 280
-PANEL_POWER_W:    int = 280
-PANEL_DISPATCH_X: int = 560
-PANEL_DISPATCH_W: int = 640
-PANEL_ALARM_X:    int = 1200
-PANEL_ALARM_W:    int = 720
+PANEL_FREQ_W:     int = 240
+PANEL_POWER_X:    int = 240
+PANEL_POWER_W:    int = 240
+PANEL_DISPATCH_X:  int = 480
+PANEL_DISPATCH_W:  int = 280
+PANEL_FORECAST_X:  int = 760
+PANEL_FORECAST_W:  int = 360
+PANEL_GENMIX_X:    int = 1120
+PANEL_GENMIX_W:    int = 260
+PANEL_ALARM_X:     int = 1380
+PANEL_ALARM_W:     int = 540
 
 # ─────────────────────────────────────────────
 # SIMULATION SPEED MULTIPLIERS

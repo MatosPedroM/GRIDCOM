@@ -27,6 +27,9 @@ from display.palette import (
     COL_UNIT_ONLINE, COL_UNIT_STARTING, COL_UNIT_OFFLINE,
     COL_UNIT_TRIPPED, COL_UNIT_SHUTDOWN,
     COL_ALARM_CRIT, COL_ALARM_WARN, COL_ALARM_INFO, COL_ALARM_ACK,
+    COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
+    COL_UNIT_HYDRO, COL_UNIT_WIND, COL_UNIT_SOLAR,
+    COL_FORECAST_DEMAND, COL_FORECAST_NETLOAD, COL_FORECAST_NETDEMAND,
 )
 from simulation.constants import (
     STRIP_HEIGHT,
@@ -348,3 +351,203 @@ def draw_alarm_panel(
     rect = font.get_rect(hint, size=FONT_SIZE_PANEL)
     font.render_to(surf, (w - rect.width - _PAD, 4),
                    hint, COL_TEXT_DIM, size=FONT_SIZE_PANEL)
+
+
+# ── Generation Mix panel ───────────────────────────────────────────────────────
+
+_FUEL_ORDER = ('NUCLEAR', 'COAL', 'CCGT', 'HYDRO', 'HYDRO_ROR', 'HYDRO_PUMP', 'WIND', 'SOLAR')
+
+_FUEL_LABELS = {
+    'NUCLEAR':   'NUC',
+    'COAL':      'COAL',
+    'CCGT':      'CCGT',
+    'HYDRO':     'HYD',
+    'HYDRO_ROR': 'ROR',
+    'HYDRO_PUMP':'PMP',
+    'WIND':      'WIND',
+    'SOLAR':     'SOL',
+}
+
+_FUEL_COLOURS = {
+    'NUCLEAR':   COL_UNIT_NUCLEAR,
+    'COAL':      COL_UNIT_COAL,
+    'CCGT':      COL_UNIT_CCGT,
+    'HYDRO':     COL_UNIT_HYDRO,
+    'HYDRO_ROR': COL_UNIT_HYDRO,
+    'HYDRO_PUMP':COL_UNIT_HYDRO,
+    'WIND':      COL_UNIT_WIND,
+    'SOLAR':     COL_UNIT_SOLAR,
+}
+
+_FALLBACK_MIX = {
+    'NUCLEAR': 0.0,
+    'COAL':    0.0,
+    'CCGT':    0.0,
+    'HYDRO':   0.0,
+    'WIND':    0.0,
+    'SOLAR':   0.0,
+}
+
+_BAR_MAX_W = 60    # px — maximum bar width for 100% share
+
+
+def draw_genmix_panel(
+    surf: pygame.Surface,
+    font: pygame.freetype.Font,
+    state,
+) -> None:
+    """Generation mix panel: one row per active fuel type, MW + % + mini bar."""
+
+    mix: dict = state.gen_mix_mw if state is not None else _FALLBACK_MIX
+    total_mw = sum(mix.values())
+
+    _fill_panel(surf)
+    _header(surf, font, 'GEN MIX')
+    _right_border(surf)
+
+    w = surf.get_width()
+
+    label_x = _PAD
+    mw_x    = label_x + 36
+    pct_x   = mw_x + 52
+    bar_x   = pct_x + 36
+
+    for i, fuel in enumerate(_FUEL_ORDER):
+        mw = mix.get(fuel, 0.0)
+        if mw <= 0.0 and state is not None:
+            continue
+        y   = _row_y(i)
+        col = _FUEL_COLOURS.get(fuel, COL_TEXT_SECONDARY)
+
+        lbl = _FUEL_LABELS.get(fuel, fuel[:4])
+        font.render_to(surf, (label_x, y), lbl, col, size=FONT_SIZE_PANEL)
+
+        if state is not None:
+            mw_str = f'{mw:.0f}'
+            pct    = (mw / total_mw * 100.0) if total_mw > 0.0 else 0.0
+            pct_str = f'{pct:.0f}%'
+            bar_w   = int(_BAR_MAX_W * pct / 100.0)
+        else:
+            mw_str  = '---'
+            pct_str = '--%'
+            bar_w   = 0
+
+        font.render_to(surf, (mw_x,  y), mw_str,  COL_TEXT_VALUE,     size=FONT_SIZE_PANEL)
+        font.render_to(surf, (pct_x, y), pct_str, COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
+
+        if bar_w > 0:
+            pygame.draw.rect(surf, col, pygame.Rect(bar_x, y + 1, bar_w, _BAR_H))
+
+
+# ── Forecast Load panel ────────────────────────────────────────────────────────
+
+def draw_forecast_panel(surf: pygame.Surface, font: pygame.freetype.Font, state) -> None:
+    """
+    Draw the Forecast Load panel in the instrument strip.
+
+    Shows demand bars (blue-grey), net-load-after-renewables bars (amber),
+    and a red polyline for gross demand (Net Demand line).
+    Bar slots have a 10% inter-bar gap.
+    """
+    _fill_panel(surf)
+    _right_border(surf)
+    _header(surf, font, 'FORECAST LOAD')
+
+    w = surf.get_width()
+    h = surf.get_height()
+
+    legend_h = 14
+    pad = _PAD
+    chart_top    = _HEADER_H + pad
+    chart_bottom = h - legend_h - pad - 2
+    chart_h      = chart_bottom - chart_top
+    chart_left   = pad + 4
+    chart_right  = w - pad
+
+    if state is None:
+        return
+
+    demand_fc = state.demand_forecast_mw
+    wind_fc   = state.wind_forecast_mw
+    solar_fc  = state.solar_forecast_mw
+
+    if not demand_fc:
+        return
+
+    hours = sorted(demand_fc.keys())
+    if not hours:
+        return
+
+    # Aggregate renewables per hour
+    ren_by_hour: dict = {}
+    for unit_data in wind_fc.values():
+        for hh, mw in unit_data.items():
+            ren_by_hour[hh] = ren_by_hour.get(hh, 0.0) + mw
+    for unit_data in solar_fc.values():
+        for hh, mw in unit_data.items():
+            ren_by_hour[hh] = ren_by_hour.get(hh, 0.0) + mw
+
+    demand_vals  = [demand_fc[hh]                                          for hh in hours]
+    netload_vals = [max(0.0, demand_fc[hh] - ren_by_hour.get(hh, 0.0))    for hh in hours]
+
+    max_mw = max(demand_vals) if demand_vals else 1.0
+    if max_mw <= 0.0:
+        max_mw = 1.0
+
+    n       = len(hours)
+    chart_w = chart_right - chart_left
+    slot_w  = max(1, chart_w // n)
+    bar_w   = max(1, int(slot_w * 0.9))
+
+    # Demand and net-load bars
+    for i, hh in enumerate(hours):
+        x = chart_left + i * slot_w
+
+        d_h  = int(demand_vals[i]  / max_mw * chart_h)
+        nl_h = int(netload_vals[i] / max_mw * chart_h)
+
+        if d_h > 0:
+            pygame.draw.rect(surf, COL_FORECAST_DEMAND,
+                             pygame.Rect(x, chart_bottom - d_h, bar_w, d_h))
+        if nl_h > 0:
+            pygame.draw.rect(surf, COL_FORECAST_NETLOAD,
+                             pygame.Rect(x, chart_bottom - nl_h, bar_w, nl_h))
+
+    # Net Demand polyline (red) — connects midpoints of each demand slot
+    if n >= 2:
+        points = []
+        for i, hh in enumerate(hours):
+            px = chart_left + i * slot_w + bar_w // 2
+            py = chart_bottom - int(demand_vals[i] / max_mw * chart_h)
+            points.append((px, py))
+        pygame.draw.lines(surf, COL_FORECAST_NETDEMAND, False, points, 1)
+
+    # Current-time cursor
+    cur_hour = state.sim_hour
+    if hours[0] <= cur_hour <= hours[-1]:
+        frac  = (cur_hour - hours[0]) / (hours[-1] - hours[0]) if hours[-1] != hours[0] else 0.0
+        cur_x = chart_left + int(frac * chart_w)
+        pygame.draw.line(surf, COL_TEXT_SECONDARY,
+                         (cur_x, chart_top), (cur_x, chart_bottom), 1)
+
+    # Hour labels — every ~8th slot to avoid crowding
+    step = max(1, n // 8)
+    for i in range(0, n, step):
+        x   = chart_left + i * slot_w
+        lbl = f'{int(hours[i]):02d}'
+        font.render_to(surf, (x, chart_bottom + 2), lbl,
+                       COL_TEXT_DIM, size=FONT_SIZE_PANEL)
+
+    # Legend
+    lx = pad
+    ly = h - legend_h + 1
+    pygame.draw.rect(surf, COL_FORECAST_DEMAND,   pygame.Rect(lx,      ly, 8, 6))
+    font.render_to(surf, (lx + 10, ly - 1), 'DEMAND',
+                   COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
+    pygame.draw.rect(surf, COL_FORECAST_NETLOAD,  pygame.Rect(lx + 72, ly, 8, 6))
+    font.render_to(surf, (lx + 82, ly - 1), 'NET LOAD',
+                   COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
+    pygame.draw.line(surf, COL_FORECAST_NETDEMAND,
+                     (lx + 158, ly + 3), (lx + 166, ly + 3), 1)
+    font.render_to(surf, (lx + 170, ly - 1), 'NET DEMAND',
+                   COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)

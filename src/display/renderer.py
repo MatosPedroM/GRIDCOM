@@ -31,16 +31,21 @@ from display.animation import FlowAnimator
 from display.panels import (
     draw_frequency_panel, draw_power_panel,
     draw_dispatch_panel, draw_alarm_panel,
+    draw_genmix_panel, draw_forecast_panel,
 )
-from display.palette import COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID, COL_TEXT_DIM
+from display.palette import (
+    COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID, COL_TEXT_DIM,
+)
 import simulation.constants as _sim_const
 from simulation.constants import (
     CANVAS_HEIGHT, STRIP_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
-    FONT_SIZE_OVERLAY,
+    FONT_SIZE_PANEL, FONT_SIZE_OVERLAY,
     PANEL_FREQ_X, PANEL_FREQ_W,
     PANEL_POWER_X, PANEL_POWER_W,
     PANEL_DISPATCH_X, PANEL_DISPATCH_W,
+    PANEL_FORECAST_X, PANEL_FORECAST_W,
+    PANEL_GENMIX_X, PANEL_GENMIX_W,
     PANEL_ALARM_X, PANEL_ALARM_W,
     FLOW_ANIMATION,
 )
@@ -324,6 +329,10 @@ class Renderer:
             pygame.Rect(PANEL_POWER_X,    0, PANEL_POWER_W,    STRIP_HEIGHT))
         dispatch_surf = self._strip_surf.subsurface(
             pygame.Rect(PANEL_DISPATCH_X, 0, PANEL_DISPATCH_W, STRIP_HEIGHT))
+        forecast_surf = self._strip_surf.subsurface(
+            pygame.Rect(PANEL_FORECAST_X, 0, PANEL_FORECAST_W, STRIP_HEIGHT))
+        genmix_surf   = self._strip_surf.subsurface(
+            pygame.Rect(PANEL_GENMIX_X,   0, PANEL_GENMIX_W,   STRIP_HEIGHT))
         alarm_surf    = self._strip_surf.subsurface(
             pygame.Rect(PANEL_ALARM_X,    0, PANEL_ALARM_W,    STRIP_HEIGHT))
 
@@ -332,6 +341,8 @@ class Renderer:
         draw_power_panel(power_surf,        self._font,                     state)
         draw_dispatch_panel(dispatch_surf,  self._font, self._blink_on,     state,
                             self._grid, self._dispatch_scroll)
+        draw_forecast_panel(forecast_surf,  self._font,                     state)
+        draw_genmix_panel(genmix_surf,      self._font,                     state)
         draw_alarm_panel(alarm_surf,        self._font, self._blink_2hz_on, state,
                          self._alarm_scroll)
 

@@ -159,6 +159,13 @@ COL_EDITOR_CLEAN:     Colour = (60, 80, 100)    # Save indicator — all saved
 COL_EDITOR_HIGHLIGHT: Colour = (255, 255, 100)  # Hovered / dragged element ring
 
 # ─────────────────────────────────────────────
+# FORECAST OVERLAY
+# ─────────────────────────────────────────────
+COL_FORECAST_DEMAND:    Colour = (70, 80, 100)    # Demand bars — muted blue-grey
+COL_FORECAST_NETLOAD:   Colour = (200, 140, 40)   # Net load bars — amber
+COL_FORECAST_NETDEMAND: Colour = (220, 50, 50)    # Net demand line — red
+
+# ─────────────────────────────────────────────
 # UNIT CONTEXT OVERLAY
 # ─────────────────────────────────────────────
 COL_CONTEXT_FIELD_BG:     Colour = (18, 28, 36)   # Input field background

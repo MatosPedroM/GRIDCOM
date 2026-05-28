@@ -6,13 +6,21 @@
 
 ## Current Stage
 
-**STAGE 19 — AGC Debug Indicator + Input + Demand Noise Smoothing**
+**STAGE 20 — Generation Mix Panel + Forecast Load Overlay**
 
 ## Current Status
 
-**COMPLETE** — AGC ON/OFF in debug overlay; digit input fixed (0–4 no longer stolen by speed keys); demand noise re-sampled every 60 sim-seconds instead of every tick; speed keys simplified to P/Space toggle; F12 added as editor mode shortcut; 9/9 tests pass.
+**COMPLETE** — GEN MIX panel added to strip (between DISPATCH and ALARMS); FORECAST LOAD chart drawn as fixed canvas overlay top-right; 9/9 tests pass.
 
 ## Session Log
+
+### Session 21 (Stage 20 — Generation Mix Panel + Forecast Load Overlay)
+- Edited: `src/simulation/constants.py` — resized PANEL_FREQ/POWER/DISPATCH/ALARM_W to make room; added PANEL_GENMIX_X/W (1000/260); added FORECAST_OVERLAY_W/H/PAD constants
+- Edited: `src/simulation/simulation.py` — added `gen_mix_mw: dict` field to `SimulationState`; populated in `_build_state()` by summing ONLINE unit outputs per fuel type
+- Edited: `src/display/palette.py` — added `COL_FORECAST_DEMAND` and `COL_FORECAST_NETLOAD`
+- Edited: `src/display/panels.py` — added `draw_genmix_panel()`: one row per active fuel type (NUCLEAR/COAL/CCGT/HYDRO/ROR/PUMP/WIND/SOLAR), MW + % + mini coloured bar; reuses existing COL_UNIT_* type colours
+- Edited: `src/display/renderer.py` — added PANEL_GENMIX_* and FORECAST_OVERLAY_* imports; added GEN MIX subsurface + draw call in strip; added `_draw_forecast_overlay()` method drawing demand bars + net-load bars + current-time cursor + legend on canvas top-right
+- Validated: 9/9 tests pass; visual check confirms both panels render correctly
 
 ### Session 20 (Stage 19 — AGC Debug Indicator + Input Fix + Demand Noise Smoothing)
 - Edited: `src/simulation/constants.py` — added `DEMAND_NOISE_UPDATE_S = 60.0` (simulated seconds between noise re-samples)
@@ -280,6 +288,13 @@ STAGE 17 — STABLE STARTING STATE FOR GAMEPLAY TESTING (complete, validated)
                                    _update_voltage_alarms() edge-triggered; _update_frequency_alarms()
                                    edge-triggered via state machine
 
+STAGE 20 — GENERATION MIX PANEL + FORECAST LOAD OVERLAY (complete, validated)
+  ✓ src/simulation/constants.py  — PANEL_GENMIX_X/W; FORECAST_OVERLAY_W/H/PAD; resized existing panels
+  ✓ src/simulation/simulation.py — gen_mix_mw field in SimulationState; populated in _build_state()
+  ✓ src/display/palette.py       — COL_FORECAST_DEMAND, COL_FORECAST_NETLOAD
+  ✓ src/display/panels.py        — draw_genmix_panel(): fuel-type rows, MW + % + mini bars
+  ✓ src/display/renderer.py      — GEN MIX subsurface in strip; _draw_forecast_overlay() on canvas
+
 STAGE 19 — AGC DEBUG INDICATOR + INPUT FIX + DEMAND NOISE SMOOTHING (complete, validated)
   ✓ src/simulation/constants.py  — DEMAND_NOISE_UPDATE_S = 60.0 simulated seconds
   ✓ src/simulation/demand.py     — noise held constant between re-samples (every 60 sim-s)
@@ -313,7 +328,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 18 complete.
+Nothing. Stage 20 complete.
 
 ---
 
@@ -333,10 +348,10 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 20 — TBD**
+**Stage 21 — TBD**
 
-Grid is now fully playable with stable frequency, correct dispatch input, and visible AGC status.
-Suggested candidates for Stage 20:
+Grid now shows generation mix and forecast load at all times.
+Suggested candidates for Stage 21:
 - Line trip/close commands (operator-initiated outage management — T/C keys on selected line)
 - Crisis auto-forcing (speed forced to slow when crisis condition triggers)
 - Interconnector flow display and target control
@@ -378,6 +393,7 @@ None.
 | 17 | Shift 1 handover schedule; voltage/frequency alarm deduplication; 9/9 pass | PASS | 2026-05-27 |
 | 18 | Phantom droop removed; AGC integrator + Ctrl+A toggle; 9/9 pass | PASS | 2026-05-27 |
 | 19 | AGC debug indicator; digit input fix; demand noise smoothed; P=pause toggle; 9/9 pass | PASS | 2026-05-27 |
+| 20 | GEN MIX strip panel; FORECAST LOAD canvas overlay; 9/9 pass | PASS | 2026-05-28 |
 
 ---
 

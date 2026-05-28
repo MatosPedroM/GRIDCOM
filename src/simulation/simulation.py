@@ -106,6 +106,9 @@ class SimulationState:
     reservoir_levels:        dict
     pumped_storage_modes:    dict
 
+    # Generation mix by fuel type (ONLINE units only)
+    gen_mix_mw:              dict   # {unit_type: total_mw}
+
     # Forecasts
     demand_forecast_mw:      dict
     wind_forecast_mw:        dict
@@ -817,6 +820,15 @@ class GridSimulation:
             'bus_types':        {lbl: d['bus_type']        for lbl, d in raw_snap.items()},
         }
 
+        # Generation mix by fuel type (online units only)
+        gen_mix: dict = {}
+        for unit in self._grid.get_active_units():
+            if snap['states'].get(unit.label) == 'ONLINE':
+                gen_mix[unit.unit_type] = (
+                    gen_mix.get(unit.unit_type, 0.0)
+                    + snap['outputs_mw'].get(unit.label, 0.0)
+                )
+
         # Demand + renewable forecasts for remaining shift
         end_hour = self._start_hour + self._duration_minutes / 60.0
         demand_fc = self._demand.forecast_by_hour(sim_hour, end_hour, step=0.5)
@@ -876,6 +888,8 @@ class GridSimulation:
             unit_bus_types=snap['bus_types'],
             reservoir_levels={},
             pumped_storage_modes={},
+
+            gen_mix_mw=gen_mix,
 
             demand_forecast_mw=demand_fc,
             wind_forecast_mw=wind_fc,

@@ -746,13 +746,9 @@ def test_frequency_model() -> bool:
             print(f"  Surplus direction: FAIL — {e}")
             all_passed = False
 
-        # ── Droop response reduces deviation over sustained imbalance ──────
+        # ── Honest swing equation: constant df/dt under constant imbalance ──
         try:
             fm3 = FrequencyModel()
-            # Run for many ticks with a sustained deficit.
-            # Droop adds a corrective P term proportional to -Δf,
-            # so as f falls, droop partially counteracts further decline.
-            # The frequency should not fall as fast after the first few ticks.
             online_units = [('COAL', 3000.0), ('CCGT', 2000.0)]
             rates = []
             for _ in range(20):
@@ -765,16 +761,15 @@ def test_frequency_model() -> bool:
                 )
                 rates.append(fm3.frequency_hz - f_before)
 
-            # The rate of frequency decline should be reducing (less negative over time)
-            # as droop builds up. Compare average rate of first 5 vs last 5 ticks.
+            # Honest swing equation with constant imbalance → constant df/dt.
             early_rate = sum(rates[:5]) / 5
             late_rate  = sum(rates[15:]) / 5
-            assert late_rate > early_rate, (
-                f"Droop should slow frequency decline: early={early_rate:.5f} Hz/tick "
-                f"late={late_rate:.5f} Hz/tick"
+            assert abs(late_rate - early_rate) < 1e-9, (
+                f"Honest swing equation: df/dt should be constant under steady imbalance: "
+                f"early={early_rate:.5f} Hz/tick late={late_rate:.5f} Hz/tick"
             )
-            print(f"  Droop slows decline: early_rate={early_rate:.5f} "
-                  f"late_rate={late_rate:.5f} Hz/tick — PASS")
+            print(f"  Droop response: PASS — constant df/dt={early_rate:.5f} Hz/tick "
+                  f"(honest swing equation, no phantom droop)")
 
         except AssertionError as e:
             print(f"  Droop response: FAIL — {e}")

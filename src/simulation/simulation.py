@@ -33,7 +33,9 @@ from simulation.constants import (
     ALARM_MESSAGE_MAX_LEN,
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION,
+    AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ,
 )
+import simulation.constants as _sim_const
 from simulation.grid import Grid
 from simulation.loadflow import DCLoadFlow
 from simulation.voltage import VoltageModel
@@ -202,6 +204,9 @@ class GridSimulation:
         self._alarm_id:   int   = 0
         self._seen_warn:  set   = set()   # line labels with active warn alarm
         self._seen_crit:  set   = set()   # line labels with active crit alarm
+        self._seen_v_warn: set  = set()   # bus labels with active voltage warn alarm
+        self._seen_v_crit: set  = set()   # bus labels with active voltage crit alarm
+        self._freq_alarm_state: str = 'OK'  # 'OK' | 'ALERT' | 'CRITICAL'
 
         # Simulation time
         self._sim_time_min: float = 0.0
@@ -213,6 +218,10 @@ class GridSimulation:
         self._load_shed_events: int   = 0
         self._cascade_events:   int   = 0
         self._min_voltage:      float = 1.0
+
+        # AGC PID state
+        self._agc_integral:    float = 0.0
+        self._agc_prev_delta_f: float = 0.0
 
         # Crisis state
         self._crisis_active:  bool      = False
@@ -262,6 +271,7 @@ class GridSimulation:
             sim_hour,
             total_generation_mw=self._fleet.total_generation_mw(),
             deterministic=False,
+            dt_sim_seconds=dt_sim_seconds,
         )
 
         # 3. Renewable outputs → fleet
@@ -272,13 +282,17 @@ class GridSimulation:
         # 4. Tick unit state machines
         self._fleet.tick(dt_sim_seconds)
 
-        # 5. Frequency update (swing equation + droop)
+        # 5. Frequency update (swing equation)
         self._frequency.update(
             dt_sim_seconds=dt_sim_seconds,
             p_generation_mw=self._fleet.total_generation_mw(),
             p_load_mw=self._demand.total_load_mw,
             online_unit_types=self._fleet.online_unit_types(),
         )
+
+        # 5b. AGC secondary frequency response
+        if _sim_const.AGC_ENABLED:
+            self._apply_agc(dt_sim_seconds)
 
         # 6. Build injection vectors
         p_injections         = self._build_p_injections()
@@ -571,6 +585,33 @@ class GridSimulation:
         pv_buses = self._fleet.pv_bus_constraints()
         return q_inj, pv_buses
 
+    # ─────── AGC ──────────────────────────────────────────────────────────
+
+    def _apply_agc(self, dt_sim_seconds: float) -> None:
+        """Distribute a PID AGC correction to fast-response units."""
+        delta_f = self._frequency.frequency_hz - F_NOMINAL
+        if abs(delta_f) <= AGC_DEADBAND_HZ:
+            self._agc_integral = 0.0
+            self._agc_prev_delta_f = 0.0
+            return
+
+        self._agc_integral += delta_f * dt_sim_seconds
+        d_delta_f = (
+            (delta_f - self._agc_prev_delta_f) / dt_sim_seconds
+            if dt_sim_seconds > 0.0 else 0.0
+        )
+        self._agc_prev_delta_f = delta_f
+
+        raw_delta_mw = -(
+            AGC_KP * delta_f
+            + AGC_KI * self._agc_integral
+            + AGC_KD * d_delta_f
+        )
+        max_delta = AGC_MAX_RATE_MW_S * dt_sim_seconds
+        agc_delta_mw = float(np.clip(raw_delta_mw, -max_delta, max_delta))
+
+        self._fleet.apply_agc_signal(agc_delta_mw)
+
     # ─────── TOPOLOGY HELPERS ─────────────────────────────────────────────
 
     def _get_in_service_lines(self) -> list:
@@ -628,40 +669,55 @@ class GridSimulation:
     def _update_voltage_alarms(self, voltages: dict) -> None:
         for bus_label, v in voltages.items():
             if v < V_CRITICAL_LOW:
-                self._raise_alarm(
-                    priority='CRITICAL',
-                    message=f'Voltage {bus_label} {v:.3f} pu — collapse risk',
-                    element_label=bus_label,
-                    detail=(f'Bus {bus_label} at {v:.3f} pu — below '
-                            f'collapse threshold {V_CRITICAL_LOW} pu.'),
-                )
+                if bus_label not in self._seen_v_crit:
+                    self._seen_v_crit.add(bus_label)
+                    self._seen_v_warn.discard(bus_label)
+                    self._raise_alarm(
+                        priority='CRITICAL',
+                        message=f'Voltage {bus_label} {v:.3f} pu — collapse risk',
+                        element_label=bus_label,
+                        detail=(f'Bus {bus_label} at {v:.3f} pu — below '
+                                f'collapse threshold {V_CRITICAL_LOW} pu.'),
+                    )
             elif v < V_WARNING_LOW:
-                self._raise_alarm(
-                    priority='WARNING',
-                    message=f'Voltage {bus_label} {v:.3f} pu — low voltage',
-                    element_label=bus_label,
-                    detail=(f'Bus {bus_label} at {v:.3f} pu — below '
-                            f'warning threshold {V_WARNING_LOW} pu.'),
-                )
+                if bus_label not in self._seen_v_warn and bus_label not in self._seen_v_crit:
+                    self._seen_v_warn.add(bus_label)
+                    self._raise_alarm(
+                        priority='WARNING',
+                        message=f'Voltage {bus_label} {v:.3f} pu — low voltage',
+                        element_label=bus_label,
+                        detail=(f'Bus {bus_label} at {v:.3f} pu — below '
+                                f'warning threshold {V_WARNING_LOW} pu.'),
+                    )
+            else:
+                self._seen_v_warn.discard(bus_label)
+                self._seen_v_crit.discard(bus_label)
 
     def _update_frequency_alarms(self) -> None:
         f = self._frequency.frequency_hz
         if f <= F_CRITICAL_LOW or f >= F_CRITICAL_HIGH:
-            self._raise_alarm(
-                priority='CRITICAL',
-                message=f'Frequency {f:.3f} Hz — critical deviation',
-                element_label=None,
-                detail=(f'System frequency {f:.3f} Hz has exceeded the '
-                        f'critical threshold.'),
-            )
+            new_state = 'CRITICAL'
         elif f <= F_ALERT_LOW or f >= F_ALERT_HIGH:
-            self._raise_alarm(
-                priority='WARNING',
-                message=f'Frequency {f:.3f} Hz — alert threshold',
-                element_label=None,
-                detail=(f'System frequency {f:.3f} Hz has deviated beyond '
-                        f'the alert band.'),
-            )
+            new_state = 'ALERT'
+        else:
+            new_state = 'OK'
+
+        if new_state != self._freq_alarm_state:
+            if new_state == 'CRITICAL':
+                self._raise_alarm(
+                    priority='CRITICAL',
+                    message=f'Frequency {f:.3f} Hz — critical deviation',
+                    element_label=None,
+                    detail=f'System frequency {f:.3f} Hz has exceeded the critical threshold.',
+                )
+            elif new_state == 'ALERT':
+                self._raise_alarm(
+                    priority='WARNING',
+                    message=f'Frequency {f:.3f} Hz — alert threshold',
+                    element_label=None,
+                    detail=f'System frequency {f:.3f} Hz has deviated beyond the alert band.',
+                )
+            self._freq_alarm_state = new_state
 
     def _expire_alarms(self) -> None:
         self._alarms = [

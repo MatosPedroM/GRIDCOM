@@ -7,16 +7,18 @@ Initialises pygame, creates the display window, instantiates the
 Renderer and GridSimulation, and runs the main loop.
 
 Controls:
-    Escape / Q      Quit (or exit EDITOR_MODE)
+    Escape / Q      Quit (or exit EDITOR_MODE, cancel input, deselect)
     D               Toggle DEBUG_DISPLAY overlay
     Ctrl+Shift+E    Toggle EDITOR_MODE
-    S               Save layout (EDITOR_MODE only)
+    F12             Toggle EDITOR_MODE (same as Ctrl+Shift+E)
+    Ctrl+A          Toggle AGC (Automatic Generation Control)
+    S               Save layout (EDITOR_MODE) / Start selected unit (Play mode)
+    X               Stop selected unit
+    A               Acknowledge top alarm
+    Shift+A         Acknowledge all alarms
+    Tab             Cycle element selection
     F1 / F3 / F5    Switch active shift (1, 3, or 5)
-    0 / Space       Pause simulation
-    1               Slow speed (0.25×)
-    2               Normal speed (1×)
-    3               Fast speed (3×)
-    4               Very fast speed (10×)
+    P / Space       Pause / resume simulation (toggle)
     Mouse wheel     Scroll dispatch or alarm panel (when over strip)
 """
 
@@ -40,6 +42,7 @@ from simulation.constants import (
     SPEED_PAUSE, SPEED_SLOW, SPEED_NORMAL, SPEED_FAST, SPEED_VERY_FAST,
 )
 import simulation.constants as _const
+from debug_scenario import make_debug_sim, DEBUG_SCENARIO
 
 
 def _to_native(display_surf: pygame.Surface, pos: tuple[int, int]) -> tuple[int, int]:
@@ -50,12 +53,28 @@ def _to_native(display_surf: pygame.Surface, pos: tuple[int, int]) -> tuple[int,
     return nx, ny
 
 
+# Handover schedules: unit outputs (MW) at the start of each shift.
+# Units absent from the dict start OFFLINE.
+_SHIFT_SCHEDULES: dict[int, dict] = {
+    1: {
+        'HART-1': 680.0, 'HART-2': 680.0,   # nuclear baseload
+        'RVSD-1': 200.0, 'RVSD-3': 200.0,   # coal overnight (RVSD-2 OOS)
+        'DUNH-1': 100.0, 'DUNH-2': 100.0,   # Dunmore hydro
+        'DUND-1':  40.0, 'DUND-2':  40.0,   # Dunmore downstream
+        'BR01-1':  30.0, 'BR01-2':  30.0,   # Brent run-of-river
+    },
+    3: {},   # TODO: tune when shift 3 is tested
+    5: {},   # TODO: tune when shift 5 is tested
+}
+
+
 def _make_sim_and_renderer(
     display_surf: pygame.Surface,
     shift: int,
 ) -> tuple[GridSimulation, Grid, Renderer]:
     grid     = Grid(shift)
-    sim      = GridSimulation(grid=grid, shift_number=shift, difficulty='standard')
+    sim      = GridSimulation(grid=grid, shift_number=shift, difficulty='standard',
+                              initial_schedule=_SHIFT_SCHEDULES.get(shift, {}))
     renderer = Renderer(display_surf, shift=shift)
     renderer.set_grid(grid)
     return sim, grid, renderer
@@ -76,7 +95,13 @@ def main() -> None:
     shift = 1
     speed = SPEED_NORMAL
 
-    sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
+    if _const.DEBUG_SCENARIO_ACTIVE:
+        sim, grid = make_debug_sim(DEBUG_SCENARIO)
+        renderer  = Renderer(display_surf, shift=DEBUG_SCENARIO.shift_number)
+        renderer.set_grid(grid)
+        shift = DEBUG_SCENARIO.shift_number
+    else:
+        sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
 
     running = True
     while running:
@@ -101,11 +126,34 @@ def main() -> None:
                     else:
                         running = False
 
-                elif ctrl and shift_held and event.key == pygame.K_e:
+                elif (ctrl and shift_held and event.key == pygame.K_e
+                      or event.key == pygame.K_F12):
                     _const.EDITOR_MODE = not _const.EDITOR_MODE
 
                 elif event.key == pygame.K_s and _const.EDITOR_MODE:
                     renderer.save_layout()
+
+                elif (event.key == pygame.K_s and not _const.EDITOR_MODE
+                      and not renderer._input_active):
+                    renderer.on_start_unit(sim)
+
+                elif (event.key == pygame.K_x and not _const.EDITOR_MODE
+                      and not renderer._input_active):
+                    renderer.on_stop_unit(sim)
+
+                elif ctrl and not shift_held and event.key == pygame.K_a:
+                    _const.AGC_ENABLED = not _const.AGC_ENABLED
+
+                elif (event.key == pygame.K_a and not _const.EDITOR_MODE
+                      and not renderer._input_active and not ctrl):
+                    if shift_held:
+                        renderer.on_ack_all_alarms(sim)
+                    else:
+                        renderer.on_ack_alarm(sim)
+
+                elif (event.key == pygame.K_TAB and not _const.EDITOR_MODE
+                      and not renderer._input_active):
+                    renderer.on_tab()
 
                 elif event.key == pygame.K_d:
                     _const.DEBUG_DISPLAY = not _const.DEBUG_DISPLAY
@@ -121,26 +169,20 @@ def main() -> None:
                     shift = 5
                     sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
 
-                # Speed keys: 0/Space=pause, 1-4=speeds (suppressed when typing a MW target)
-                elif event.key in (pygame.K_0, pygame.K_SPACE) and not _const.EDITOR_MODE and not renderer._input_active:
-                    speed = SPEED_PAUSE
-                elif event.key == pygame.K_1 and not _const.EDITOR_MODE and not renderer._input_active:
-                    speed = SPEED_SLOW
-                elif event.key == pygame.K_2 and not _const.EDITOR_MODE and not renderer._input_active:
-                    speed = SPEED_NORMAL
-                elif event.key == pygame.K_3 and not _const.EDITOR_MODE and not renderer._input_active:
-                    speed = SPEED_FAST
-                elif event.key == pygame.K_4 and not _const.EDITOR_MODE and not renderer._input_active:
-                    speed = SPEED_VERY_FAST
-
-                # Unit target input: digits feed buffer, backspace/enter commit
+                # Unit target input — checked before pause so digits aren't swallowed
                 elif (not _const.EDITOR_MODE and not ctrl and not shift_held
                       and event.key in (
                           pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3,
                           pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7,
                           pygame.K_8, pygame.K_9,
-                      )):
+                      )
+                      and (renderer._input_active or renderer._get_selected_unit() is not None)):
                     renderer.on_key_digit(pygame.key.name(event.key))
+
+                # Pause / resume toggle
+                elif (event.key in (pygame.K_p, pygame.K_SPACE)
+                      and not _const.EDITOR_MODE and not renderer._input_active):
+                    speed = SPEED_PAUSE if speed > 0.0 else SPEED_NORMAL
 
                 elif not _const.EDITOR_MODE and event.key == pygame.K_BACKSPACE:
                     renderer.on_backspace()

@@ -17,6 +17,7 @@ import numpy as np
 
 from simulation.constants import (
     DEMAND_NOISE_STD_FRACTION,
+    DEMAND_NOISE_UPDATE_S,
     LOSSES_FRACTION,
     DEBUG_SIMULATION,
 )
@@ -28,6 +29,26 @@ from data.profiles import (
 
 # Type alias
 BusLabel = str
+
+
+def _interpolate_override(
+    schedule: dict[float, float],
+    sim_hour: float,
+    fallback_peak_mw: float,
+) -> float:
+    hours = sorted(schedule)
+    if not hours:
+        return get_demand_mw(sim_hour, fallback_peak_mw)
+    if sim_hour <= hours[0]:
+        return schedule[hours[0]]
+    if sim_hour >= hours[-1]:
+        return schedule[hours[-1]]
+    for i in range(len(hours) - 1):
+        h0, h1 = hours[i], hours[i + 1]
+        if h0 <= sim_hour <= h1:
+            t = (sim_hour - h0) / (h1 - h0)
+            return schedule[h0] * (1.0 - t) + schedule[h1] * t
+    return get_demand_mw(sim_hour, fallback_peak_mw)
 
 
 class DemandModel:
@@ -84,6 +105,12 @@ class DemandModel:
         self._total_demand_mw: float = 0.0
         self._losses_mw: float = 0.0
 
+        # Noise hold: re-sample only every DEMAND_NOISE_UPDATE_S simulated seconds.
+        self._noise_fraction: float = 0.0
+        self._noise_timer_s:  float = DEMAND_NOISE_UPDATE_S  # fire immediately on first tick
+
+        self._demand_override: dict[float, float] | None = None
+
     # ─────── PROPERTIES ───────────────────────────────────────────────────
 
     @property
@@ -108,6 +135,7 @@ class DemandModel:
         sim_hour: float,
         total_generation_mw: float,
         deterministic: bool = False,
+        dt_sim_seconds: float = 0.0,
     ) -> None:
         """
         Advance demand state to the current sim_hour.
@@ -117,15 +145,28 @@ class DemandModel:
             total_generation_mw: Current total online generation (MW).
                                  Used to estimate losses.
             deterministic:       If True, suppress noise (forecast mode).
+            dt_sim_seconds:      Elapsed sim time this tick (seconds). Used to
+                                 pace noise re-sampling.
         """
-        forecast = get_demand_mw(sim_hour, self._spec.peak_demand_mw)
+        if self._demand_override:
+            forecast = _interpolate_override(
+                self._demand_override, sim_hour, self._spec.peak_demand_mw)
+        else:
+            forecast = get_demand_mw(sim_hour, self._spec.peak_demand_mw)
 
         if deterministic:
             noise_fraction = 0.0
         else:
-            noise_fraction = float(
-                self._rng.normal(0.0, DEMAND_NOISE_STD_FRACTION)
-            )
+            self._noise_timer_s += dt_sim_seconds
+            if self._noise_timer_s >= DEMAND_NOISE_UPDATE_S:
+                self._noise_timer_s = 0.0
+                raw = float(self._rng.normal(0.0, DEMAND_NOISE_STD_FRACTION))
+                self._noise_fraction = float(np.clip(
+                    raw,
+                    -3.0 * DEMAND_NOISE_STD_FRACTION,
+                     3.0 * DEMAND_NOISE_STD_FRACTION,
+                ))
+            noise_fraction = self._noise_fraction
 
         # Clip noise to ±3σ to prevent runaway values.
         noise_fraction = float(np.clip(
@@ -188,6 +229,26 @@ class DemandModel:
     def get_shed_fraction(self, bus_label: BusLabel) -> float:
         """Return current shed fraction at a bus (0.0–1.0)."""
         return self._shed_fractions.get(bus_label, 0.0)
+
+    def set_demand_override(
+        self,
+        schedule: dict[float, float] | None,
+        sim_hour: float | None = None,
+    ) -> None:
+        """
+        Set a sparse hour→MW demand schedule that replaces the standard profile.
+        Values between provided hours are linearly interpolated. Pass None or
+        an empty dict to revert to the standard DEMAND_PROFILE_NORMALISED curve.
+
+        If sim_hour is provided the current demand is seeded immediately from
+        the new schedule so that the displayed value is correct before the first
+        update() call.
+        """
+        self._demand_override = dict(schedule) if schedule else None
+        if self._demand_override and sim_hour is not None:
+            seeded = _interpolate_override(
+                self._demand_override, sim_hour, self._spec.peak_demand_mw)
+            self._total_demand_mw = seeded
 
     # ─────── QUERIES ──────────────────────────────────────────────────────
 

@@ -25,14 +25,14 @@ import pygame
 import pygame.freetype
 
 from display.canvas import GridCanvas
-from display.context import draw_unit_context
+from display.context import draw_unit_context, draw_bus_context, draw_line_context
 from display.editor import GridEditor
 from display.animation import FlowAnimator
 from display.panels import (
     draw_frequency_panel, draw_power_panel,
     draw_dispatch_panel, draw_alarm_panel,
 )
-from display.palette import COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID
+from display.palette import COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID, COL_TEXT_DIM
 import simulation.constants as _sim_const
 from simulation.constants import (
     CANVAS_HEIGHT, STRIP_HEIGHT,
@@ -50,6 +50,19 @@ from utils.helpers import resource_path
 _BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
 _BLINK_PERIOD     = 1.0   # seconds per blink cycle (canvas, dispatch panel)
 _HIT_RADIUS       = 10    # px — Chebyshev hit radius for bus/unit selection
+_LINE_HIT_PX      = 6     # px — max perpendicular distance for line selection
+
+
+def _point_segment_dist(px: int, py: int,
+                        x1: int, y1: int, x2: int, y2: int) -> float:
+    """Return the minimum distance from point (px,py) to segment (x1,y1)-(x2,y2)."""
+    dx, dy = x2 - x1, y2 - y1
+    if dx == 0 and dy == 0:
+        return ((px - x1) ** 2 + (py - y1) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
+    nx = x1 + t * dx
+    ny = y1 + t * dy
+    return ((px - nx) ** 2 + (py - ny) ** 2) ** 0.5
 
 
 class Renderer:
@@ -105,6 +118,9 @@ class Renderer:
         self._input_buffer: str  = ''
         self._input_active: bool = False
 
+        # START/STOP button keyboard focus
+        self._cmd_active: bool = False
+
         # Debug state
         self._mouse_pos:   tuple[int, int] = (0, 0)
         self._click_pos:   tuple[int, int] | None = None
@@ -133,6 +149,7 @@ class Renderer:
         self._selected_label = None
         self._input_buffer   = ''
         self._input_active   = False
+        self._cmd_active     = False
 
     def _get_selected_unit(self):
         """Return the GenerationUnit for _selected_label if it is a unit, else None."""
@@ -179,14 +196,80 @@ class Renderer:
         self._input_buffer = ''
         self._input_active = False
 
+    def on_start_unit(self, sim) -> None:
+        """Issue a START command for the selected OFFLINE unit."""
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        if sim.get_state() is None:
+            return
+        if sim.get_state().unit_states.get(unit.label) != 'OFFLINE':
+            return
+        sim.start_unit(unit.label)
+        self._cmd_active = False
+
+    def on_stop_unit(self, sim) -> None:
+        """Issue a STOP command for the selected ONLINE unit."""
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        if sim.get_state() is None:
+            return
+        if sim.get_state().unit_states.get(unit.label) != 'ONLINE':
+            return
+        sim.stop_unit(unit.label)
+        self._cmd_active = False
+
+    def on_ack_alarm(self, sim) -> None:
+        """Acknowledge the first unacknowledged alarm."""
+        state = sim.get_state()
+        if state is None:
+            return
+        for alarm in state.active_alarms:
+            if not alarm.acknowledged:
+                sim.acknowledge_alarm(alarm.alarm_id)
+                return
+
+    def on_ack_all_alarms(self, sim) -> None:
+        """Acknowledge all unacknowledged alarms."""
+        sim.acknowledge_all_alarms()
+
+    def _selectable_labels(self) -> list[str]:
+        """Flat ordered list: all active unit labels, then bus labels, then line labels."""
+        labels: list[str] = []
+        for units in self._canvas._station_units.values():
+            for unit in units:
+                labels.append(unit.label)
+        for bus in self._canvas._buses:
+            labels.append(bus.label)
+        for line in self._canvas._lines:
+            labels.append(line.label)
+        return labels
+
+    def on_tab(self) -> None:
+        """Advance selection to the next element (units first, then buses), wrapping."""
+        labels = self._selectable_labels()
+        if not labels:
+            return
+        try:
+            idx = labels.index(self._selected_label)
+        except ValueError:
+            idx = -1
+        self._selected_label = labels[(idx + 1) % len(labels)]
+        self._input_buffer   = ''
+        self._input_active   = False
+        self._cmd_active     = False
+
     def on_escape(self) -> None:
         """
-        Cancel input if active; otherwise deselect the current element.
+        Cancel input if active; clear cmd focus if active; otherwise deselect.
         No-op when nothing is selected — main.py handles global quit.
         """
         if self._input_active:
             self._input_buffer = ''
             self._input_active = False
+        elif self._cmd_active:
+            self._cmd_active = False
         elif self._selected_label is not None:
             self.clear_selection()
 
@@ -244,7 +327,8 @@ class Renderer:
         alarm_surf    = self._strip_surf.subsurface(
             pygame.Rect(PANEL_ALARM_X,    0, PANEL_ALARM_W,    STRIP_HEIGHT))
 
-        draw_frequency_panel(freq_surf,     self._font, self._blink_on,     state)
+        draw_frequency_panel(freq_surf,     self._font, self._blink_on,     state,
+                             paused=(speed_mult == 0.0))
         draw_power_panel(power_surf,        self._font,                     state)
         draw_dispatch_panel(dispatch_surf,  self._font, self._blink_on,     state,
                             self._grid, self._dispatch_scroll)
@@ -263,7 +347,21 @@ class Renderer:
                 input_buffer=self._input_buffer,
                 input_active=self._input_active,
                 blink_on=self._blink_on,
+                cmd_active=self._cmd_active,
             )
+        elif self._selected_label is not None:
+            selected_bus = self._canvas._bus_map.get(self._selected_label)
+            if selected_bus is not None:
+                draw_bus_context(self._canvas_surf, self._font,
+                                 bus=selected_bus, state=state)
+            else:
+                selected_line = next(
+                    (l for l in self._canvas._lines if l.label == self._selected_label),
+                    None,
+                )
+                if selected_line is not None:
+                    draw_line_context(self._canvas_surf, self._font,
+                                      line=selected_line, state=state)
 
         # ── Editor overlay ────────────────────────────────────────────────────
         if _sim_const.EDITOR_MODE:
@@ -333,6 +431,20 @@ class Renderer:
                 best_dist  = dist
                 best_label = bus.label
 
+        # Lines — only if no bus/unit was hit within its own radius
+        if best_label is None:
+            for line in self._canvas._lines:
+                fb = self._canvas._bus_map.get(line.from_bus)
+                tb = self._canvas._bus_map.get(line.to_bus)
+                if fb is None or tb is None:
+                    continue
+                dist = _point_segment_dist(nx, ny,
+                                           fb.canvas_x, fb.canvas_y,
+                                           tb.canvas_x, tb.canvas_y)
+                if dist <= _LINE_HIT_PX and dist < best_dist:
+                    best_dist  = dist
+                    best_label = line.label
+
         # Toggle deselect when clicking the same element
         self._selected_label = None if best_label == self._selected_label else best_label
 
@@ -366,6 +478,13 @@ class Renderer:
         tw, _ = font.get_rect(fps_str, size=FONT_SIZE_OVERLAY)[2:4]
         font.render_to(self._native, (NATIVE_WIDTH - tw - 8, 4),
                        fps_str, COL_DEBUG_TEXT, size=FONT_SIZE_OVERLAY)
+
+        # AGC status — top-right, second line
+        agc_str = f'AGC {"ON" if _sim_const.AGC_ENABLED else "OFF"}'
+        agc_col = COL_DEBUG_TEXT if _sim_const.AGC_ENABLED else COL_TEXT_DIM
+        agc_w, _ = font.get_rect(agc_str, size=FONT_SIZE_OVERLAY)[2:4]
+        font.render_to(self._native, (NATIVE_WIDTH - agc_w - 8, 18),
+                       agc_str, agc_col, size=FONT_SIZE_OVERLAY)
 
         # Click position — shown for 3 seconds
         if self._click_pos is not None:

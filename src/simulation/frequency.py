@@ -26,12 +26,12 @@ from simulation.constants import (
     F_MIN,
     F_MAX,
     F_STABLE_TOL,
-    DROOP_R,
     S_BASE,
     H_COAL,
     H_CCGT,
     H_NUCLEAR,
     H_HYDRO,
+    TIME_COMPRESSION,
 )
 
 # Minimum inertia H to avoid division-by-zero when no synchronous units online.
@@ -116,20 +116,11 @@ class FrequencyModel:
 
         h_sys = self._compute_system_inertia(online_unit_types)
 
-        p_imbalance_pu = (p_generation_mw - p_load_mw) / S_BASE
-
-        # Droop correction: governor response proportional to frequency deviation.
-        # This partially counters imbalance; positive deviation → reduce generation.
-        delta_f = self._frequency_hz - F_NOMINAL
-        p_online_pu = p_generation_mw / S_BASE
-        droop_correction_pu = -(delta_f / F_NOMINAL) / DROOP_R * p_online_pu
-
-        # Net per-unit imbalance seen by the swing equation.
-        p_net_pu = p_imbalance_pu + droop_correction_pu
-
-        # Swing equation: df/dt = (f0 / 2H) × P_net
+        # Honest swing equation: df/dt = (f0 / 2H) × P_imbalance_pu
+        # Governor/droop response is handled externally (AGC, player dispatch).
+        p_net_pu = (p_generation_mw - p_load_mw) / S_BASE
         df_dt = (F_NOMINAL / (2.0 * h_sys)) * p_net_pu
-        self._frequency_hz += df_dt * dt_sim_seconds
+        self._frequency_hz += (df_dt * dt_sim_seconds) / TIME_COMPRESSION
 
         # Hard clamp to operational limits.
         self._frequency_hz = float(np.clip(self._frequency_hz, F_MIN, F_MAX))

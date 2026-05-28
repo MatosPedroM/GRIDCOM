@@ -11,11 +11,12 @@ See CLAUDE.md Rule 1.
 # ─────────────────────────────────────────────
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
-DEBUG_SIMULATION: bool = False
-DEBUG_DISPLAY:    bool = False
+DEBUG_SIMULATION: bool = True
+DEBUG_DISPLAY:    bool = True
 DEBUG_EVENTS:     bool = False
 EDITOR_MODE:      bool = False
-FLOW_ANIMATION:   bool = False
+FLOW_ANIMATION:        bool = False
+DEBUG_SCENARIO_ACTIVE: bool = True
 
 # ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES
@@ -59,6 +60,16 @@ F_STABLE_TOL:     float = 0.005 # Hz — threshold for STABLE vs RISING/FALLING 
 # DROOP / GOVERNOR
 # ─────────────────────────────────────────────
 DROOP_R: float = 0.04           # 4% droop setting (per-unit on machine base)
+
+# ─────────────────────────────────────────────
+# AUTOMATIC GENERATION CONTROL (AGC)
+# ─────────────────────────────────────────────
+AGC_ENABLED:       bool  = True  # Toggled at runtime via Ctrl+A; starts disabled
+AGC_KP:            float = 10.0   # Proportional gain (MW per Hz of error)
+AGC_KI:            float = 0.1    # Integral gain (MW per Hz·sim-second of error)
+AGC_KD:            float = 0.1    # Derivative gain (MW per Hz/sim-second of error)
+AGC_MAX_RATE_MW_S: float = 100.0  # Max total AGC correction rate (MW per sim-second)
+AGC_DEADBAND_HZ:   float = 0.1   # ±Hz inside which AGC is silent
 
 # ─────────────────────────────────────────────
 # LOSSES
@@ -172,7 +183,8 @@ SPEED_VERY_FAST: float = 10.00
 # ─────────────────────────────────────────────
 # DEMAND NOISE
 # ─────────────────────────────────────────────
-DEMAND_NOISE_STD_FRACTION: float = 0.005    # Std dev of demand noise as fraction of mean
+DEMAND_NOISE_STD_FRACTION: float = 0.0001    # Std dev of demand noise as fraction of mean
+DEMAND_NOISE_UPDATE_S:     float = 120.0     # Simulated seconds between noise re-samples
 WIND_NOISE_STD_FRACTION:   float = 0.03     # Wind forecast noise
 SOLAR_NOISE_STD_FRACTION:  float = 0.01     # Solar forecast noise (small)
 

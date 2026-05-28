@@ -43,6 +43,9 @@ from data.fleet import GenerationUnit
 # Unit types that are non-dispatchable (renewables — output set externally).
 _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
 
+# Unit types eligible for AGC dispatch (fast-response units only).
+_AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'HYDRO_ROR', 'CCGT'})
+
 # Unit types that require minimum output > 0 when online.
 # For these types, min_mw from fleet.py is already correct.
 # HYDRO variants and renewables allow min_mw = 0.
@@ -399,6 +402,33 @@ class FleetModel:
         model = self._units.get(label)
         if model is not None:
             model.set_renewable_output(output_mw)
+
+    def apply_agc_signal(self, delta_mw: float) -> None:
+        """
+        Distribute an AGC raise/lower signal among fast-response ONLINE units
+        (HYDRO, HYDRO_ROR, CCGT), proportional to available headroom (raise)
+        or regulating range above min_mw (lower).
+        Calls set_target() so ramp rate limits apply on the next tick.
+        """
+        eligible = [
+            u for u in self._units.values()
+            if u.state == 'ONLINE' and u._spec.unit_type in _AGC_UNIT_TYPES
+        ]
+        if not eligible:
+            return
+
+        if delta_mw > 0:
+            weights = [max(0.0, u._spec.rated_mw - u.current_mw) for u in eligible]
+        else:
+            weights = [max(0.0, u.current_mw - u._spec.min_mw) for u in eligible]
+
+        total_w = sum(weights)
+        if total_w < 1.0:
+            return
+
+        for unit, w in zip(eligible, weights):
+            share = delta_mw * (w / total_w)
+            unit.set_target(unit.target_mw + share)
 
     # ─────── QUERIES — INDIVIDUAL ─────────────────────────────────────────
 

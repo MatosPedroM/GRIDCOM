@@ -77,8 +77,9 @@ def draw_frequency_panel(
     font:     pygame.freetype.Font,
     blink_on: bool,
     state=None,
+    paused:   bool = False,
 ) -> None:
-    """Frequency panel: large Hz readout, analog bar, trend indicator."""
+    """Frequency panel: large Hz readout, analog bar, trend indicator, clock."""
 
     freq_hz: float = state.frequency_hz    if state else 49.85
     trend:   str   = state.frequency_trend if state else 'FALLING'
@@ -130,6 +131,15 @@ def draw_frequency_panel(
         t_str = '— STABLE'
     trend_y = label_y + 14
     font.render_to(surf, (_PAD, trend_y), t_str, trend_col, size=FONT_SIZE_PANEL)
+
+    if state is not None:
+        h = int(state.sim_hour) % 24
+        m = int((state.sim_hour % 1.0) * 60)
+        clock_str = f'{h:02d}:{m:02d}'
+        if paused:
+            clock_str += '  PAUSED'
+        clock_col = COL_TEXT_WARN if paused else COL_TEXT_SECONDARY
+        font.render_to(surf, (_PAD, trend_y + 14), clock_str, clock_col, size=FONT_SIZE_PANEL)
 
 
 # ── Panel 2 — Power Balance ────────────────────────────────────────────────────

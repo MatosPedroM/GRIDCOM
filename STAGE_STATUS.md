@@ -6,13 +6,52 @@
 
 ## Current Stage
 
-**STAGE 13 — Unit Output Control**
+**STAGE 19 — AGC Debug Indicator + Input + Demand Noise Smoothing**
 
 ## Current Status
 
-**COMPLETE** — Selected unit shows context overlay top-left; player types MW target, Enter dispatches; 9/9 tests pass.
+**COMPLETE** — AGC ON/OFF in debug overlay; digit input fixed (0–4 no longer stolen by speed keys); demand noise re-sampled every 60 sim-seconds instead of every tick; speed keys simplified to P/Space toggle; F12 added as editor mode shortcut; 9/9 tests pass.
 
 ## Session Log
+
+### Session 20 (Stage 19 — AGC Debug Indicator + Input Fix + Demand Noise Smoothing)
+- Edited: `src/simulation/constants.py` — added `DEMAND_NOISE_UPDATE_S = 60.0` (simulated seconds between noise re-samples)
+- Edited: `src/simulation/demand.py` — added `_noise_fraction` and `_noise_timer_s` state; `update()` gains `dt_sim_seconds` param; noise re-sampled only when timer exceeds `DEMAND_NOISE_UPDATE_S` instead of every tick
+- Edited: `src/simulation/simulation.py` — pass `dt_sim_seconds` to `demand.update()`
+- Edited: `src/display/renderer.py` — add `COL_TEXT_DIM` import; add AGC ON/OFF indicator to `_draw_debug()` (top-right, second line)
+- Edited: `src/main.py` — remove K_1–K_4 speed shortcuts; P/Space now toggle pause/resume; F12 added as editor mode shortcut; digit input block moved before pause key and conditioned on unit selected or input active
+- Validated: 9/9 tests pass
+
+### Session 19 (Stage 18 — Fix Frequency Oscillation + AGC)
+- Edited: `src/simulation/frequency.py` — removed phantom droop correction from `update()`; removed `DROOP_R` import; swing equation is now honest: `df/dt = (f0 / 2H) × P_net_pu`
+- Edited: `src/simulation/constants.py` — added AGC section: `AGC_ENABLED` (default False), `AGC_KI = 0.3`, `AGC_MAX_RATE_MW_S = 20.0`, `AGC_DEADBAND_HZ = 0.02`
+- Edited: `src/simulation/units.py` — added `_AGC_UNIT_TYPES` frozenset (HYDRO, HYDRO_ROR, CCGT); added `FleetModel.apply_agc_signal(delta_mw)` distributing correction proportional to headroom/regulating range
+- Edited: `src/simulation/simulation.py` — added `_agc_integral` to `__init__`; added `_apply_agc()` method (integral-only PI loop, rate-limited, deadband); added step 5b call after frequency update when `AGC_ENABLED`
+- Edited: `src/main.py` — added `Ctrl+A` handler to toggle `_const.AGC_ENABLED`; added `and not ctrl` guard to plain `A` ack handler; updated module docstring
+- Edited: `tests/test_simulation.py` — updated `test_frequency_model` droop check to verify constant `df/dt` under constant imbalance (correct behaviour for honest swing equation)
+- Validated: 9/9 tests pass
+
+### Session 18 (Stage 17 — Stable Starting State for Gameplay Testing)
+- Edited: `src/main.py` — added `_SHIFT_SCHEDULES` dict with Shift 1 handover (HART×2 at 680 MW, RVSD-1/3 at 200 MW, DUNH×2 at 100 MW, DUND×2 at 40 MW, BR01×2 at 30 MW); `_make_sim_and_renderer()` passes `initial_schedule`
+- Edited: `src/simulation/simulation.py` — added `_seen_v_warn`, `_seen_v_crit`, `_freq_alarm_state` state to `__init__`; refactored `_update_voltage_alarms()` to edge-trigger (fires only on 0→1 transition, clears on recovery); refactored `_update_frequency_alarms()` to edge-trigger via `_freq_alarm_state`
+- Validated: 9/9 tests pass
+
+### Session 17 (Stage 16 — Line Context Panel + Line Hit Detection)
+- Edited: `src/display/context.py` — added `draw_line_context()`: read-only panel showing route (from→to), voltage kV, rating MW, flow MW with direction arrow (▶/◀), loading % with colour coding, status (IN SERVICE/TRIPPED); added `COL_LOAD_WARN/HIGH/CRIT/LINE_TRIPPED` imports
+- Edited: `src/display/renderer.py` — added `_point_segment_dist()` module helper; added `_LINE_HIT_PX = 6` constant; extended `on_click()` with line segment proximity test (only fires when no bus/unit hit); extended `_selectable_labels()` to append line labels after buses; added `draw_line_context` import; added third `elif` branch in `tick()` for line context overlay
+- Validated: 9/9 tests pass
+
+### Session 16 (Stage 15 — ACK Alarm Shortcut + Tab/Escape Navigation)
+- Edited: `src/display/context.py` — added `draw_bus_context()`: read-only panel showing bus label, voltage level (kV), live V (pu); reuses all existing `CONTEXT_OVERLAY_*` constants
+- Edited: `src/display/renderer.py` — `on_ack_alarm()`, `on_ack_all_alarms()`, `_selectable_labels()`, `on_tab()`; bus context overlay `elif` branch in `tick()`; updated import
+- Edited: `src/main.py` — `A` → ack top alarm; `Shift+A` → ack all; `Tab` → cycle selection; updated docstring
+- Validated: 9/9 tests pass
+
+### Session 15 (Stage 14 — Unit Start/Stop Commands)
+- Edited: `src/display/context.py` — added `cmd_active` param; START/STOP button row (green/red border); `starting…`/`shutting down…` transition status; helper `_draw_cmd_row()`; panel height grows by one row when button shown
+- Edited: `src/display/renderer.py` — `_cmd_active` flag; `on_start_unit()`, `on_stop_unit()` methods; updated `on_escape()` (clears cmd focus before deselecting); updated `clear_selection()` and `tick()` context overlay call
+- Edited: `src/main.py` — `S` key → `on_start_unit(sim)`; `X` key → `on_stop_unit(sim)`; updated docstring
+- Validated: 9/9 tests pass
 
 ### Session 14 (Stage 13 — Unit Output Control)
 - Written: `src/display/context.py` — draw_unit_context(): fixed top-left panel with header (label/type/state), output row, target input field with cursor and range hint, non-dispatchable fallback
@@ -215,6 +254,48 @@ STAGE 13 — UNIT OUTPUT CONTROL (complete, validated)
                                  _get_selected_unit(); context overlay in tick()
   ✓ src/main.py               — digit/backspace/enter routed; speed keys guarded by _input_active
 
+STAGE 14 — UNIT START/STOP COMMANDS (complete, validated)
+  ✓ src/display/context.py    — START/STOP button row; transition status; cmd_active highlight;
+                                 _draw_cmd_row() helper; panel height dynamic
+  ✓ src/display/renderer.py   — _cmd_active flag; on_start_unit(); on_stop_unit();
+                                 on_escape() clears cmd focus; clear_selection() clears cmd
+  ✓ src/main.py               — S=start unit; X=stop unit; both guarded by EDITOR_MODE/_input_active
+
+STAGE 15 — ACK ALARM SHORTCUT + TAB/ESCAPE NAVIGATION (complete, validated)
+  ✓ src/display/context.py    — draw_bus_context(): read-only panel; bus label, voltage kV, live V pu
+  ✓ src/display/renderer.py   — on_ack_alarm(); on_ack_all_alarms(); _selectable_labels(); on_tab();
+                                 bus context overlay elif branch in tick()
+  ✓ src/main.py               — A=ack top alarm; Shift+A=ack all; Tab=cycle selection
+
+STAGE 16 — LINE CONTEXT PANEL + LINE HIT DETECTION (complete, validated)
+  ✓ src/display/context.py    — draw_line_context(): read-only panel; route, voltage kV, rating MW,
+                                 flow MW with direction arrow, loading % colour-coded, status
+  ✓ src/display/renderer.py   — _point_segment_dist() helper; _LINE_HIT_PX constant;
+                                 on_click() line segment proximity test; _selectable_labels()
+                                 includes lines; tick() third elif branch for line context overlay
+
+STAGE 17 — STABLE STARTING STATE FOR GAMEPLAY TESTING (complete, validated)
+  ✓ src/main.py               — _SHIFT_SCHEDULES dict; Shift 1 handover schedule passed to GridSimulation
+  ✓ src/simulation/simulation.py — _seen_v_warn/_seen_v_crit/_freq_alarm_state state;
+                                   _update_voltage_alarms() edge-triggered; _update_frequency_alarms()
+                                   edge-triggered via state machine
+
+STAGE 19 — AGC DEBUG INDICATOR + INPUT FIX + DEMAND NOISE SMOOTHING (complete, validated)
+  ✓ src/simulation/constants.py  — DEMAND_NOISE_UPDATE_S = 60.0 simulated seconds
+  ✓ src/simulation/demand.py     — noise held constant between re-samples (every 60 sim-s)
+  ✓ src/simulation/simulation.py — dt_sim_seconds passed to demand.update()
+  ✓ src/display/renderer.py      — AGC ON/OFF in debug overlay (top-right, second line)
+  ✓ src/main.py                  — K_1–K_4 removed; P/Space = pause toggle; F12 = editor mode;
+                                   digit input moves before pause key, fires only when unit selected
+
+STAGE 18 — FIX FREQUENCY OSCILLATION + AGC (complete, validated)
+  ✓ src/simulation/frequency.py  — phantom droop removed; honest swing equation: df/dt = (f0/2H)×P_net_pu
+  ✓ src/simulation/constants.py  — AGC_ENABLED (default False), AGC_KI, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ
+  ✓ src/simulation/units.py      — _AGC_UNIT_TYPES frozenset; FleetModel.apply_agc_signal()
+  ✓ src/simulation/simulation.py — _agc_integral state; _apply_agc() method; step 5b in tick()
+  ✓ src/main.py                  — Ctrl+A toggles AGC_ENABLED; plain A guarded with `and not ctrl`
+  ✓ tests/test_simulation.py     — droop test updated: verifies constant df/dt (no phantom term)
+
 SOURCE FILES (empty placeholders — no working code)
   src/simulation/events.py  (deferred — after rendering stage)
   src/display/context.py
@@ -232,7 +313,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 13 complete.
+Nothing. Stage 18 complete.
 
 ---
 
@@ -246,26 +327,19 @@ contains working code unless listed above as complete.
 
 Specifically — these classes and functions DO NOT EXIST YET:
 - `EventSystem` / `ScriptedEvent` (src/simulation/events.py) — deferred
-- Context panel (src/display/context.py)
 - Any gameplay classes (src/gameplay/*)
 
 ---
 
 ## Next Session Objective
 
-**Stage 14 — Unit Start/Stop Commands**
+**Stage 20 — TBD**
 
-Goal: Player can start (online) and stop (shutdown) generation units from the context panel or keyboard shortcuts.
-
-Files to write/extend:
-1. `src/display/context.py`  — add START / STOP buttons to context panel for OFFLINE / ONLINE units
-2. `src/display/renderer.py` — on_start_unit(), on_stop_unit() methods calling sim.start_unit/stop_unit
-3. `src/main.py`             — keyboard shortcut routing (e.g. S = start, X = stop when unit selected)
-
-Deferred:
-- Tab/Arrow keyboard navigation
-- Line selection and context panel
-- ACK alarm shortcut (A)
+Grid is now fully playable with stable frequency, correct dispatch input, and visible AGC status.
+Suggested candidates for Stage 20:
+- Line trip/close commands (operator-initiated outage management — T/C keys on selected line)
+- Crisis auto-forcing (speed forced to slow when crisis condition triggers)
+- Interconnector flow display and target control
 
 ---
 
@@ -298,6 +372,12 @@ None.
 | 11 | Live sim running, panels update, flow markers animate, 9/9 pass | PASS | 2026-05-09 |
 | 12 | Click selects bus/unit, Escape deselects, 9/9 tests pass | PASS | 2026-05-09 |
 | 13 | Unit context overlay, MW target input, Enter dispatches, 9/9 pass | PASS | 2026-05-09 |
+| 14 | START/STOP buttons in context panel, S/X shortcuts, 9/9 pass | PASS | 2026-05-10 |
+| 15 | A/Shift+A ACK alarms, Tab cycles selection, bus context panel, 9/9 pass | PASS | 2026-05-27 |
+| 16 | Line click/Tab selection, line context panel (flow/loading/status), 9/9 pass | PASS | 2026-05-27 |
+| 17 | Shift 1 handover schedule; voltage/frequency alarm deduplication; 9/9 pass | PASS | 2026-05-27 |
+| 18 | Phantom droop removed; AGC integrator + Ctrl+A toggle; 9/9 pass | PASS | 2026-05-27 |
+| 19 | AGC debug indicator; digit input fix; demand noise smoothed; P=pause toggle; 9/9 pass | PASS | 2026-05-27 |
 
 ---
 

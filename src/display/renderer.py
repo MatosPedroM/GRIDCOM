@@ -126,6 +126,9 @@ class Renderer:
         # START/STOP button keyboard focus
         self._cmd_active: bool = False
 
+        # TRIP/CLOSE button keyboard focus
+        self._line_cmd_active: bool = False
+
         # Debug state
         self._mouse_pos:   tuple[int, int] = (0, 0)
         self._click_pos:   tuple[int, int] | None = None
@@ -151,10 +154,11 @@ class Renderer:
 
     def clear_selection(self) -> None:
         """Clear the currently selected element and reset input state."""
-        self._selected_label = None
-        self._input_buffer   = ''
-        self._input_active   = False
-        self._cmd_active     = False
+        self._selected_label  = None
+        self._input_buffer    = ''
+        self._input_active    = False
+        self._cmd_active      = False
+        self._line_cmd_active = False
 
     def _get_selected_unit(self):
         """Return the GenerationUnit for _selected_label if it is a unit, else None."""
@@ -225,6 +229,41 @@ class Renderer:
         sim.stop_unit(unit.label)
         self._cmd_active = False
 
+    def _get_selected_line(self):
+        """Return the Line dataclass for _selected_label if it is a line, else None."""
+        if self._selected_label is None:
+            return None
+        return next(
+            (l for l in self._canvas._lines if l.label == self._selected_label),
+            None,
+        )
+
+    def on_trip_line(self, sim) -> None:
+        """Issue a TRIP command for the selected IN SERVICE line."""
+        line = self._get_selected_line()
+        if line is None:
+            return
+        state = sim.get_state()
+        if state is None:
+            return
+        if state.line_status.get(line.label) != 'IN SERVICE':
+            return
+        sim.trip_line(line.label)
+        self._line_cmd_active = False
+
+    def on_close_line(self, sim) -> None:
+        """Issue a CLOSE command for the selected TRIPPED line."""
+        line = self._get_selected_line()
+        if line is None:
+            return
+        state = sim.get_state()
+        if state is None:
+            return
+        if state.line_status.get(line.label) != 'TRIPPED':
+            return
+        sim.close_line(line.label)
+        self._line_cmd_active = False
+
     def on_ack_alarm(self, sim) -> None:
         """Acknowledge the first unacknowledged alarm."""
         state = sim.get_state()
@@ -275,6 +314,8 @@ class Renderer:
             self._input_active = False
         elif self._cmd_active:
             self._cmd_active = False
+        elif self._line_cmd_active:
+            self._line_cmd_active = False
         elif self._selected_label is not None:
             self.clear_selection()
 
@@ -372,7 +413,8 @@ class Renderer:
                 )
                 if selected_line is not None:
                     draw_line_context(self._canvas_surf, self._font,
-                                      line=selected_line, state=state)
+                                      line=selected_line, state=state,
+                                      cmd_active=self._line_cmd_active)
 
         # ── Editor overlay ────────────────────────────────────────────────────
         if _sim_const.EDITOR_MODE:

@@ -6,13 +6,19 @@
 
 ## Current Stage
 
-**STAGE 20 — Generation Mix Panel + Forecast Load Overlay**
+**STAGE 21 — Line Trip/Close Commands**
 
 ## Current Status
 
-**COMPLETE** — GEN MIX panel added to strip (between DISPATCH and ALARMS); FORECAST LOAD chart drawn as fixed canvas overlay top-right; 9/9 tests pass.
+**COMPLETE** — Operator can trip/close any transmission line: T trips selected IN SERVICE line, C closes selected TRIPPED line; TRIP/CLOSE button appears in line context panel; 9/9 tests pass.
 
 ## Session Log
+
+### Session 22 (Stage 21 — Line Trip/Close Commands)
+- Edited: `src/display/context.py` — added `cmd_active` param to `draw_line_context()`; added row 6 TRIP/CLOSE button (red/green border matching line status); panel height dynamic (+1 row when status is known)
+- Edited: `src/display/renderer.py` — added `_line_cmd_active` flag; added `_get_selected_line()`; added `on_trip_line()` and `on_close_line()` methods (guard: correct status, calls sim); updated `clear_selection()`, `on_escape()`, and `tick()` line context call
+- Edited: `src/main.py` — T=trip line, C=close line key handlers; updated module docstring
+- Validated: 9/9 tests pass
 
 ### Session 21 (Stage 20 — Generation Mix Panel + Forecast Load Overlay)
 - Edited: `src/simulation/constants.py` — resized PANEL_FREQ/POWER/DISPATCH/ALARM_W to make room; added PANEL_GENMIX_X/W (1000/260); added FORECAST_OVERLAY_W/H/PAD constants
@@ -288,6 +294,13 @@ STAGE 17 — STABLE STARTING STATE FOR GAMEPLAY TESTING (complete, validated)
                                    _update_voltage_alarms() edge-triggered; _update_frequency_alarms()
                                    edge-triggered via state machine
 
+STAGE 21 — LINE TRIP/CLOSE COMMANDS (complete, validated)
+  ✓ src/display/context.py    — draw_line_context() gains cmd_active param; TRIP/CLOSE button row;
+                                 panel height grows by one row when button shown
+  ✓ src/display/renderer.py   — _line_cmd_active flag; _get_selected_line(); on_trip_line();
+                                 on_close_line(); clear_selection() and on_escape() updated
+  ✓ src/main.py               — T=trip line; C=close line; updated docstring
+
 STAGE 20 — GENERATION MIX PANEL + FORECAST LOAD OVERLAY (complete, validated)
   ✓ src/simulation/constants.py  — PANEL_GENMIX_X/W; FORECAST_OVERLAY_W/H/PAD; resized existing panels
   ✓ src/simulation/simulation.py — gen_mix_mw field in SimulationState; populated in _build_state()
@@ -328,7 +341,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 20 complete.
+Nothing. Stage 21 complete.
 
 ---
 
@@ -348,13 +361,13 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 21 — TBD**
+**Stage 22 — TBD**
 
-Grid now shows generation mix and forecast load at all times.
-Suggested candidates for Stage 21:
-- Line trip/close commands (operator-initiated outage management — T/C keys on selected line)
-- Crisis auto-forcing (speed forced to slow when crisis condition triggers)
+Operator can now trip and close lines.
+Suggested candidates for Stage 22:
+- Crisis auto-forcing (speed forced to slow when critical alarm triggers)
 - Interconnector flow display and target control
+- Line overload visual warning (line colour shifts toward red as loading approaches 100%)
 
 ---
 
@@ -394,6 +407,7 @@ None.
 | 18 | Phantom droop removed; AGC integrator + Ctrl+A toggle; 9/9 pass | PASS | 2026-05-27 |
 | 19 | AGC debug indicator; digit input fix; demand noise smoothed; P=pause toggle; 9/9 pass | PASS | 2026-05-27 |
 | 20 | GEN MIX strip panel; FORECAST LOAD canvas overlay; 9/9 pass | PASS | 2026-05-28 |
+| 21 | Line trip (T) and close (C) commands; TRIP/CLOSE button in context panel; 9/9 pass | PASS | 2026-05-29 |
 
 ---
 

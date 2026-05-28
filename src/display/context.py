@@ -233,19 +233,21 @@ def draw_bus_context(
 
 
 def draw_line_context(
-    surf:  pygame.Surface,
-    font:  pygame.freetype.Font,
+    surf:       pygame.Surface,
+    font:       pygame.freetype.Font,
     line,
     state,
+    cmd_active: bool = False,
 ) -> None:
     """
-    Draw a read-only line context panel at the top-left of the canvas surface.
+    Draw the line context panel at the top-left of the canvas surface.
 
     Args:
-        surf:  Canvas surface (1920×CANVAS_HEIGHT).
-        font:  Shared freetype font.
-        line:  Line dataclass for the selected line.
-        state: Current SimulationState, or None.
+        surf:       Canvas surface (1920×CANVAS_HEIGHT).
+        font:       Shared freetype font.
+        line:       Line dataclass for the selected line.
+        state:      Current SimulationState, or None.
+        cmd_active: Whether the TRIP/CLOSE button has keyboard focus.
     """
     x   = CONTEXT_OVERLAY_X
     y   = CONTEXT_OVERLAY_Y
@@ -253,8 +255,15 @@ def draw_line_context(
     pad = CONTEXT_OVERLAY_PAD
     sz  = FONT_SIZE_CONTEXT
 
-    n_rows  = 6  # from/to + voltage + rating + flow + loading + status
-    panel_h = CONTEXT_OVERLAY_HDR_H + n_rows * CONTEXT_OVERLAY_ROW_H + pad * 2
+    if state is not None:
+        line_status = state.line_status.get(line.label, 'IN SERVICE')
+    else:
+        line_status = None
+
+    # Button row shown when status is known (IN SERVICE → TRIP, TRIPPED → CLOSE)
+    show_btn = line_status in ('IN SERVICE', 'TRIPPED')
+    n_rows   = 6 + (1 if show_btn else 0)  # from/to + voltage + rating + flow + loading + status [+ button]
+    panel_h  = CONTEXT_OVERLAY_HDR_H + n_rows * CONTEXT_OVERLAY_ROW_H + pad * 2
 
     panel_rect = pygame.Rect(x, y, w, panel_h)
     pygame.draw.rect(surf, COL_PANEL_BG, panel_rect)
@@ -327,10 +336,7 @@ def draw_line_context(
 
     # ── Row 5: Status ─────────────────────────────────────────────────────────
     font.render_to(surf, (x + pad, _ry(5)), 'Status:', COL_TEXT_PRIMARY, size=sz)
-    if state is not None:
-        status = state.line_status.get(line.label, 'IN SERVICE')
-    else:
-        status = '--'
+    status     = line_status if line_status is not None else '--'
     if status == 'TRIPPED':
         status_col = COL_LINE_TRIPPED
     elif status == 'IN SERVICE':
@@ -339,6 +345,27 @@ def draw_line_context(
         status_col = COL_TEXT_DIM
     status_rect = font.get_rect(status, size=sz)
     font.render_to(surf, (x + w - pad - status_rect.width, _ry(5)), status, status_col, size=sz)
+
+    # ── Row 6: TRIP / CLOSE button ────────────────────────────────────────────
+    if show_btn:
+        if line_status == 'IN SERVICE':
+            btn_label  = '[ TRIP ]'
+            border_col = COL_ALARM_CRIT if cmd_active else COL_PANEL_BORDER
+            text_col   = COL_ALARM_CRIT
+        else:
+            btn_label  = '[ CLOSE ]'
+            border_col = COL_UNIT_ONLINE if cmd_active else COL_PANEL_BORDER
+            text_col   = COL_UNIT_ONLINE
+
+        btn_h    = CONTEXT_OVERLAY_ROW_H - 2
+        btn_w    = w - pad * 2
+        btn_rect = pygame.Rect(x + pad, _ry(6) - 1, btn_w, btn_h)
+        pygame.draw.rect(surf, COL_PANEL_BG, btn_rect)
+        pygame.draw.rect(surf, border_col, btn_rect, 1)
+
+        lbl_rect = font.get_rect(btn_label, size=sz)
+        lx = x + pad + (btn_w - lbl_rect.width) // 2
+        font.render_to(surf, (lx, _ry(6)), btn_label, text_col, size=sz)
 
 
 def _draw_cmd_row(

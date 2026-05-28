@@ -14,6 +14,8 @@ Controls:
     Ctrl+A          Toggle AGC (Automatic Generation Control)
     S               Save layout (EDITOR_MODE) / Start selected unit (Play mode)
     X               Stop selected unit
+    T               Trip selected line (if IN SERVICE)
+    C               Close selected line (if TRIPPED)
     A               Acknowledge top alarm
     Shift+A         Acknowledge all alarms
     Tab             Cycle element selection
@@ -140,6 +142,14 @@ def main() -> None:
                 elif (event.key == pygame.K_x and not _const.EDITOR_MODE
                       and not renderer._input_active):
                     renderer.on_stop_unit(sim)
+
+                elif (event.key == pygame.K_t and not _const.EDITOR_MODE
+                      and not renderer._input_active):
+                    renderer.on_trip_line(sim)
+
+                elif (event.key == pygame.K_c and not _const.EDITOR_MODE
+                      and not renderer._input_active):
+                    renderer.on_close_line(sim)
 
                 elif ctrl and not shift_held and event.key == pygame.K_a:
                     _const.AGC_ENABLED = not _const.AGC_ENABLED

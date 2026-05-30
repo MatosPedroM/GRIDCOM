@@ -47,12 +47,27 @@ import simulation.constants as _const
 from debug_scenario import make_debug_sim, DEBUG_SCENARIO
 
 
-def _to_native(display_surf: pygame.Surface, pos: tuple[int, int]) -> tuple[int, int]:
+_letterbox_rect: pygame.Rect | None = None
+
+
+def _compute_letterbox(display_w: int, display_h: int) -> pygame.Rect:
+    target_aspect = NATIVE_WIDTH / NATIVE_HEIGHT
+    if display_w / display_h >= target_aspect:
+        sh = display_h
+        sw = int(display_h * target_aspect)
+    else:
+        sw = display_w
+        sh = int(display_w / target_aspect)
+    return pygame.Rect((display_w - sw) // 2, (display_h - sh) // 2, sw, sh)
+
+
+def _to_native(pos: tuple[int, int]) -> tuple[int, int]:
     """Convert display-resolution mouse position to native 1920×1080 coordinates."""
-    dw, dh = display_surf.get_size()
-    nx = int(pos[0] * NATIVE_WIDTH  / dw)
-    ny = int(pos[1] * NATIVE_HEIGHT / dh)
-    return nx, ny
+    assert _letterbox_rect is not None
+    rx = max(0, min(_letterbox_rect.width  - 1, pos[0] - _letterbox_rect.x))
+    ry = max(0, min(_letterbox_rect.height - 1, pos[1] - _letterbox_rect.y))
+    return (int(rx * NATIVE_WIDTH  / _letterbox_rect.width),
+            int(ry * NATIVE_HEIGHT / _letterbox_rect.height))
 
 
 # Handover schedules: unit outputs (MW) at the start of each shift.
@@ -88,10 +103,14 @@ def main() -> None:
 
     load_layout()
 
-    # Window: resizable, starts at native resolution
-    flags = pygame.RESIZABLE
-    display_surf = pygame.display.set_mode((NATIVE_WIDTH, NATIVE_HEIGHT), flags)
+    # Query monitor size BEFORE set_mode (Info() is unreliable after)
+    _info = pygame.display.Info()
+    monitor_w, monitor_h = _info.current_w, _info.current_h
+    display_surf = pygame.display.set_mode((monitor_w, monitor_h), pygame.FULLSCREEN)
     pygame.display.set_caption('GRIDCOM : Grid Control Terminal')
+
+    global _letterbox_rect
+    _letterbox_rect = _compute_letterbox(monitor_w, monitor_h)
 
     clock = pygame.time.Clock()
     shift = 1
@@ -120,7 +139,23 @@ def main() -> None:
                 ctrl       = bool(mods & pygame.KMOD_CTRL)
                 shift_held = bool(mods & pygame.KMOD_SHIFT)
 
-                if event.key in (pygame.K_ESCAPE, pygame.K_q):
+                if (event.key == pygame.K_RETURN
+                      and bool(mods & pygame.KMOD_ALT)
+                      and _const.DEBUG_DISPLAY):
+                    _is_fullscreen = bool(display_surf.get_flags() & pygame.FULLSCREEN)
+                    if _is_fullscreen:
+                        display_surf = pygame.display.set_mode(
+                            (NATIVE_WIDTH, NATIVE_HEIGHT), pygame.RESIZABLE
+                        )
+                    else:
+                        _dinfo = pygame.display.Info()
+                        display_surf = pygame.display.set_mode(
+                            (_dinfo.current_w, _dinfo.current_h), pygame.FULLSCREEN
+                        )
+                    _letterbox_rect = _compute_letterbox(*display_surf.get_size())
+                    renderer.set_display(display_surf)
+
+                elif event.key in (pygame.K_ESCAPE, pygame.K_q):
                     if _const.EDITOR_MODE:
                         _const.EDITOR_MODE = False
                     elif renderer._selected_label is not None or renderer._input_active:
@@ -201,11 +236,11 @@ def main() -> None:
                     renderer.on_enter(sim)
 
             elif event.type == pygame.MOUSEMOTION:
-                renderer.on_mouse_move(_to_native(display_surf, event.pos))
+                renderer.on_mouse_move(_to_native(event.pos))
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    native_pos = _to_native(display_surf, event.pos)
+                    native_pos = _to_native(event.pos)
                     if _const.EDITOR_MODE:
                         renderer.on_mouse_down(native_pos)
                     else:
@@ -213,14 +248,10 @@ def main() -> None:
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1 and _const.EDITOR_MODE:
-                    renderer.on_mouse_up(_to_native(display_surf, event.pos))
+                    renderer.on_mouse_up(_to_native(event.pos))
 
             elif event.type == pygame.MOUSEWHEEL:
-                renderer.on_scroll(event.y, _to_native(display_surf, pygame.mouse.get_pos()))
-
-            elif event.type == pygame.VIDEORESIZE:
-                display_surf = pygame.display.set_mode(event.size, flags)
-                sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
+                renderer.on_scroll(event.y, _to_native(pygame.mouse.get_pos()))
 
         # Advance simulation
         if speed > 0.0:

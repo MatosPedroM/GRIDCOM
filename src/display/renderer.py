@@ -40,6 +40,7 @@ import simulation.constants as _sim_const
 from simulation.constants import (
     CANVAS_HEIGHT, STRIP_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
+    LETTERBOX_COLOUR,
     FONT_SIZE_PANEL, FONT_SIZE_OVERLAY,
     PANEL_FREQ_X, PANEL_FREQ_W,
     PANEL_POWER_X, PANEL_POWER_W,
@@ -91,6 +92,8 @@ class Renderer:
         self._strip_surf = self._native.subsurface(
             pygame.Rect(0, CANVAS_HEIGHT, NATIVE_WIDTH, STRIP_HEIGHT)
         )
+
+        self._letterbox_rect = self._calc_letterbox(display_surf)
 
         font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
         if font_path.exists():
@@ -424,12 +427,28 @@ class Renderer:
         if _sim_const.DEBUG_DISPLAY:
             self._draw_debug()
 
-        # ── Scale to display ───────────────────────────────────────────────────
-        if self._native.get_size() != self._display.get_size():
-            pygame.transform.scale(self._native, self._display.get_size(),
-                                   self._display)
+        # ── Scale to display with letterboxing ────────────────────────────────
+        self._display.fill(LETTERBOX_COLOUR)
+        pygame.transform.smoothscale(
+            self._native,
+            self._letterbox_rect.size,
+            self._display.subsurface(self._letterbox_rect),
+        )
+
+    # ─── Letterbox helpers ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _calc_letterbox(display_surf: pygame.Surface) -> pygame.Rect:
+        dw, dh = display_surf.get_size()
+        if dw / dh >= NATIVE_WIDTH / NATIVE_HEIGHT:
+            sh, sw = dh, int(dh * NATIVE_WIDTH / NATIVE_HEIGHT)
         else:
-            self._display.blit(self._native, (0, 0))
+            sw, sh = dw, int(dw * NATIVE_HEIGHT / NATIVE_WIDTH)
+        return pygame.Rect((dw - sw) // 2, (dh - sh) // 2, sw, sh)
+
+    def set_display(self, display_surf: pygame.Surface) -> None:
+        self._display = display_surf
+        self._letterbox_rect = self._calc_letterbox(display_surf)
 
     # ─── Debug overlay ────────────────────────────────────────────────────────
 
@@ -539,6 +558,14 @@ class Renderer:
         agc_w, _ = font.get_rect(agc_str, size=FONT_SIZE_OVERLAY)[2:4]
         font.render_to(self._native, (NATIVE_WIDTH - agc_w - 8, 18),
                        agc_str, agc_col, size=FONT_SIZE_OVERLAY)
+
+        # Resolution / scale — top-right, third line
+        dw, dh = self._display.get_size()
+        scale = self._letterbox_rect.width / NATIVE_WIDTH
+        res_str = f'{dw}\xd7{dh}  {NATIVE_WIDTH}\xd7{NATIVE_HEIGHT}  {scale:.2f}\xd7'
+        res_w, _ = font.get_rect(res_str, size=FONT_SIZE_OVERLAY)[2:4]
+        font.render_to(self._native, (NATIVE_WIDTH - res_w - 8, 32),
+                       res_str, COL_DEBUG_TEXT, size=FONT_SIZE_OVERLAY)
 
         # Click position — shown for 3 seconds
         if self._click_pos is not None:

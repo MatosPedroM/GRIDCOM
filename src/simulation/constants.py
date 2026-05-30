@@ -12,7 +12,7 @@ See CLAUDE.md Rule 1.
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
 DEBUG_SIMULATION: bool = True
-DEBUG_DISPLAY:    bool = False
+DEBUG_DISPLAY:    bool = True
 DEBUG_EVENTS:     bool = False
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
@@ -148,6 +148,7 @@ NATIVE_HEIGHT: int = 1080
 CANVAS_HEIGHT: int = 844        # Top portion — grid schematic
 STRIP_HEIGHT:  int = 236        # Bottom portion — instrument strip
 TARGET_FPS:    int = 60
+LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
 
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
 FONT_SIZE_LABEL:          int = 12      # bus/station labels on canvas

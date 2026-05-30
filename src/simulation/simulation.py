@@ -20,6 +20,9 @@ See SIMULATION_API.md for the complete public interface.
 
 from __future__ import annotations
 
+import csv
+import os
+
 import numpy as np
 from dataclasses import dataclass
 
@@ -33,7 +36,7 @@ from simulation.constants import (
     ALARM_MESSAGE_MAX_LEN,
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION,
-    AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ,
+    AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ, AGC_INTEGRAL_MAX,
     SLACK_BUS,
 )
 import simulation.constants as _sim_const
@@ -224,8 +227,13 @@ class GridSimulation:
         self._min_voltage:      float = 1.0
 
         # AGC PID state
-        self._agc_integral:    float = 0.0
+        self._agc_integral:     float = 0.0
         self._agc_prev_delta_f: float = 0.0
+
+        # AGC log state (used when AGC_LOG is True)
+        self._agc_log_file    = None
+        self._agc_log_writer  = None
+        self._agc_log_headers: list[str] | None = None
 
         # Crisis state
         self._crisis_active:  bool      = False
@@ -602,21 +610,73 @@ class GridSimulation:
             return
 
         self._agc_integral += delta_f * dt_sim_seconds
+        self._agc_integral = float(np.clip(self._agc_integral, -AGC_INTEGRAL_MAX, AGC_INTEGRAL_MAX))
         d_delta_f = (
             (delta_f - self._agc_prev_delta_f) / dt_sim_seconds
             if dt_sim_seconds > 0.0 else 0.0
         )
         self._agc_prev_delta_f = delta_f
 
-        raw_delta_mw = -(
-            AGC_KP * delta_f
-            + AGC_KI * self._agc_integral
-            + AGC_KD * d_delta_f
-        )
+        p_term = AGC_KP * delta_f
+        i_term = AGC_KI * self._agc_integral
+        d_term = AGC_KD * d_delta_f
+        raw_delta_mw = -(p_term + i_term + d_term)
         max_delta = AGC_MAX_RATE_MW_S * dt_sim_seconds
         agc_delta_mw = float(np.clip(raw_delta_mw, -max_delta, max_delta))
 
-        self._fleet.apply_agc_signal(agc_delta_mw)
+        unit_targets = self._fleet.apply_agc_signal(agc_delta_mw)
+
+        if _sim_const.AGC_LOG:
+            self._write_agc_log(
+                delta_f, p_term, i_term, d_term,
+                raw_delta_mw, agc_delta_mw, unit_targets,
+            )
+
+    def _write_agc_log(
+        self,
+        delta_f: float,
+        p_term: float,
+        i_term: float,
+        d_term: float,
+        raw_delta_mw: float,
+        agc_delta_mw: float,
+        unit_targets: dict,
+    ) -> None:
+        if self._agc_log_file is None:
+            log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+            os.makedirs(log_dir, exist_ok=True)
+            path = os.path.join(log_dir, 'agc_log.csv')
+            self._agc_log_file = open(path, 'w', newline='')
+            self._agc_log_writer = csv.writer(self._agc_log_file)
+            unit_cols = [f'unit_{lbl}_target_mw' for lbl in sorted(unit_targets)]
+            self._agc_log_headers = unit_cols
+            self._agc_log_writer.writerow([
+                'sim_time_min', 'frequency_hz', 'target_hz', 'delta_f_hz',
+                'p_term_mw', 'i_term_mw', 'd_term_mw',
+                'raw_delta_mw', 'agc_delta_mw',
+                'kp', 'ki', 'kd', 'max_rate_mw_s', 'deadband_hz',
+                *self._agc_log_headers,
+            ])
+        unit_vals = []
+        for col in self._agc_log_headers:
+            lbl = col[len('unit_'):-len('_target_mw')]
+            val = unit_targets.get(lbl)
+            unit_vals.append(f'{val:.2f}' if val is not None else '')
+        self._agc_log_writer.writerow([
+            f'{self._sim_time_min:.4f}',
+            f'{self._frequency.frequency_hz:.6f}',
+            f'{F_NOMINAL:.1f}',
+            f'{delta_f:.6f}',
+            f'{p_term:.4f}', f'{i_term:.4f}', f'{d_term:.4f}',
+            f'{raw_delta_mw:.4f}', f'{agc_delta_mw:.4f}',
+            AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ,
+            *unit_vals,
+        ])
+        self._agc_log_file.flush()
+
+    def __del__(self) -> None:
+        if self._agc_log_file is not None:
+            self._agc_log_file.close()
 
     # ─────── TOPOLOGY HELPERS ─────────────────────────────────────────────
 

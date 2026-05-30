@@ -403,19 +403,23 @@ class FleetModel:
         if model is not None:
             model.set_renewable_output(output_mw)
 
-    def apply_agc_signal(self, delta_mw: float) -> None:
+    def apply_agc_signal(self, delta_mw: float) -> dict[str, float]:
         """
         Distribute an AGC raise/lower signal among fast-response ONLINE units
         (HYDRO, HYDRO_ROR, CCGT), proportional to available headroom (raise)
         or regulating range above min_mw (lower).
         Calls set_target() so ramp rate limits apply on the next tick.
+
+        Returns:
+            {unit_label: new_target_mw} for every unit that received a share.
+            Empty dict if no eligible units or total weight is too small.
         """
         eligible = [
             u for u in self._units.values()
             if u.state == 'ONLINE' and u._spec.unit_type in _AGC_UNIT_TYPES
         ]
         if not eligible:
-            return
+            return {}
 
         if delta_mw > 0:
             weights = [max(0.0, u._spec.rated_mw - u.current_mw) for u in eligible]
@@ -424,11 +428,15 @@ class FleetModel:
 
         total_w = sum(weights)
         if total_w < 1.0:
-            return
+            return {}
 
+        assignments: dict[str, float] = {}
         for unit, w in zip(eligible, weights):
             share = delta_mw * (w / total_w)
-            unit.set_target(unit.target_mw + share)
+            new_target = unit.target_mw + share
+            unit.set_target(new_target)
+            assignments[unit.label] = new_target
+        return assignments
 
     # ─────── QUERIES — INDIVIDUAL ─────────────────────────────────────────
 

@@ -12,7 +12,7 @@ See CLAUDE.md Rule 1.
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
 DEBUG_SIMULATION: bool = True
-DEBUG_DISPLAY:    bool = True
+DEBUG_DISPLAY:    bool = False
 DEBUG_EVENTS:     bool = False
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
@@ -70,11 +70,13 @@ DROOP_R: float = 0.04           # 4% droop setting (per-unit on machine base)
 # AUTOMATIC GENERATION CONTROL (AGC)
 # ─────────────────────────────────────────────
 AGC_ENABLED:       bool  = True  # Toggled at runtime via Ctrl+A; starts disabled
-AGC_KP:            float = 10.0   # Proportional gain (MW per Hz of error)
-AGC_KI:            float = 0.1    # Integral gain (MW per Hz·sim-second of error)
-AGC_KD:            float = 0.1    # Derivative gain (MW per Hz/sim-second of error)
-AGC_MAX_RATE_MW_S: float = 100.0  # Max total AGC correction rate (MW per sim-second)
-AGC_DEADBAND_HZ:   float = 0.1   # ±Hz inside which AGC is silent
+AGC_KP:            float = 8.0    # Proportional gain (MW per Hz of error)
+AGC_KI:            float = 0.15   # Integral gain (MW per Hz·sim-second of error)
+AGC_KD:            float = 25.0   # Derivative gain (MW per Hz/sim-second of error)
+AGC_MAX_RATE_MW_S: float = 2.0   # Max total AGC correction rate (MW per sim-second)
+AGC_DEADBAND_HZ:   float = 0.05   # ±Hz inside which AGC is silent
+AGC_INTEGRAL_MAX:  float = 5.0   # Anti-windup clamp on integral accumulator (Hz·s)
+AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
 
 # ─────────────────────────────────────────────
 # LOSSES

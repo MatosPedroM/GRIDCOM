@@ -89,8 +89,8 @@ DEBUG_SCENARIO: DebugScenario = DebugScenario(
     initial_schedule={
         'HART-1': 680.0,    # nuclear baseload
         'HART-2': 680.0,
-        'RVSD-1': 230.0,    # coal raised from 200 MW handover — tighter headroom
-        'RVSD-3': 230.0,    # RVSD-2 still OOS (COALCOM easter egg)
+        'RVSD-1': 280.0,    # coal raised from 200 MW handover — tighter headroom
+        'RVSD-3': 240.0,    # RVSD-2 still OOS (COALCOM easter egg)
         'DUNH-1': 100.0,
         'DUNH-2': 100.0,
         'DUND-1':  40.0,

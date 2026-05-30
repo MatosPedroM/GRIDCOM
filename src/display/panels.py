@@ -102,7 +102,7 @@ def draw_frequency_panel(
         col = COL_FREQ_NOMINAL
 
     # Large Hz readout
-    hz_str = f'{freq_hz:.3f} Hz'
+    hz_str = f'{freq_hz:.2f} Hz'
     rect = font.get_rect(hz_str, size=FONT_SIZE_PANEL_LARGE)
     tx = (w - rect.width) // 2
     font.render_to(surf, (tx, _HEADER_H + 6), hz_str, col, size=FONT_SIZE_PANEL_LARGE)

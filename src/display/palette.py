@@ -31,7 +31,8 @@ COL_60KV:   Colour = (200, 136, 0)      # Dark amber — 60kV load lines
 # ─────────────────────────────────────────────
 # LINE STATES
 # ─────────────────────────────────────────────
-COL_LINE_NORMAL:    Colour = (60, 70, 85)       # De-emphasised — within limits
+COL_LINE_NORMAL:    Colour = (60, 70, 85)       # De-emphasised — unenergised / no-state
+COL_LINE_ENERGISED: Colour = (40, 160, 80)      # Energised, load < 60% — dim green
 COL_LOAD_WARN:      Colour = (204, 204, 0)      # 60-80% loading — yellow
 COL_LOAD_HIGH:      Colour = (255, 136, 0)      # 80-95% loading — orange
 COL_LOAD_CRIT:      Colour = (255, 34, 0)       # 95-100% and >100% loading — red

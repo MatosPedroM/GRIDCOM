@@ -6,13 +6,18 @@
 
 ## Current Stage
 
-**STAGE 21 — Line Trip/Close Commands**
+**STAGE 22 — Load-State Line Colouring**
 
 ## Current Status
 
-**COMPLETE** — Operator can trip/close any transmission line: T trips selected IN SERVICE line, C closes selected TRIPPED line; TRIP/CLOSE button appears in line context panel; 9/9 tests pass.
+**COMPLETE** — Line colour now encodes load state only (not voltage tier); thickness still encodes voltage. Energised lines are dim green; load escalation: green → yellow → orange → red → blinking-red; tripped lines are dark grey. 9/9 tests pass.
 
 ## Session Log
+
+### Session 23 (Stage 22 — Load-State Line Colouring)
+- Edited: `src/display/palette.py` — added `COL_LINE_ENERGISED` (40,160,80); updated `COL_LINE_NORMAL` comment
+- Edited: `src/display/symbols.py` — `draw_transmission_line()`: removed voltage→colour lookup dict; `base_col` is now always `COL_LINE_ENERGISED`; updated import and docstring
+- Validated: 9/9 tests pass
 
 ### Session 22 (Stage 21 — Line Trip/Close Commands)
 - Edited: `src/display/context.py` — added `cmd_active` param to `draw_line_context()`; added row 6 TRIP/CLOSE button (red/green border matching line status); panel height dynamic (+1 row when status is known)
@@ -294,6 +299,11 @@ STAGE 17 — STABLE STARTING STATE FOR GAMEPLAY TESTING (complete, validated)
                                    _update_voltage_alarms() edge-triggered; _update_frequency_alarms()
                                    edge-triggered via state machine
 
+STAGE 22 — LOAD-STATE LINE COLOURING (complete, validated)
+  ✓ src/display/palette.py    — COL_LINE_ENERGISED (40,160,80) added
+  ✓ src/display/symbols.py    — draw_transmission_line(): colour = load state only;
+                                 thickness = voltage tier only; voltage colour lookup removed
+
 STAGE 21 — LINE TRIP/CLOSE COMMANDS (complete, validated)
   ✓ src/display/context.py    — draw_line_context() gains cmd_active param; TRIP/CLOSE button row;
                                  panel height grows by one row when button shown
@@ -341,7 +351,7 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 21 complete.
+Nothing. Stage 22 complete.
 
 ---
 
@@ -361,13 +371,12 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 22 — TBD**
+**Stage 23 — TBD**
 
-Operator can now trip and close lines.
-Suggested candidates for Stage 22:
-- Crisis auto-forcing (speed forced to slow when critical alarm triggers)
-- Interconnector flow display and target control
-- Line overload visual warning (line colour shifts toward red as loading approaches 100%)
+Line colours now encode load state. Suggested candidates:
+- Crisis auto-forcing (speed forced to SLOW when a CRITICAL alarm fires)
+- Interconnector flow display (expose live MW flows to canvas labels)
+- Flow marker colour update (match load-state line colour scheme)
 
 ---
 

@@ -258,7 +258,7 @@ class GridCanvas:
 
         for bus in self._buses:
             # Offset label below the symbol for most buses, above for 400kV backbone
-            lx = bus.canvas_x + 9
+            lx = bus.canvas_x + 14
             ly = bus.canvas_y - 5
             col = COL_TEXT_SECONDARY
             font.render_to(surf, (lx, ly), bus.label, col, size=label_size)
@@ -269,5 +269,5 @@ class GridCanvas:
                 continue
             # Centre the label under the unit row
             cx = sum(p[0] for p in positions) // len(positions)
-            cy = max(p[1] for p in positions) + 10
+            cy = max(p[1] for p in positions) + 16
             font.render_to(surf, (cx - 12, cy), sl, COL_TEXT_DIM, size=label_size)

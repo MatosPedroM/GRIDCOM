@@ -28,8 +28,8 @@ from display.palette import (
 )
 
 # Symbol size constants
-BUS_SIZE:   int = 12   # substation square side length (px)
-UNIT_SIZE:  int = 12   # generation unit square side length (px)
+BUS_SIZE:   int = 24   # substation square side length (px)
+UNIT_SIZE:  int = 24   # generation unit square side length (px)
 UNIT_GAP:   int = 2    # gap between unit squares in a multi-unit station
 HALF_BUS:   int = BUS_SIZE // 2
 HALF_UNIT:  int = UNIT_SIZE // 2
@@ -84,7 +84,7 @@ def draw_substation(
     if not blacked:
         # Interior fill at 20% brightness of voltage colour
         fill_col = _dim(col, 0.20)
-        pygame.draw.rect(surf, fill_col, (x + 2, y + 2, BUS_SIZE - 4, BUS_SIZE - 4))
+        pygame.draw.rect(surf, fill_col, (x + 4, y + 4, BUS_SIZE - 8, BUS_SIZE - 8))
 
     # Square border — 2px
     pygame.draw.rect(surf, border_col, (x, y, BUS_SIZE, BUS_SIZE), 2)
@@ -110,7 +110,7 @@ def draw_load_substation(
     pygame.draw.rect(surf, border_col, (x, y, BUS_SIZE, BUS_SIZE), 1)
 
     if not blacked:
-        inset = 2
+        inset = 4
         tx = x + inset
         ty = y + inset
         tw = BUS_SIZE - inset * 2
@@ -311,20 +311,24 @@ def draw_transmission_line(
     blink_on: bool = True,
 ) -> None:
     """
-    Draw a transmission line with voltage-appropriate style and loading colour.
+    Draw a transmission line. Thickness encodes voltage tier; colour encodes load state.
 
-    400kV: single 4px line.
-    220kV: single 3px line.
-    150kV: single 2px line.
-    60kV:  dashed 1px line.
+    400kV: 4px.  220kV: 3px.  150kV: 2px.  60kV: dashed 1px.
+
+    Colour bands (energised):
+      < 60%  — COL_LINE_ENERGISED (dim green)
+      60–80% — blend green → yellow
+      80–95% — blend yellow → orange
+      95–100%— COL_LOAD_CRIT (red)
+      >100%  — blink red / green
 
     Args:
-        loading_pct: 0–200+. Determines colour override above 60%.
-        tripped:     If True, draw in tripped (dead) style.
+        loading_pct: 0–200+. Drives colour when energised.
+        tripped:     If True, draw in dark grey tripped style.
         blink_on:    Blink phase — used when loading > 100%.
     """
     from display.palette import (
-        COL_400KV, COL_220KV, COL_150KV, COL_60KV,
+        COL_LINE_ENERGISED,
         COL_LINE_TRIPPED, COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     )
 
@@ -337,13 +341,8 @@ def draw_transmission_line(
             _draw_dashed_line(surf, COL_LINE_TRIPPED, (bx, by), (x2, y2), dash=6, gap=4, width=1)
         return
 
-    # Determine colour from loading
-    base_col = {
-        400.0: COL_400KV,
-        220.0: COL_220KV,
-        150.0: COL_150KV,
-        60.0:  COL_60KV,
-    }.get(voltage_kv, COL_220KV)
+    # Colour encodes load state only; voltage tier is conveyed by thickness alone
+    base_col = COL_LINE_ENERGISED
 
     if loading_pct > 100.0:
         col = COL_LOAD_CRIT if blink_on else base_col

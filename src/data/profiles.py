@@ -12,7 +12,7 @@ See DOMAIN_GLOSSARY.md for campaign terms and shift definitions.
 See GAMEPLAY_REFERENCE.md for campaign structure.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,54 +209,107 @@ DEMAND_PROFILE_NORMALISED: dict[float, float] = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LOAD DISTRIBUTION
+# PER-SUBSTATION DEMAND SPECIFICATIONS
 #
-# Fraction of total system demand at each load substation.
-# Must sum to 1.0.
+# Each 150kV load substation has its own normalised daily curve and peak MW.
+# Total system demand is the bottom-up sum of active substation demands.
+#
+# Active substations by shift:
+#   Shifts 1-2:  LD01
+#   Shifts 3-4:  LD01, LD02, LD06
+#   Shifts 5-10: LD01, LD02, LD03, LD04, LD05, LD06
+#
+# peak_mw is fixed across all shifts. Aggregate at Shift 5 peak ≈ 5800 MW.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Shifts 1-2: south sub-grid + BRCK/LD01 — load on 220kV buses and LD01
-_LOAD_DIST_SHIFT1: dict[str, float] = {
-    'ASHF': 0.25,
-    'WRNT': 0.20,
-    'FAIR': 0.25,
-    'DUNM': 0.20,
-    'LD01': 0.10,
+@dataclass(frozen=True)
+class SubstationDemandSpec:
+    """Demand specification for one 150kV load substation."""
+    peak_mw: float
+    profile: dict[float, float]   # 25 hourly values (0.0–24.0), normalised 0.0–1.0
+
+
+# LD01 — south-west, residential: double peak (morning 08h + evening 18h)
+_PROFILE_LD01: dict[float, float] = {
+     0.0: 0.310,  1.0: 0.285,  2.0: 0.270,  3.0: 0.260,  4.0: 0.268,
+     5.0: 0.310,  6.0: 0.420,  7.0: 0.580,  8.0: 0.730,  9.0: 0.820,
+    10.0: 0.840, 11.0: 0.830, 12.0: 0.810, 13.0: 0.790, 14.0: 0.800,
+    15.0: 0.840, 16.0: 0.900, 17.0: 0.960, 18.0: 1.000, 19.0: 0.980,
+    20.0: 0.920, 21.0: 0.840, 22.0: 0.700, 23.0: 0.510, 24.0: 0.350,
 }
 
-# Shifts 3-4: south + centre — load spread across expanded 220kV network
-_LOAD_DIST_SHIFT3: dict[str, float] = {
-    'ASHF': 0.20,
-    'WRNT': 0.20,
-    'FAIR': 0.18,
-    'DUNM': 0.12,
-    'RDST': 0.12,
-    'COAL': 0.10,
-    'BARR': 0.08,
+# LD02 — central, mixed commercial/residential: broad midday plateau
+_PROFILE_LD02: dict[float, float] = {
+     0.0: 0.370,  1.0: 0.350,  2.0: 0.335,  3.0: 0.325,  4.0: 0.330,
+     5.0: 0.360,  6.0: 0.450,  7.0: 0.580,  8.0: 0.700,  9.0: 0.800,
+    10.0: 0.870, 11.0: 0.910, 12.0: 0.930, 13.0: 0.940, 14.0: 0.930,
+    15.0: 0.920, 16.0: 0.910, 17.0: 0.930, 18.0: 0.960, 19.0: 0.950,
+    20.0: 0.890, 21.0: 0.800, 22.0: 0.660, 23.0: 0.490, 24.0: 0.380,
 }
 
-# Shifts 5-10: full grid with dedicated 150kV load substations
-_LOAD_DIST_SHIFT5: dict[str, float] = {
-    'LD01': 0.18,
-    'LD02': 0.22,
-    'LD03': 0.20,
-    'LD04': 0.16,
-    'LD05': 0.14,
-    'LD06': 0.10,
+# LD03 — north-east, heavy industrial: strong flat block 07-19h, low overnight
+_PROFILE_LD03: dict[float, float] = {
+     0.0: 0.220,  1.0: 0.210,  2.0: 0.205,  3.0: 0.205,  4.0: 0.210,
+     5.0: 0.240,  6.0: 0.380,  7.0: 0.750,  8.0: 0.940,  9.0: 0.980,
+    10.0: 1.000, 11.0: 1.000, 12.0: 0.980, 13.0: 0.970, 14.0: 0.980,
+    15.0: 1.000, 16.0: 0.980, 17.0: 0.920, 18.0: 0.780, 19.0: 0.560,
+    20.0: 0.340, 21.0: 0.260, 22.0: 0.240, 23.0: 0.230, 24.0: 0.225,
 }
 
-# Backwards-compatible alias — points to the full-grid distribution
-LOAD_DISTRIBUTION: dict[str, float] = _LOAD_DIST_SHIFT5
+# LD04 — east, commercial/retail: strong morning ramp, modest evening tail
+_PROFILE_LD04: dict[float, float] = {
+     0.0: 0.280,  1.0: 0.260,  2.0: 0.248,  3.0: 0.242,  4.0: 0.248,
+     5.0: 0.280,  6.0: 0.400,  7.0: 0.580,  8.0: 0.760,  9.0: 0.880,
+    10.0: 0.940, 11.0: 0.970, 12.0: 0.980, 13.0: 0.980, 14.0: 0.970,
+    15.0: 0.960, 16.0: 0.960, 17.0: 0.970, 18.0: 0.960, 19.0: 0.900,
+    20.0: 0.800, 21.0: 0.680, 22.0: 0.540, 23.0: 0.390, 24.0: 0.290,
+}
+
+# LD05 — north, mixed urban: follows system shape closely
+_PROFILE_LD05: dict[float, float] = {
+     0.0: 0.360,  1.0: 0.340,  2.0: 0.325,  3.0: 0.315,  4.0: 0.320,
+     5.0: 0.350,  6.0: 0.440,  7.0: 0.580,  8.0: 0.720,  9.0: 0.820,
+    10.0: 0.870, 11.0: 0.890, 12.0: 0.880, 13.0: 0.860, 14.0: 0.850,
+    15.0: 0.870, 16.0: 0.910, 17.0: 0.960, 18.0: 1.000, 19.0: 0.980,
+    20.0: 0.930, 21.0: 0.860, 22.0: 0.740, 23.0: 0.540, 24.0: 0.390,
+}
+
+# LD06 — south, smaller urban/suburban: evening-heavy, later peak
+_PROFILE_LD06: dict[float, float] = {
+     0.0: 0.330,  1.0: 0.308,  2.0: 0.293,  3.0: 0.284,  4.0: 0.290,
+     5.0: 0.325,  6.0: 0.415,  7.0: 0.540,  8.0: 0.660,  9.0: 0.750,
+    10.0: 0.790, 11.0: 0.810, 12.0: 0.820, 13.0: 0.810, 14.0: 0.820,
+    15.0: 0.860, 16.0: 0.920, 17.0: 0.980, 18.0: 1.000, 19.0: 0.990,
+    20.0: 0.950, 21.0: 0.890, 22.0: 0.780, 23.0: 0.600, 24.0: 0.420,
+}
+
+SUBSTATION_DEMAND: dict[str, SubstationDemandSpec] = {
+    'LD01': SubstationDemandSpec(peak_mw=2200.0, profile=_PROFILE_LD01),
+    'LD02': SubstationDemandSpec(peak_mw=1800.0, profile=_PROFILE_LD02),
+    'LD03': SubstationDemandSpec(peak_mw=1600.0, profile=_PROFILE_LD03),
+    'LD04': SubstationDemandSpec(peak_mw=1400.0, profile=_PROFILE_LD04),
+    'LD05': SubstationDemandSpec(peak_mw=1200.0, profile=_PROFILE_LD05),
+    'LD06': SubstationDemandSpec(peak_mw=800.0,  profile=_PROFILE_LD06),
+}
+
+# LD buses activated by shift number (cumulative — each shift includes all prior)
+_ACTIVE_LD_BY_SHIFT: list[tuple[int, str]] = [
+    (1, 'LD01'),
+    (3, 'LD02'),
+    (3, 'LD06'),
+    (5, 'LD03'),
+    (5, 'LD04'),
+    (5, 'LD05'),
+]
 
 
-def get_load_distribution(shift: int) -> dict[str, float]:
-    """Return the load distribution dict appropriate for the given shift."""
-    if shift >= 5:
-        return _LOAD_DIST_SHIFT5
-    elif shift >= 3:
-        return _LOAD_DIST_SHIFT3
-    else:
-        return _LOAD_DIST_SHIFT1
+def get_substation_demand_specs(shift: int) -> dict[str, SubstationDemandSpec]:
+    """Return SubstationDemandSpec for each LD bus active at the given shift."""
+    return {
+        label: SUBSTATION_DEMAND[label]
+        for active_from, label in _ACTIVE_LD_BY_SHIFT
+        if shift >= active_from
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

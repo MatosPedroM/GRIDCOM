@@ -83,7 +83,7 @@ def make_debug_sim(scenario: DebugScenario) -> tuple[GridSimulation, Grid]:
 
 DEBUG_SCENARIO: DebugScenario = DebugScenario(
     description='Shift 1 Dispatch Stress Test — L22 out, demand near peak, limited thermal headroom',
-    shift_number=1,
+    shift_number=5,
     start_hour=6.0,         # 09:00 — morning ramp complete, demand climbing
     peak_demand_mw=1800.0,  # near Shift 1 peak (normal = 2200 MW)
     initial_schedule={

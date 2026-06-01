@@ -119,6 +119,18 @@ class Renderer:
         self._dispatch_scroll: int = 0
         self._alarm_scroll:    int = 0
 
+        # Panel surface cache: standalone surfaces redrawn only when data changes
+        self._panel_cache: dict[str, pygame.Surface] = {
+            'freq':     pygame.Surface((PANEL_FREQ_W,     STRIP_HEIGHT)),
+            'power':    pygame.Surface((PANEL_POWER_W,    STRIP_HEIGHT)),
+            'dispatch': pygame.Surface((PANEL_DISPATCH_W, STRIP_HEIGHT)),
+            'forecast': pygame.Surface((PANEL_FORECAST_W, STRIP_HEIGHT)),
+            'genmix':   pygame.Surface((PANEL_GENMIX_W,   STRIP_HEIGHT)),
+            'alarm':    pygame.Surface((PANEL_ALARM_W,    STRIP_HEIGHT)),
+        }
+        # Sentinel objects force a full draw on the first frame
+        self._panel_keys: dict[str, object] = {k: object() for k in self._panel_cache}
+
         # Selection state
         self._selected_label: str | None = None
 
@@ -366,29 +378,83 @@ class Renderer:
             self._flow.draw(self._canvas_surf, state,
                             self._canvas._bus_map, self._canvas._lines)
 
-        # ── Draw instrument strip panels ──────────────────────────────────────
-        freq_surf     = self._strip_surf.subsurface(
-            pygame.Rect(PANEL_FREQ_X,     0, PANEL_FREQ_W,     STRIP_HEIGHT))
-        power_surf    = self._strip_surf.subsurface(
-            pygame.Rect(PANEL_POWER_X,    0, PANEL_POWER_W,    STRIP_HEIGHT))
-        dispatch_surf = self._strip_surf.subsurface(
-            pygame.Rect(PANEL_DISPATCH_X, 0, PANEL_DISPATCH_W, STRIP_HEIGHT))
-        forecast_surf = self._strip_surf.subsurface(
-            pygame.Rect(PANEL_FORECAST_X, 0, PANEL_FORECAST_W, STRIP_HEIGHT))
-        genmix_surf   = self._strip_surf.subsurface(
-            pygame.Rect(PANEL_GENMIX_X,   0, PANEL_GENMIX_W,   STRIP_HEIGHT))
-        alarm_surf    = self._strip_surf.subsurface(
-            pygame.Rect(PANEL_ALARM_X,    0, PANEL_ALARM_W,    STRIP_HEIGHT))
+        # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
+        paused = (speed_mult == 0.0)
 
-        draw_frequency_panel(freq_surf,     self._font, self._blink_on,     state,
-                             paused=(speed_mult == 0.0))
-        draw_power_panel(power_surf,        self._font,                     state)
-        draw_dispatch_panel(dispatch_surf,  self._font, self._blink_on,     state,
-                            self._grid, self._dispatch_scroll)
-        draw_forecast_panel(forecast_surf,  self._font,                     state)
-        draw_genmix_panel(genmix_surf,      self._font,                     state)
-        draw_alarm_panel(alarm_surf,        self._font, self._blink_2hz_on, state,
-                         self._alarm_scroll)
+        # Dirty keys: tuples of values visible in each panel, rounded to display precision
+        freq_key = (
+            round(state.frequency_hz, 2) if state else None,
+            state.frequency_trend        if state else None,
+            int(state.sim_hour * 60)     if state else None,
+            paused,
+        )
+        power_key = (
+            round(state.total_generation_mw)  if state else None,
+            round(state.total_load_mw)        if state else None,
+            round(state.net_imbalance_mw)     if state else None,
+            round(state.spinning_reserve_mw)  if state else None,
+            round(state.system_inertia_h, 1)  if state else None,
+            round(state.losses_mw)            if state else None,
+        )
+        dispatch_key = (
+            ''.join(v[:1] for _, v in sorted(state.unit_states.items())) if state else None,
+            round(sum(state.unit_outputs_mw.values()))                    if state else None,
+            round(sum(state.unit_start_progress.values()) * 100)          if state else None,
+            self._dispatch_scroll,
+        )
+        forecast_key = (
+            len(state.demand_forecast_mw) if state else 0,
+            int(state.sim_hour)           if state else 0,
+        )
+        genmix_key = (
+            tuple(round(v) for _, v in sorted(state.gen_mix_mw.items())) if state else None,
+        )
+        _has_unacked = (
+            any(not a.acknowledged for a in state.active_alarms) if state else False
+        )
+        alarm_key = (
+            len(state.active_alarms)                               if state else 0,
+            sum(1 for a in state.active_alarms if a.acknowledged)  if state else 0,
+            self._alarm_scroll,
+            self._blink_2hz_on if _has_unacked else True,
+        )
+
+        if freq_key != self._panel_keys['freq']:
+            draw_frequency_panel(
+                self._panel_cache['freq'], self._font, self._blink_on, state, paused=paused)
+            self._panel_keys['freq'] = freq_key
+
+        if power_key != self._panel_keys['power']:
+            draw_power_panel(self._panel_cache['power'], self._font, state)
+            self._panel_keys['power'] = power_key
+
+        if dispatch_key != self._panel_keys['dispatch']:
+            draw_dispatch_panel(
+                self._panel_cache['dispatch'], self._font, self._blink_on,
+                state, self._grid, self._dispatch_scroll)
+            self._panel_keys['dispatch'] = dispatch_key
+
+        if forecast_key != self._panel_keys['forecast']:
+            draw_forecast_panel(self._panel_cache['forecast'], self._font, state)
+            self._panel_keys['forecast'] = forecast_key
+
+        if genmix_key != self._panel_keys['genmix']:
+            draw_genmix_panel(self._panel_cache['genmix'], self._font, state)
+            self._panel_keys['genmix'] = genmix_key
+
+        if alarm_key != self._panel_keys['alarm']:
+            draw_alarm_panel(
+                self._panel_cache['alarm'], self._font, self._blink_2hz_on,
+                state, self._alarm_scroll)
+            self._panel_keys['alarm'] = alarm_key
+
+        # Blit all cached panel surfaces to the strip in one pass
+        self._strip_surf.blit(self._panel_cache['freq'],     (PANEL_FREQ_X,     0))
+        self._strip_surf.blit(self._panel_cache['power'],    (PANEL_POWER_X,    0))
+        self._strip_surf.blit(self._panel_cache['dispatch'], (PANEL_DISPATCH_X, 0))
+        self._strip_surf.blit(self._panel_cache['forecast'], (PANEL_FORECAST_X, 0))
+        self._strip_surf.blit(self._panel_cache['genmix'],   (PANEL_GENMIX_X,   0))
+        self._strip_surf.blit(self._panel_cache['alarm'],    (PANEL_ALARM_X,    0))
 
         # ── Unit context overlay ──────────────────────────────────────────────
         selected_unit = self._get_selected_unit()
@@ -429,7 +495,7 @@ class Renderer:
 
         # ── Scale to display with letterboxing ────────────────────────────────
         self._display.fill(LETTERBOX_COLOUR)
-        pygame.transform.smoothscale(
+        pygame.transform.scale(
             self._native,
             self._letterbox_rect.size,
             self._display.subsurface(self._letterbox_rect),

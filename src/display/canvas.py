@@ -42,7 +42,7 @@ from display.symbols import (
     draw_interconnector,
     UNIT_SIZE, UNIT_GAP,
 )
-from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL
+from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL, NATIVE_WIDTH
 from utils.helpers import resource_path
 
 
@@ -120,6 +120,12 @@ class GridCanvas:
                     (self._bus_map[from_lbl], self._bus_map[to_lbl])
                 )
 
+        # Canvas cache: standalone surface redrawn only when sim state visibly changes
+        self._canvas_surf_cache: pygame.Surface = pygame.Surface(
+            (NATIVE_WIDTH, CANVAS_HEIGHT)
+        )
+        self._canvas_key: object = object()  # sentinel forces first-frame draw
+
     def rebuild(self, shift: int | None = None) -> None:
         """Re-run __init__ pre-computation after layout overrides change."""
         if shift is not None:
@@ -136,7 +142,8 @@ class GridCanvas:
         selected_label: str | None = None,
     ) -> None:
         """
-        Draw the complete grid schematic.
+        Draw the complete grid schematic, using a cached surface to skip
+        redundant redraws when the visible state has not changed.
 
         Args:
             surf:           Target surface (1920×CANVAS_HEIGHT).
@@ -144,7 +151,74 @@ class GridCanvas:
             blink_on:       Current blink phase (1Hz).
             selected_label: Bus or unit label that is currently selected.
         """
-        surf.fill(COL_BACKGROUND)
+        canvas_key = self._build_canvas_key(state, blink_on, selected_label)
+        if canvas_key != self._canvas_key:
+            self._redraw_to(self._canvas_surf_cache, state, blink_on, selected_label)
+            self._canvas_key = canvas_key
+        surf.blit(self._canvas_surf_cache, (0, 0))
+
+    def _build_canvas_key(
+        self,
+        state,
+        blink_on: bool,
+        selected_label: str | None,
+    ) -> tuple:
+        """Return a compact tuple that changes when the canvas must be redrawn."""
+        if state is None:
+            return (None, selected_label)
+
+        # Tripped lines and blacked buses (infrequent changes)
+        tripped_lines = frozenset(
+            lbl for lbl, status in state.line_status.items() if status == 'TRIPPED'
+        )
+        blacked_buses = frozenset(state.blackout_zones)
+
+        # Unit states as a compact character-per-unit string
+        unit_state_sig = ''.join(v[:1] for _, v in sorted(state.unit_states.items()))
+
+        # Line loading quantised to 5% steps — caps redraw rate to a few per second
+        loading_sig = tuple(
+            round(state.line_loading_pct.get(line.label, 0.0) / 5)
+            for line in self._lines
+        )
+
+        # Unit outputs quantised to 5% of rated — same reasoning
+        output_sig = tuple(
+            round(state.unit_outputs_mw.get(u.label, 0.0) / u.rated_mw * 20)
+            if u.rated_mw > 0 else 0
+            for units in self._station_units.values()
+            for u in units
+        )
+
+        # Interconnector flows quantised to 50 MW
+        intc_sig = tuple(
+            round(v / 50)
+            for _, v in sorted(
+                (state.interconnector_flows if hasattr(state, 'interconnector_flows') else {}).items()
+            )
+        )
+
+        # Blink only affects the canvas when tripped elements are present
+        has_blink_effect = bool(tripped_lines) or any(
+            s[:1] in ('T', 'S') for s in state.unit_states.values()
+        )
+        blink_key = blink_on if has_blink_effect else True
+
+        return (
+            tripped_lines, blacked_buses, unit_state_sig,
+            loading_sig, output_sig, intc_sig,
+            selected_label, blink_key,
+        )
+
+    def _redraw_to(
+        self,
+        target: pygame.Surface,
+        state=None,
+        blink_on: bool = True,
+        selected_label: str | None = None,
+    ) -> None:
+        """Full schematic redraw into target surface."""
+        target.fill(COL_BACKGROUND)
 
         # Build lookup tables from state (if provided)
         line_loading:  dict[str, float] = {}
@@ -164,7 +238,6 @@ class GridCanvas:
                 bus_blacked[b.label] = (b.label in blacked)
             unit_states  = state.unit_states
             for lbl, mw in state.unit_outputs_mw.items():
-                # Compute output fraction against rated_mw from fleet
                 try:
                     unit_obj = get_unit(lbl)
                     unit_outputs[lbl] = mw / unit_obj.rated_mw if unit_obj.rated_mw > 0 else 0.0
@@ -185,7 +258,7 @@ class GridCanvas:
                 tripped  = line_tripped.get(line.label, False)
                 loading  = line_loading.get(line.label, 0.0)
                 draw_transmission_line(
-                    surf,
+                    target,
                     fb.canvas_x, fb.canvas_y,
                     tb.canvas_x, tb.canvas_y,
                     voltage_kv=line.voltage_kv,
@@ -197,7 +270,7 @@ class GridCanvas:
         # ── Layer 5: Hydraulic connectors ──────────────────────────────────────
         for fb, tb in self._hydraulic:
             draw_hydraulic_connector(
-                surf,
+                target,
                 fb.canvas_x, fb.canvas_y,
                 tb.canvas_x, tb.canvas_y,
             )
@@ -206,7 +279,7 @@ class GridCanvas:
         for bus in self._buses:
             blacked  = bus_blacked.get(bus.label, False)
             selected = (selected_label == bus.label)
-            draw_substation(surf, bus.canvas_x, bus.canvas_y,
+            draw_substation(target, bus.canvas_x, bus.canvas_y,
                             voltage_kv=bus.voltage_kv,
                             blacked=blacked, selected=selected)
 
@@ -220,19 +293,17 @@ class GridCanvas:
 
             bus_cx, bus_cy = bus.canvas_x, bus.canvas_y
 
-            # Collector line from unit row to bus
             draw_station_collector(
-                surf, positions, bus_cx, bus_cy,
+                target, positions, bus_cx, bus_cy,
                 voltage_kv=bus.voltage_kv,
             )
 
-            # Individual unit squares
             for unit, (ux, uy) in zip(units, positions):
-                u_state   = unit_states.get(unit.label, 'OFFLINE')
-                u_frac    = unit_outputs.get(unit.label, 0.0)
-                selected  = (selected_label == unit.label)
+                u_state  = unit_states.get(unit.label, 'OFFLINE')
+                u_frac   = unit_outputs.get(unit.label, 0.0)
+                selected = (selected_label == unit.label)
                 draw_unit_square(
-                    surf, ux, uy,
+                    target, ux, uy,
                     unit_type=unit.unit_type,
                     unit_state=u_state,
                     output_fraction=u_frac,
@@ -243,11 +314,11 @@ class GridCanvas:
         # ── Layer 8: Interconnector markers ────────────────────────────────────
         for intc_label, (ix, iy) in INTERCONNECTOR_POSITIONS.items():
             flow = intc_flows.get(intc_label, 0.0)
-            draw_interconnector(surf, ix, iy, flow_mw=flow,
+            draw_interconnector(target, ix, iy, flow_mw=flow,
                                 label=intc_label, font=self._font)
 
         # ── Layer 9: Node labels ───────────────────────────────────────────────
-        self._draw_labels(surf)
+        self._draw_labels(target)
 
     # ─── Label drawing ────────────────────────────────────────────────────────
 

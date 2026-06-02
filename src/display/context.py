@@ -54,7 +54,7 @@ def draw_unit_context(
     Draw the unit context panel at the top-left of the canvas surface.
 
     Args:
-        surf:         Canvas surface (1920×CANVAS_HEIGHT).
+        surf:         Canvas surface.
         font:         Shared freetype font.
         unit:         GenerationUnit dataclass for the selected unit.
         unit_state:   Current state string.
@@ -64,42 +64,44 @@ def draw_unit_context(
         input_active: Whether the player is editing the target field.
         blink_on:     Current 1Hz blink phase (for cursor).
         cmd_active:   Whether the START/STOP button has keyboard focus.
+        font_scale:   Display scale factor.
     """
-    x   = CONTEXT_OVERLAY_X
-    y   = CONTEXT_OVERLAY_Y
-    w   = CONTEXT_OVERLAY_W
-    pad = CONTEXT_OVERLAY_PAD
-    sz  = int(FONT_SIZE_CONTEXT * font_scale)
+    fs  = font_scale
+    x   = int(CONTEXT_OVERLAY_X   * fs)
+    y   = int(CONTEXT_OVERLAY_Y   * fs)
+    w   = int(CONTEXT_OVERLAY_W   * fs)
+    pad = int(CONTEXT_OVERLAY_PAD * fs)
+    rh  = int(CONTEXT_OVERLAY_ROW_H * fs)
+    hdh = int(CONTEXT_OVERLAY_HDR_H * fs)
+    sz  = int(FONT_SIZE_CONTEXT * fs)
 
     is_dispatchable = unit_state in ('ONLINE', 'STARTING', 'SHUTDOWN')
     is_renewable    = unit.unit_type in ('WIND', 'SOLAR')
 
     show_start      = unit_state == 'OFFLINE' and not is_renewable
     show_stop       = unit_state == 'ONLINE'  and not is_renewable
-    # STARTING/SHUTDOWN: show status text row instead of a button
     show_transition = unit_state in ('STARTING', 'SHUTDOWN') and not is_renewable
 
     if is_dispatchable:
-        n_rows = 4  # output + target field + range hint + cmd/transition row
+        n_rows = 4
     elif show_start or show_transition:
-        n_rows = 3  # output + not-dispatchable msg + cmd row
+        n_rows = 3
     else:
-        n_rows = 2  # output + not-dispatchable msg (renewable ONLINE)
+        n_rows = 2
 
-    panel_h = CONTEXT_OVERLAY_HDR_H + n_rows * CONTEXT_OVERLAY_ROW_H + pad * 2
+    panel_h = hdh + n_rows * rh + pad * 2
 
     panel_rect = pygame.Rect(x, y, w, panel_h)
     pygame.draw.rect(surf, COL_PANEL_BG, panel_rect)
     pygame.draw.rect(surf, COL_PANEL_BORDER, panel_rect, 1)
 
-    sep_y = y + CONTEXT_OVERLAY_HDR_H
+    sep_y = y + hdh
     pygame.draw.line(surf, COL_PANEL_BORDER, (x + 1, sep_y), (x + w - 2, sep_y), 1)
 
     def _ry(n: int) -> int:
-        return y + CONTEXT_OVERLAY_HDR_H + pad + n * CONTEXT_OVERLAY_ROW_H
+        return y + hdh + pad + n * rh
 
-    # ── Header row ────────────────────────────────────────────────────────────
-    hdr_y = y + pad + 2
+    hdr_y = y + pad + max(1, int(2 * fs))
     font.render_to(surf, (x + pad, hdr_y), unit.label, COL_TEXT_HEADING, size=sz)
 
     state_str  = unit_state
@@ -113,7 +115,6 @@ def draw_unit_context(
     font.render_to(surf, (x + (w - type_rect.width) // 2, hdr_y),
                    type_str, COL_TEXT_DIM, size=sz)
 
-    # ── Row 0: Output ─────────────────────────────────────────────────────────
     row0_y    = _ry(0)
     rated_str  = f'/{unit.rated_mw:.0f} MW'
     rated_rect = font.get_rect(rated_str, size=sz)
@@ -127,14 +128,13 @@ def draw_unit_context(
                    out_str, COL_TEXT_VALUE, size=sz)
 
     if is_dispatchable:
-        # ── Row 1: Target input field ─────────────────────────────────────────
         row1_y  = _ry(1)
         label_w = font.get_rect('Target: ', size=sz).width
         mw_str  = ' MW'
         mw_w    = font.get_rect(mw_str, size=sz).width
         field_x = x + pad + label_w
         field_w = w - pad - (field_x - x) - mw_w - pad
-        field_h = CONTEXT_OVERLAY_ROW_H - 2
+        field_h = rh - 2
 
         font.render_to(surf, (x + pad, row1_y), 'Target:', COL_TEXT_PRIMARY, size=sz)
 
@@ -154,27 +154,22 @@ def draw_unit_context(
 
         font.render_to(surf, (field_x + field_w + 2, row1_y), mw_str, COL_TEXT_DIM, size=sz)
 
-        # ── Row 2: Range hint ─────────────────────────────────────────────────
         hint = f'[{unit.min_mw:.0f} – {unit.rated_mw:.0f} MW]'
         font.render_to(surf, (x + pad, _ry(2)), hint, COL_TEXT_DIM, size=sz)
 
-        # ── Row 3: START / STOP button or transition status ───────────────────
-        _draw_cmd_row(surf, font, x, w, pad, sz, _ry(3),
+        _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(3),
                       show_start, show_stop, show_transition,
-                      unit_state, cmd_active, font_scale)
+                      unit_state, cmd_active)
 
     else:
-        # ── Row 1: Not dispatchable ───────────────────────────────────────────
         font.render_to(surf, (x + pad, _ry(1)),
                        '(unit not dispatchable)', COL_TEXT_DIM, size=sz)
 
-        # ── Row 2: START button (OFFLINE non-renewable) ───────────────────────
         if show_start:
-            _draw_cmd_row(surf, font, x, w, pad, sz, _ry(2),
+            _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(2),
                           show_start=True, show_stop=False,
                           show_transition=False,
-                          unit_state=unit_state, cmd_active=cmd_active,
-                          font_scale=font_scale)
+                          unit_state=unit_state, cmd_active=cmd_active)
 
 
 def draw_bus_context(
@@ -184,47 +179,39 @@ def draw_bus_context(
     state,
     font_scale: float = 1.0,
 ) -> None:
-    """
-    Draw a read-only bus context panel at the top-left of the canvas surface.
+    """Draw a read-only bus context panel at the top-left of the canvas surface."""
+    fs  = font_scale
+    x   = int(CONTEXT_OVERLAY_X   * fs)
+    y   = int(CONTEXT_OVERLAY_Y   * fs)
+    w   = int(CONTEXT_OVERLAY_W   * fs)
+    pad = int(CONTEXT_OVERLAY_PAD * fs)
+    rh  = int(CONTEXT_OVERLAY_ROW_H * fs)
+    hdh = int(CONTEXT_OVERLAY_HDR_H * fs)
+    sz  = int(FONT_SIZE_CONTEXT * fs)
 
-    Args:
-        surf:  Canvas surface (1920×CANVAS_HEIGHT).
-        font:  Shared freetype font.
-        bus:   Bus dataclass for the selected bus.
-        state: Current SimulationState, or None.
-    """
-    x   = CONTEXT_OVERLAY_X
-    y   = CONTEXT_OVERLAY_Y
-    w   = CONTEXT_OVERLAY_W
-    pad = CONTEXT_OVERLAY_PAD
-    sz  = int(FONT_SIZE_CONTEXT * font_scale)
-
-    n_rows  = 2  # voltage row + kV label row
-    panel_h = CONTEXT_OVERLAY_HDR_H + n_rows * CONTEXT_OVERLAY_ROW_H + pad * 2
+    n_rows  = 2
+    panel_h = hdh + n_rows * rh + pad * 2
 
     panel_rect = pygame.Rect(x, y, w, panel_h)
     pygame.draw.rect(surf, COL_PANEL_BG, panel_rect)
     pygame.draw.rect(surf, COL_PANEL_BORDER, panel_rect, 1)
 
-    sep_y = y + CONTEXT_OVERLAY_HDR_H
+    sep_y = y + hdh
     pygame.draw.line(surf, COL_PANEL_BORDER, (x + 1, sep_y), (x + w - 2, sep_y), 1)
 
     def _ry(n: int) -> int:
-        return y + CONTEXT_OVERLAY_HDR_H + pad + n * CONTEXT_OVERLAY_ROW_H
+        return y + hdh + pad + n * rh
 
-    # ── Header: bus label left, "BUS" right ───────────────────────────────────
-    hdr_y = y + pad + 2
+    hdr_y = y + pad + max(1, int(2 * fs))
     font.render_to(surf, (x + pad, hdr_y), bus.label, COL_TEXT_HEADING, size=sz)
     type_rect = font.get_rect('BUS', size=sz)
     font.render_to(surf, (x + w - pad - type_rect.width, hdr_y), 'BUS', COL_TEXT_DIM, size=sz)
 
-    # ── Row 0: Voltage level ──────────────────────────────────────────────────
     kv_str = f'{bus.voltage_kv:.0f} kV'
     font.render_to(surf, (x + pad, _ry(0)), 'Voltage level:', COL_TEXT_PRIMARY, size=sz)
     kv_rect = font.get_rect(kv_str, size=sz)
     font.render_to(surf, (x + w - pad - kv_rect.width, _ry(0)), kv_str, COL_TEXT_DIM, size=sz)
 
-    # ── Row 1: Live voltage pu ────────────────────────────────────────────────
     font.render_to(surf, (x + pad, _ry(1)), 'V:', COL_TEXT_PRIMARY, size=sz)
     if state is not None:
         v_pu = state.bus_voltages.get(bus.label)
@@ -243,70 +230,58 @@ def draw_line_context(
     cmd_active: bool  = False,
     font_scale: float = 1.0,
 ) -> None:
-    """
-    Draw the line context panel at the top-left of the canvas surface.
-
-    Args:
-        surf:       Canvas surface (1920×CANVAS_HEIGHT).
-        font:       Shared freetype font.
-        line:       Line dataclass for the selected line.
-        state:      Current SimulationState, or None.
-        cmd_active: Whether the TRIP/CLOSE button has keyboard focus.
-    """
-    x   = CONTEXT_OVERLAY_X
-    y   = CONTEXT_OVERLAY_Y
-    w   = CONTEXT_OVERLAY_W
-    pad = CONTEXT_OVERLAY_PAD
-    sz  = int(FONT_SIZE_CONTEXT * font_scale)
+    """Draw the line context panel at the top-left of the canvas surface."""
+    fs  = font_scale
+    x   = int(CONTEXT_OVERLAY_X   * fs)
+    y   = int(CONTEXT_OVERLAY_Y   * fs)
+    w   = int(CONTEXT_OVERLAY_W   * fs)
+    pad = int(CONTEXT_OVERLAY_PAD * fs)
+    rh  = int(CONTEXT_OVERLAY_ROW_H * fs)
+    hdh = int(CONTEXT_OVERLAY_HDR_H * fs)
+    sz  = int(FONT_SIZE_CONTEXT * fs)
 
     if state is not None:
         line_status = state.line_status.get(line.label, 'IN_SERVICE')
     else:
         line_status = None
 
-    # Button row shown when status is known (IN SERVICE → TRIP, TRIPPED → CLOSE)
     show_btn = line_status in ('IN_SERVICE', 'TRIPPED')
-    n_rows   = 6 + (1 if show_btn else 0)  # from/to + voltage + rating + flow + loading + status [+ button]
-    panel_h  = CONTEXT_OVERLAY_HDR_H + n_rows * CONTEXT_OVERLAY_ROW_H + pad * 2
+    n_rows   = 6 + (1 if show_btn else 0)
+    panel_h  = hdh + n_rows * rh + pad * 2
 
     panel_rect = pygame.Rect(x, y, w, panel_h)
     pygame.draw.rect(surf, COL_PANEL_BG, panel_rect)
     pygame.draw.rect(surf, COL_PANEL_BORDER, panel_rect, 1)
 
-    sep_y = y + CONTEXT_OVERLAY_HDR_H
+    sep_y = y + hdh
     pygame.draw.line(surf, COL_PANEL_BORDER, (x + 1, sep_y), (x + w - 2, sep_y), 1)
 
     def _ry(n: int) -> int:
-        return y + CONTEXT_OVERLAY_HDR_H + pad + n * CONTEXT_OVERLAY_ROW_H
+        return y + hdh + pad + n * rh
 
-    # ── Header: line label left, "LINE" right ─────────────────────────────────
-    hdr_y = y + pad + 2
+    hdr_y = y + pad + max(1, int(2 * fs))
     font.render_to(surf, (x + pad, hdr_y), line.label, COL_TEXT_HEADING, size=sz)
     type_rect = font.get_rect('LINE', size=sz)
     font.render_to(surf, (x + w - pad - type_rect.width, hdr_y), 'LINE', COL_TEXT_DIM, size=sz)
 
-    # ── Row 0: From bus → To bus ──────────────────────────────────────────────
     route_str = f'{line.from_bus} → {line.to_bus}'
     font.render_to(surf, (x + pad, _ry(0)), route_str, COL_TEXT_VALUE, size=sz)
 
-    # ── Row 1: Voltage level ──────────────────────────────────────────────────
     kv_str = f'{line.voltage_kv:.0f} kV'
     font.render_to(surf, (x + pad, _ry(1)), 'Voltage:', COL_TEXT_PRIMARY, size=sz)
     kv_rect = font.get_rect(kv_str, size=sz)
     font.render_to(surf, (x + w - pad - kv_rect.width, _ry(1)), kv_str, COL_TEXT_DIM, size=sz)
 
-    # ── Row 2: Thermal rating ─────────────────────────────────────────────────
     rating_str = f'{line.rating_mw:.0f} MW'
     font.render_to(surf, (x + pad, _ry(2)), 'Rating:', COL_TEXT_PRIMARY, size=sz)
     rating_rect = font.get_rect(rating_str, size=sz)
     font.render_to(surf, (x + w - pad - rating_rect.width, _ry(2)), rating_str, COL_TEXT_DIM, size=sz)
 
-    # ── Row 3: Flow with direction ────────────────────────────────────────────
     font.render_to(surf, (x + pad, _ry(3)), 'Flow:', COL_TEXT_PRIMARY, size=sz)
     if state is not None:
         flow_mw = state.line_flows_mw.get(line.label)
         if flow_mw is not None:
-            arrow   = '▶' if flow_mw >= 0 else '◀'
+            arrow    = '▶' if flow_mw >= 0 else '◀'
             flow_str = f'{arrow} {abs(flow_mw):.0f} MW'
         else:
             flow_str = '--'
@@ -315,45 +290,32 @@ def draw_line_context(
     flow_rect = font.get_rect(flow_str, size=sz)
     font.render_to(surf, (x + w - pad - flow_rect.width, _ry(3)), flow_str, COL_TEXT_VALUE, size=sz)
 
-    # ── Row 4: Loading % with colour ──────────────────────────────────────────
     font.render_to(surf, (x + pad, _ry(4)), 'Loading:', COL_TEXT_PRIMARY, size=sz)
     if state is not None:
         loading = state.line_loading_pct.get(line.label)
         if loading is not None:
             loading_str = f'{loading:.1f}%'
-            if loading >= 95.0:
-                loading_col = COL_LOAD_CRIT
-            elif loading >= 80.0:
-                loading_col = COL_LOAD_HIGH
-            elif loading >= 60.0:
-                loading_col = COL_LOAD_WARN
-            else:
-                loading_col = COL_UNIT_ONLINE
+            loading_col = (COL_LOAD_CRIT if loading >= 95.0 else
+                           COL_LOAD_HIGH if loading >= 80.0 else
+                           COL_LOAD_WARN if loading >= 60.0 else COL_UNIT_ONLINE)
         else:
-            loading_str = '--'
-            loading_col = COL_TEXT_DIM
+            loading_str, loading_col = '--', COL_TEXT_DIM
     else:
-        loading_str = '--'
-        loading_col = COL_TEXT_DIM
+        loading_str, loading_col = '--', COL_TEXT_DIM
     load_rect = font.get_rect(loading_str, size=sz)
     font.render_to(surf, (x + w - pad - load_rect.width, _ry(4)), loading_str, loading_col, size=sz)
 
-    # ── Row 5: Status ─────────────────────────────────────────────────────────
     font.render_to(surf, (x + pad, _ry(5)), 'Status:', COL_TEXT_PRIMARY, size=sz)
     status_raw = line_status if line_status is not None else '--'
     if status_raw == 'TRIPPED':
-        status_col  = COL_LINE_TRIPPED
-        status_disp = 'TRIPPED'
+        status_col, status_disp = COL_LINE_TRIPPED, 'TRIPPED'
     elif status_raw == 'IN_SERVICE':
-        status_col  = COL_UNIT_ONLINE
-        status_disp = 'IN SERVICE'
+        status_col, status_disp = COL_UNIT_ONLINE, 'IN SERVICE'
     else:
-        status_col  = COL_TEXT_DIM
-        status_disp = status_raw
+        status_col, status_disp = COL_TEXT_DIM, status_raw
     status_rect = font.get_rect(status_disp, size=sz)
     font.render_to(surf, (x + w - pad - status_rect.width, _ry(5)), status_disp, status_col, size=sz)
 
-    # ── Row 6: TRIP / CLOSE button ────────────────────────────────────────────
     if show_btn:
         if line_status == 'IN_SERVICE':
             btn_label  = '[ T ] TRIP'
@@ -364,7 +326,7 @@ def draw_line_context(
             border_col = COL_UNIT_ONLINE if cmd_active else COL_PANEL_BORDER
             text_col   = COL_UNIT_ONLINE
 
-        btn_h    = CONTEXT_OVERLAY_ROW_H - 2
+        btn_h    = rh - 2
         btn_w    = w - pad * 2
         btn_rect = pygame.Rect(x + pad, _ry(6) - 1, btn_w, btn_h)
         pygame.draw.rect(surf, COL_PANEL_BG, btn_rect)
@@ -376,9 +338,9 @@ def draw_line_context(
 
 
 def _draw_cmd_row(
-    surf, font, x: int, w: int, pad: int, sz: int, row_y: int,
+    surf, font, x: int, w: int, pad: int, rh: int, sz: int, row_y: int,
     show_start: bool, show_stop: bool, show_transition: bool,
-    unit_state: str, cmd_active: bool, font_scale: float = 1.0,
+    unit_state: str, cmd_active: bool,
 ) -> None:
     """Draw the START/STOP button or transition status line at row_y."""
     if show_start:
@@ -396,7 +358,7 @@ def _draw_cmd_row(
     else:
         return
 
-    btn_h = CONTEXT_OVERLAY_ROW_H - 2
+    btn_h = rh - 2
     btn_w = w - pad * 2
     btn_rect = pygame.Rect(x + pad, row_y - 1, btn_w, btn_h)
     pygame.draw.rect(surf, COL_PANEL_BG, btn_rect)

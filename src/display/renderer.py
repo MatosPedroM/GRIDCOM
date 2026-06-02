@@ -87,26 +87,33 @@ class Renderer:
         display_size: tuple[int, int] | None = None,
     ) -> None:
         self._display = display_surf
-        self._native  = pygame.Surface((NATIVE_WIDTH, NATIVE_HEIGHT))
 
         # Letterbox geometry: uniform scale so both axes expand by the same factor.
         # min() picks the axis that runs out of space first; the other axis gets bars.
         disp_w, disp_h = display_size if display_size else (NATIVE_WIDTH, NATIVE_HEIGHT)
-        self._scale    = min(disp_w / NATIVE_WIDTH, disp_h / NATIVE_HEIGHT)
-        scaled_w       = int(NATIVE_WIDTH  * self._scale)
-        scaled_h       = int(NATIVE_HEIGHT * self._scale)
-        offset_x       = (disp_w - scaled_w) // 2
-        offset_y       = (disp_h - scaled_h) // 2
+        self._scale          = min(disp_w / NATIVE_WIDTH, disp_h / NATIVE_HEIGHT)
+        scaled_w             = int(NATIVE_WIDTH  * self._scale)
+        scaled_h             = int(NATIVE_HEIGHT * self._scale)
+        scaled_canvas_h      = int(CANVAS_HEIGHT * self._scale)
+        scaled_strip_h       = scaled_h - scaled_canvas_h
+        offset_x             = (disp_w - scaled_w) // 2
+        offset_y             = (disp_h - scaled_h) // 2
         self._letterbox_rect = pygame.Rect(offset_x, offset_y, scaled_w, scaled_h)
-        self._scaled_surf    = pygame.Surface((scaled_w, scaled_h))
 
-        # Canvas region: top CANVAS_HEIGHT rows
+        # Paint letterbox bars black once — they never change so no per-frame fill needed.
+        self._display.fill((0, 0, 0))
+
+        # Native surface is already the physical game-area size — no scaling blit needed.
+        self._native        = pygame.Surface((scaled_w, scaled_h))
+        self._display_dirty = True   # force first-frame blit to display
+
+        # Canvas region: top scaled_canvas_h rows
         self._canvas_surf = self._native.subsurface(
-            pygame.Rect(0, 0, NATIVE_WIDTH, CANVAS_HEIGHT)
+            pygame.Rect(0, 0, scaled_w, scaled_canvas_h)
         )
-        # Strip region: bottom STRIP_HEIGHT rows
+        # Strip region: bottom scaled_strip_h rows
         self._strip_surf = self._native.subsurface(
-            pygame.Rect(0, CANVAS_HEIGHT, NATIVE_WIDTH, STRIP_HEIGHT)
+            pygame.Rect(0, scaled_canvas_h, scaled_w, scaled_strip_h)
         )
 
         font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
@@ -114,9 +121,9 @@ class Renderer:
             self._font = pygame.freetype.Font(str(font_path), 11)
         else:
             self._font = pygame.freetype.SysFont('monospace', 11)
-        self._font.antialiased = True    # works with smoothscale bilinear filtering
+        self._font.antialiased = False   # hard pixel edges; NN-equivalent at integer scale
 
-        self._canvas = GridCanvas(shift=shift, font=self._font)
+        self._canvas = GridCanvas(shift=shift, font=self._font, scale=self._scale)
         self._editor = GridEditor(self._canvas)
         self._flow   = FlowAnimator()
 
@@ -134,14 +141,16 @@ class Renderer:
         self._dispatch_scroll: int = 0
         self._alarm_scroll:    int = 0
 
-        # Panel surface cache: standalone surfaces redrawn only when data changes
+        # Panel surface cache: standalone surfaces redrawn only when data changes.
+        # Sizes are scaled so panels fill the physically-sized strip surface.
+        _sc = self._scale
         self._panel_cache: dict[str, pygame.Surface] = {
-            'freq':     pygame.Surface((PANEL_FREQ_W,     STRIP_HEIGHT)),
-            'power':    pygame.Surface((PANEL_POWER_W,    STRIP_HEIGHT)),
-            'dispatch': pygame.Surface((PANEL_DISPATCH_W, STRIP_HEIGHT)),
-            'forecast': pygame.Surface((PANEL_FORECAST_W, STRIP_HEIGHT)),
-            'genmix':   pygame.Surface((PANEL_GENMIX_W,   STRIP_HEIGHT)),
-            'alarm':    pygame.Surface((PANEL_ALARM_W,    STRIP_HEIGHT)),
+            'freq':     pygame.Surface((int(PANEL_FREQ_W     * _sc), scaled_strip_h)),
+            'power':    pygame.Surface((int(PANEL_POWER_W    * _sc), scaled_strip_h)),
+            'dispatch': pygame.Surface((int(PANEL_DISPATCH_W * _sc), scaled_strip_h)),
+            'forecast': pygame.Surface((int(PANEL_FORECAST_W * _sc), scaled_strip_h)),
+            'genmix':   pygame.Surface((int(PANEL_GENMIX_W   * _sc), scaled_strip_h)),
+            'alarm':    pygame.Surface((int(PANEL_ALARM_W    * _sc), scaled_strip_h)),
         }
         # Sentinel objects force a full draw on the first frame
         self._panel_keys: dict[str, object] = {k: object() for k in self._panel_cache}
@@ -367,6 +376,10 @@ class Renderer:
             state:      Current SimulationState, or None for static view.
             speed_mult: Current simulation speed multiplier (for flow markers).
         """
+        # Track whether the blink phase changed this frame — drives display dirty.
+        prev_blink_on    = self._blink_on
+        prev_blink_2hz   = self._blink_2hz_on
+
         # Update blink phases
         self._blink_timer += dt_real_s
         if self._blink_timer >= _BLINK_PERIOD:
@@ -378,23 +391,34 @@ class Renderer:
             self._blink_2hz_timer -= _BLINK_2HZ_PERIOD
         self._blink_2hz_on = self._blink_2hz_timer < _BLINK_2HZ_PERIOD * 0.5
 
+        blink_changed = (self._blink_on != prev_blink_on
+                         or self._blink_2hz_on != prev_blink_2hz)
+
         self._frame_time = dt_real_s
         self._fps = 1.0 / dt_real_s if dt_real_s > 0.0 else 0.0
         self._fps_smooth = 0.9 * self._fps_smooth + 0.1 * self._fps
 
+        # native_changed tracks whether anything was drawn to _native this frame.
+        native_changed = False
+
         # ── Draw canvas ───────────────────────────────────────────────────────
+        prev_canvas_key = self._canvas._canvas_key
         self._canvas.draw(
             self._canvas_surf,
             state=state,
             blink_on=self._blink_on,
             selected_label=self._selected_label,
+            font_scale=self._scale,
         )
+        if self._canvas._canvas_key != prev_canvas_key:
+            native_changed = True
 
         # ── Flow markers (drawn on top of canvas) ─────────────────────────────
         if state is not None and FLOW_ANIMATION:
             self._flow.update(dt_real_s, speed_mult)
             self._flow.draw(self._canvas_surf, state,
                             self._canvas._bus_map, self._canvas._lines)
+            native_changed = True
 
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
         paused = (speed_mult == 0.0)
@@ -442,42 +466,58 @@ class Renderer:
             _blink_phase,
         )
 
+        _fs = self._scale  # font/layout scale passed to all panel and context draw calls
+        panel_changed = False
+
         if freq_key != self._panel_keys['freq']:
             draw_frequency_panel(
-                self._panel_cache['freq'], self._font, self._blink_on, state, paused=paused)
+                self._panel_cache['freq'], self._font, self._blink_on, state,
+                paused=paused, font_scale=_fs)
             self._panel_keys['freq'] = freq_key
+            panel_changed = True
 
         if power_key != self._panel_keys['power']:
-            draw_power_panel(self._panel_cache['power'], self._font, state)
+            draw_power_panel(self._panel_cache['power'], self._font, state,
+                             font_scale=_fs)
             self._panel_keys['power'] = power_key
+            panel_changed = True
 
         if dispatch_key != self._panel_keys['dispatch']:
             draw_dispatch_panel(
                 self._panel_cache['dispatch'], self._font, self._blink_on,
-                state, self._grid, self._dispatch_scroll)
+                state, self._grid, self._dispatch_scroll, font_scale=_fs)
             self._panel_keys['dispatch'] = dispatch_key
+            panel_changed = True
 
         if forecast_key != self._panel_keys['forecast']:
-            draw_forecast_panel(self._panel_cache['forecast'], self._font, state)
+            draw_forecast_panel(self._panel_cache['forecast'], self._font, state,
+                                font_scale=_fs)
             self._panel_keys['forecast'] = forecast_key
+            panel_changed = True
 
         if genmix_key != self._panel_keys['genmix']:
-            draw_genmix_panel(self._panel_cache['genmix'], self._font, state)
+            draw_genmix_panel(self._panel_cache['genmix'], self._font, state,
+                              font_scale=_fs)
             self._panel_keys['genmix'] = genmix_key
+            panel_changed = True
 
         if alarm_key != self._panel_keys['alarm']:
             draw_alarm_panel(
                 self._panel_cache['alarm'], self._font, self._blink_2hz_on,
-                state, self._alarm_scroll)
+                state, self._alarm_scroll, font_scale=_fs)
             self._panel_keys['alarm'] = alarm_key
+            panel_changed = True
 
-        # Blit all cached panel surfaces to the strip in one pass
-        self._strip_surf.blit(self._panel_cache['freq'],     (PANEL_FREQ_X,     0))
-        self._strip_surf.blit(self._panel_cache['power'],    (PANEL_POWER_X,    0))
-        self._strip_surf.blit(self._panel_cache['dispatch'], (PANEL_DISPATCH_X, 0))
-        self._strip_surf.blit(self._panel_cache['forecast'], (PANEL_FORECAST_X, 0))
-        self._strip_surf.blit(self._panel_cache['genmix'],   (PANEL_GENMIX_X,   0))
-        self._strip_surf.blit(self._panel_cache['alarm'],    (PANEL_ALARM_X,    0))
+        if panel_changed:
+            # Blit updated panel surfaces to the strip (scaled X positions)
+            _sc = self._scale
+            self._strip_surf.blit(self._panel_cache['freq'],     (int(PANEL_FREQ_X     * _sc), 0))
+            self._strip_surf.blit(self._panel_cache['power'],    (int(PANEL_POWER_X    * _sc), 0))
+            self._strip_surf.blit(self._panel_cache['dispatch'], (int(PANEL_DISPATCH_X * _sc), 0))
+            self._strip_surf.blit(self._panel_cache['forecast'], (int(PANEL_FORECAST_X * _sc), 0))
+            self._strip_surf.blit(self._panel_cache['genmix'],   (int(PANEL_GENMIX_X   * _sc), 0))
+            self._strip_surf.blit(self._panel_cache['alarm'],    (int(PANEL_ALARM_X    * _sc), 0))
+            native_changed = True
 
         # ── Unit context overlay ──────────────────────────────────────────────
         selected_unit = self._get_selected_unit()
@@ -492,12 +532,15 @@ class Renderer:
                 input_active=self._input_active,
                 blink_on=self._blink_on,
                 cmd_active=self._cmd_active,
+                font_scale=_fs,
             )
+            native_changed = True
         elif self._selected_label is not None:
             selected_bus = self._canvas._bus_map.get(self._selected_label)
             if selected_bus is not None:
                 draw_bus_context(self._canvas_surf, self._font,
-                                 bus=selected_bus, state=state)
+                                 bus=selected_bus, state=state, font_scale=_fs)
+                native_changed = True
             else:
                 selected_line = next(
                     (l for l in self._canvas._lines if l.label == self._selected_label),
@@ -506,33 +549,39 @@ class Renderer:
                 if selected_line is not None:
                     draw_line_context(self._canvas_surf, self._font,
                                       line=selected_line, state=state,
-                                      cmd_active=self._line_cmd_active)
+                                      cmd_active=self._line_cmd_active,
+                                      font_scale=_fs)
+                    native_changed = True
 
         # ── Editor overlay ────────────────────────────────────────────────────
         if _sim_const.EDITOR_MODE:
             self._editor.draw_overlay(self._canvas_surf, self._font)
+            native_changed = True
 
-        # ── Always-on FPS counter (top-right of canvas; hidden under debug overlay) ──
+        # ── Always-on FPS counter (top-right of canvas) ──────────────────────
         if not _sim_const.DEBUG_DISPLAY:
             fps_str = f'{self._fps_smooth:.0f}'
-            tw, _ = self._font.get_rect(fps_str, size=FONT_SIZE_OVERLAY)[2:4]
+            fso = int(FONT_SIZE_OVERLAY * self._scale)
+            tw, _ = self._font.get_rect(fps_str, size=fso)[2:4]
             self._font.render_to(
                 self._canvas_surf,
-                (NATIVE_WIDTH - tw - 6, 4),
-                fps_str, COL_FPS_TEXT, size=FONT_SIZE_OVERLAY,
+                (self._canvas_surf.get_width() - tw - int(6 * self._scale),
+                 int(4 * self._scale)),
+                fps_str, COL_FPS_TEXT, size=fso,
             )
+            native_changed = True
 
         # ── Debug overlay ──────────────────────────────────────────────────────
         if _sim_const.DEBUG_DISPLAY:
             self._draw_debug()
+            native_changed = True
 
-        # ── Letterbox blit: uniform scale onto physical display ───────────────
-        # Fill black bars first, then scale the native surface uniformly and blit
-        # it centred. pygame.transform.scale writes into a pre-allocated surface to
-        # avoid a per-frame allocation.
-        self._display.fill((0, 0, 0))
-        pygame.transform.smoothscale(self._native, self._scaled_surf.get_size(), self._scaled_surf)
-        self._display.blit(self._scaled_surf, self._letterbox_rect.topleft)
+        # ── Conditional blit to display ───────────────────────────────────────
+        # Bars are already painted on the display (done once at init).
+        # Only blit the native surface when content has actually changed.
+        if native_changed or self._display_dirty:
+            self._display.blit(self._native, self._letterbox_rect.topleft)
+            self._display_dirty = False
 
     # ─── Letterbox helpers ────────────────────────────────────────────────────
 
@@ -583,8 +632,10 @@ class Renderer:
                     best_label = unit.label
 
         # Buses
+        bus_pos = self._canvas._bus_pos
         for bus in self._canvas._buses:
-            dist = max(abs(nx - bus.canvas_x), abs(ny - bus.canvas_y))
+            bx, by = bus_pos[bus.label]
+            dist = max(abs(nx - bx), abs(ny - by))
             if dist <= _HIT_RADIUS and dist < best_dist:
                 best_dist  = dist
                 best_label = bus.label
@@ -592,13 +643,13 @@ class Renderer:
         # Lines — only if no bus/unit was hit within its own radius
         if best_label is None:
             for line in self._canvas._lines:
-                fb = self._canvas._bus_map.get(line.from_bus)
-                tb = self._canvas._bus_map.get(line.to_bus)
-                if fb is None or tb is None:
+                if line.from_bus not in bus_pos or line.to_bus not in bus_pos:
                     continue
-                bx, by = fb.canvas_x, tb.canvas_y  # bend point: vertical-first routing
-                d1 = _point_segment_dist(nx, ny, fb.canvas_x, fb.canvas_y, bx, by)
-                d2 = _point_segment_dist(nx, ny, bx, by, tb.canvas_x, tb.canvas_y)
+                fx, fy = bus_pos[line.from_bus]
+                tx, ty = bus_pos[line.to_bus]
+                bend_x, bend_y = fx, ty  # vertical-first routing
+                d1 = _point_segment_dist(nx, ny, fx, fy, bend_x, bend_y)
+                d2 = _point_segment_dist(nx, ny, bend_x, bend_y, tx, ty)
                 dist = min(d1, d2)
                 if dist <= _LINE_HIT_PX and dist < best_dist:
                     best_dist  = dist
@@ -618,58 +669,60 @@ class Renderer:
             print(f'[DEBUG CLICK] x={nx}, y={ny}{suffix}')
 
     def _draw_debug(self) -> None:
-        font = self._font
-        so   = FONT_SIZE_OVERLAY
+        font  = self._font
+        sc    = self._scale
+        so    = int(FONT_SIZE_OVERLAY * sc)
+        nw, nh = self._native.get_size()
+        p4    = int(4  * sc)
+        p8    = int(8  * sc)
+        p18   = int(18 * sc)
+        p32   = int(32 * sc)
 
-        # Faint coordinate grid — built once, blitted every frame
+        # Faint coordinate grid — built once at current scaled size, blitted every frame
         if self._debug_grid_surf is None:
-            self._debug_grid_surf = pygame.Surface(
-                (NATIVE_WIDTH, CANVAS_HEIGHT), pygame.SRCALPHA
-            )
+            self._debug_grid_surf = pygame.Surface((nw, nh), pygame.SRCALPHA)
             self._debug_grid_surf.fill((0, 0, 0, 0))
-            for x in range(0, NATIVE_WIDTH, 120):
-                pygame.draw.line(
-                    self._debug_grid_surf, COL_DEBUG_GRID, (x, 0), (x, CANVAS_HEIGHT), 1
-                )
-            for y in range(0, CANVAS_HEIGHT, 120):
-                pygame.draw.line(
-                    self._debug_grid_surf, COL_DEBUG_GRID, (0, y), (NATIVE_WIDTH, y), 1
-                )
+            step = int(120 * sc)
+            for x in range(0, nw, max(1, step)):
+                pygame.draw.line(self._debug_grid_surf, COL_DEBUG_GRID, (x, 0), (x, nh), 1)
+            for y in range(0, nh, max(1, step)):
+                pygame.draw.line(self._debug_grid_surf, COL_DEBUG_GRID, (0, y), (nw, y), 1)
         self._native.blit(self._debug_grid_surf, (0, 0))
 
-        # Mouse position — top-left
-        mx, my = self._mouse_pos
-        font.render_to(self._native, (4, 4),
+        # Mouse position — top-left (shown in logical 1920×1080 units)
+        mx = int(self._mouse_pos[0] / sc)
+        my = int(self._mouse_pos[1] / sc)
+        font.render_to(self._native, (p4, p4),
                        f'mouse {mx},{my}', COL_DEBUG_TEXT, size=so)
 
         # FPS / frame time — top-right
         fps_str = f'{self._fps:.0f}fps  {self._frame_time*1000:.1f}ms'
         tw, _ = font.get_rect(fps_str, size=so)[2:4]
-        font.render_to(self._native, (NATIVE_WIDTH - tw - 8, 4),
+        font.render_to(self._native, (nw - tw - p8, p4),
                        fps_str, COL_DEBUG_TEXT, size=so)
 
         # AGC status — top-right, second line
         agc_str = f'AGC {"ON" if _sim_const.AGC_ENABLED else "OFF"}'
         agc_col = COL_DEBUG_TEXT if _sim_const.AGC_ENABLED else COL_TEXT_DIM
         agc_w, _ = font.get_rect(agc_str, size=so)[2:4]
-        font.render_to(self._native, (NATIVE_WIDTH - agc_w - 8, 18),
+        font.render_to(self._native, (nw - agc_w - p8, p18),
                        agc_str, agc_col, size=so)
 
         # Resolution / scale — top-right, third line
         ww, wh = pygame.display.get_window_size()
-        scale = ww / NATIVE_WIDTH
-        res_str = f'{ww}\xd7{wh}  {NATIVE_WIDTH}\xd7{NATIVE_HEIGHT}  {scale:.2f}\xd7'
+        res_str = f'{ww}\xd7{wh}  {NATIVE_WIDTH}\xd7{NATIVE_HEIGHT}  {sc:.2f}\xd7'
         res_w, _ = font.get_rect(res_str, size=so)[2:4]
-        font.render_to(self._native, (NATIVE_WIDTH - res_w - 8, 32),
+        font.render_to(self._native, (nw - res_w - p8, p32),
                        res_str, COL_DEBUG_TEXT, size=so)
 
-        # Click position — shown for 3 seconds
+        # Click position — shown for 3 seconds (in logical units)
         if self._click_pos is not None:
             self._click_timer -= self._frame_time
             if self._click_timer > 0.0:
-                cx, cy = self._click_pos
+                cx = int(self._click_pos[0] / sc)
+                cy = int(self._click_pos[1] / sc)
                 from display.palette import COL_DEBUG_CLICK
-                font.render_to(self._native, (4, 18),
+                font.render_to(self._native, (p4, p18),
                                f'click {cx},{cy}', COL_DEBUG_CLICK, size=so)
             else:
                 self._click_pos = None

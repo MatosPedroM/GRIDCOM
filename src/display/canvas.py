@@ -83,13 +83,25 @@ class GridCanvas:
         font:   pygame.freetype.Font for labels.
     """
 
-    def __init__(self, shift: int, font: pygame.freetype.Font) -> None:
+    def __init__(
+        self,
+        shift: int,
+        font: pygame.freetype.Font,
+        scale: float = 1.0,
+    ) -> None:
         self._shift = shift
         self._font  = font
+        self._scale = scale
 
         # Active topology for this shift
         self._buses: list[Bus] = get_buses_by_shift(shift)
         self._lines: list[Line] = get_lines_by_shift(shift)
+
+        # Bus is frozen=True; store scaled positions separately rather than mutating.
+        self._bus_pos: dict[str, tuple[int, int]] = {
+            b.label: (int(b.canvas_x * scale), int(b.canvas_y * scale))
+            for b in self._buses
+        }
 
         # Fast bus lookup
         self._bus_map: dict[str, Bus] = {b.label: b for b in self._buses}
@@ -112,7 +124,11 @@ class GridCanvas:
             self._station_units[sl].append(unit)
 
         for sl, units in self._station_units.items():
-            self._station_pos[sl] = _unit_positions(sl, len(units))
+            # _unit_positions returns 1920-unit coords; scale to physical space
+            raw = _unit_positions(sl, len(units))
+            self._station_pos[sl] = [
+                (int(x * scale), int(y * scale)) for x, y in raw
+            ]
 
         # Hydraulic connectors: only those where both buses are active this shift
         self._hydraulic: list[tuple[Bus, Bus]] = []
@@ -122,56 +138,61 @@ class GridCanvas:
                     (self._bus_map[from_lbl], self._bus_map[to_lbl])
                 )
 
+        scaled_w  = int(NATIVE_WIDTH  * scale)
+        scaled_ch = int(CANVAS_HEIGHT * scale)
+
         # Canvas cache: standalone surface redrawn only when sim state visibly changes
-        self._canvas_surf_cache: pygame.Surface = pygame.Surface(
-            (NATIVE_WIDTH, CANVAS_HEIGHT)
-        )
+        self._canvas_surf_cache: pygame.Surface = pygame.Surface((scaled_w, scaled_ch))
         self._canvas_key: object = object()  # sentinel forces first-frame draw
 
         # Pre-baked hydraulic connector surface (all 3 dashed lines, drawn once at init)
         self._hydraulic_surf: pygame.Surface = pygame.Surface(
-            (NATIVE_WIDTH, CANVAS_HEIGHT), pygame.SRCALPHA
+            (scaled_w, scaled_ch), pygame.SRCALPHA
         )
         self._hydraulic_surf.fill((0, 0, 0, 0))
+        dash_w = max(1, round(scale))
         for fb, tb in self._hydraulic:
+            fx, fy = self._bus_pos[fb.label]
+            tx, ty = self._bus_pos[tb.label]
             _draw_dashed_line(
                 self._hydraulic_surf, COL_LINE_HYDRAULIC,
-                (fb.canvas_x, fb.canvas_y), (tb.canvas_x, tb.canvas_y),
-                dash=5, gap=4, width=1,
+                (fx, fy), (tx, ty),
+                dash=max(1, int(5 * scale)), gap=max(1, int(4 * scale)), width=dash_w,
             )
 
         # Pre-baked tripped-line surfaces: one per line, drawn once at init.
         # Each surface covers only the line's bounding box (offset stored alongside).
         self._tripped_line_surfs: dict[str, tuple[pygame.Surface, int, int]] = {}
+        pad = max(2, int(3 * scale))
         for line in self._lines:
-            fb = self._bus_map.get(line.from_bus)
-            tb = self._bus_map.get(line.to_bus)
-            if fb is None or tb is None:
+            if line.from_bus not in self._bus_pos or line.to_bus not in self._bus_pos:
                 continue
             # Tripped lines route vertical-first: bend at (x1, y2)
-            x1, y1 = fb.canvas_x, fb.canvas_y
-            x2, y2 = tb.canvas_x, tb.canvas_y
+            x1, y1 = self._bus_pos[line.from_bus]
+            x2, y2 = self._bus_pos[line.to_bus]
             bx, by = x1, y2
-            min_x = min(x1, x2) - 2
-            min_y = min(y1, y2) - 2
-            max_x = max(x1, x2) + 2
-            max_y = max(y1, y2) + 2
+            min_x = min(x1, x2) - pad
+            min_y = min(y1, y2) - pad
+            max_x = max(x1, x2) + pad
+            max_y = max(y1, y2) + pad
             w = max(1, max_x - min_x)
             h = max(1, max_y - min_y)
             surf = pygame.Surface((w, h), pygame.SRCALPHA)
             surf.fill((0, 0, 0, 0))
             ox, oy = min_x, min_y
+            td = max(1, int(6 * scale))
+            tg = max(1, int(4 * scale))
             if y1 != y2:
                 _draw_dashed_line(
                     surf, COL_LINE_TRIPPED,
                     (x1 - ox, y1 - oy), (bx - ox, by - oy),
-                    dash=6, gap=4, width=1,
+                    dash=td, gap=tg, width=dash_w,
                 )
             if x1 != x2:
                 _draw_dashed_line(
                     surf, COL_LINE_TRIPPED,
                     (bx - ox, by - oy), (x2 - ox, y2 - oy),
-                    dash=6, gap=4, width=1,
+                    dash=td, gap=tg, width=dash_w,
                 )
             self._tripped_line_surfs[line.label] = (surf, ox, oy)
 
@@ -179,7 +200,7 @@ class GridCanvas:
         """Re-run __init__ pre-computation after layout overrides change."""
         if shift is not None:
             self._shift = shift
-        self.__init__(self._shift, self._font)
+        self.__init__(self._shift, self._font, self._scale)
 
     # ─── Main draw entry point ────────────────────────────────────────────────
 
@@ -317,14 +338,16 @@ class GridCanvas:
                         target.blit(surf, (ox, oy))
                 else:
                     loading = line_loading.get(line.label, 0.0)
+                    fx, fy = self._bus_pos[line.from_bus]
+                    tx, ty = self._bus_pos[line.to_bus]
                     draw_transmission_line(
                         target,
-                        fb.canvas_x, fb.canvas_y,
-                        tb.canvas_x, tb.canvas_y,
+                        fx, fy, tx, ty,
                         voltage_kv=line.voltage_kv,
                         loading_pct=loading,
                         tripped=False,
                         blink_on=blink_on,
+                        scale=self._scale,
                     )
 
         # ── Layer 5: Hydraulic connectors (pre-baked, blit once) ──────────────
@@ -332,11 +355,13 @@ class GridCanvas:
 
         # ── Layer 6: Substation symbols ────────────────────────────────────────
         for bus in self._buses:
+            bx, by   = self._bus_pos[bus.label]
             blacked  = bus_blacked.get(bus.label, False)
             selected = (selected_label == bus.label)
-            draw_substation(target, bus.canvas_x, bus.canvas_y,
+            draw_substation(target, bx, by,
                             voltage_kv=bus.voltage_kv,
-                            blacked=blacked, selected=selected)
+                            blacked=blacked, selected=selected,
+                            scale=self._scale)
 
         # ── Layer 7: Generation unit squares + collectors ──────────────────────
         for sl, units in self._station_units.items():
@@ -346,11 +371,12 @@ class GridCanvas:
             if bus is None:
                 continue
 
-            bus_cx, bus_cy = bus.canvas_x, bus.canvas_y
+            bus_cx, bus_cy = self._bus_pos[bus_lbl]
 
             draw_station_collector(
                 target, positions, bus_cx, bus_cy,
                 voltage_kv=bus.voltage_kv,
+                scale=self._scale,
             )
 
             for unit, (ux, uy) in zip(units, positions):
@@ -364,14 +390,15 @@ class GridCanvas:
                     output_fraction=u_frac,
                     selected=selected,
                     blink_on=blink_on,
+                    scale=self._scale,
                 )
 
         # ── Layer 8: Interconnector markers ────────────────────────────────────
         for intc_label, (ix, iy) in INTERCONNECTOR_POSITIONS.items():
             flow = intc_flows.get(intc_label, 0.0)
-            draw_interconnector(target, ix, iy, flow_mw=flow,
-                                label=intc_label, font=self._font,
-                                font_scale=font_scale)
+            draw_interconnector(target, int(ix * self._scale), int(iy * self._scale),
+                                flow_mw=flow, label=intc_label, font=self._font,
+                                font_scale=font_scale, scale=self._scale)
 
         # ── Layer 9: Node labels ───────────────────────────────────────────────
         self._draw_labels(target, font_scale)
@@ -380,12 +407,18 @@ class GridCanvas:
 
     def _draw_labels(self, surf: pygame.Surface, font_scale: float = 1.0) -> None:
         """Draw bus and station labels at positions offset from symbols."""
-        font = self._font
-        sl   = int(FONT_SIZE_LABEL * font_scale)
+        font   = self._font
+        sl     = int(FONT_SIZE_LABEL * font_scale)
+        sc     = self._scale
+        loff_x = int(14 * sc)
+        loff_y = int(5  * sc)
+        soff_y = int(16 * sc)
+        soff_x = int(12 * sc)
 
         for bus in self._buses:
-            lx = bus.canvas_x + 14
-            ly = bus.canvas_y - 5
+            bx, by = self._bus_pos[bus.label]
+            lx = bx + loff_x
+            ly = by - loff_y
             font.render_to(surf, (lx, ly), bus.label, COL_TEXT_SECONDARY, size=sl)
 
         # Station labels below unit row
@@ -393,5 +426,5 @@ class GridCanvas:
             if not positions:
                 continue
             cx = sum(p[0] for p in positions) // len(positions)
-            cy = max(p[1] for p in positions) + 16
-            font.render_to(surf, (cx - 12, cy), station_lbl, COL_TEXT_DIM, size=sl)
+            cy = max(p[1] for p in positions) + soff_y
+            font.render_to(surf, (cx - soff_x, cy), station_lbl, COL_TEXT_DIM, size=sl)

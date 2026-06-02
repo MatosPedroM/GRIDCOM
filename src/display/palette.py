@@ -14,10 +14,10 @@ Colour = tuple[int, int, int]
 # ─────────────────────────────────────────────
 # BACKGROUND
 # ─────────────────────────────────────────────
-COL_BACKGROUND:     Colour = (10, 14, 20)       # Near-black canvas background
-COL_CANVAS_BG:      Colour = (8,  12, 18)       # Grid canvas background (slightly darker)
-COL_STRIP_BG:       Colour = (14, 16, 22)       # Instrument strip background
-COL_PANEL_BG:       Colour = (12, 18, 24)       # Panel / context box background
+COL_BACKGROUND:     Colour = (0,  0,  0)        # Canvas background — pure black
+COL_CANVAS_BG:      Colour = (0,  0,  0)        # Grid canvas background — pure black
+COL_STRIP_BG:       Colour = (0,  0,  0)        # Instrument strip background — pure black
+COL_PANEL_BG:       Colour = (0,  0,  0)        # Panel / context box background — pure black
 COL_PANEL_BORDER:   Colour = (0, 102, 51)       # Panel border — dark green (SCADA terminal)
 
 # ─────────────────────────────────────────────

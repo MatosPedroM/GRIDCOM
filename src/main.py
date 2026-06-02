@@ -52,17 +52,17 @@ def _to_native(
     letterbox: pygame.Rect,
     scale: float,
 ) -> tuple[int, int]:
-    """Map a physical-display mouse position to native 1920×1080 coordinates.
+    """Map a physical-display mouse position to native surface coordinates.
 
-    Subtracts the letterbox offset then divides by the uniform scale factor.
-    Clamps to the valid native surface range so clicks on black bars don't
-    produce out-of-bounds coordinates.
+    The native surface is rendered at the physical game-area size (letterbox.size),
+    so mouse coordinates only need the letterbox offset subtracted and clamped —
+    no scale division needed.
     """
-    nx = int((pos[0] - letterbox.left) / scale)
-    ny = int((pos[1] - letterbox.top)  / scale)
+    nx = pos[0] - letterbox.left
+    ny = pos[1] - letterbox.top
     return (
-        max(0, min(NATIVE_WIDTH  - 1, nx)),
-        max(0, min(NATIVE_HEIGHT - 1, ny)),
+        max(0, min(letterbox.width  - 1, nx)),
+        max(0, min(letterbox.height - 1, ny)),
     )
 
 
@@ -104,7 +104,10 @@ def main() -> None:
     # manually in Renderer — a uniform scale factor maps 1920×1080 onto the physical
     # display with equal-sized black bars, preventing the axis-asymmetric distortion
     # that pygame.SCALED produces on non-16:9 monitors.
-    display_surf = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    display_surf = pygame.display.set_mode(
+        (0, 0),
+        pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF,
+    )
     pygame.display.set_caption('GRIDCOM : Grid Control Terminal')
 
     clock = pygame.time.Clock()

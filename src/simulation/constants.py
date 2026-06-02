@@ -12,7 +12,7 @@ See CLAUDE.md Rule 1.
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
 DEBUG_SIMULATION: bool = False
-DEBUG_DISPLAY:    bool = True
+DEBUG_DISPLAY:    bool = False
 DEBUG_EVENTS:     bool = False
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False

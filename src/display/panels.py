@@ -55,8 +55,10 @@ def _right_border(surf: pygame.Surface) -> None:
     pygame.draw.line(surf, COL_PANEL_BORDER, (w - 1, 0), (w - 1, surf.get_height() - 1), 1)
 
 
-def _header(surf: pygame.Surface, font: pygame.freetype.Font, label: str) -> None:
-    font.render_to(surf, (_PAD, 4), label, COL_TEXT_HEADING, size=FONT_SIZE_PANEL)
+def _header(surf: pygame.Surface, font: pygame.freetype.Font, label: str,
+            font_scale: float = 1.0) -> None:
+    font.render_to(surf, (_PAD, 4), label, COL_TEXT_HEADING,
+                   size=int(FONT_SIZE_PANEL * font_scale))
     pygame.draw.line(surf, COL_PANEL_BORDER,
                      (0, _HEADER_H - 1), (surf.get_width(), _HEADER_H - 1), 1)
 
@@ -76,11 +78,12 @@ def _bar(surf: pygame.Surface, x: int, y: int, w: int, fill_frac: float,
 # ── Panel 1 — Frequency ────────────────────────────────────────────────────────
 
 def draw_frequency_panel(
-    surf:     pygame.Surface,
-    font:     pygame.freetype.Font,
-    blink_on: bool,
+    surf:       pygame.Surface,
+    font:       pygame.freetype.Font,
+    blink_on:   bool,
     state=None,
-    paused:   bool = False,
+    paused:     bool  = False,
+    font_scale: float = 1.0,
 ) -> None:
     """Frequency panel: large Hz readout, analog bar, trend indicator, clock."""
 
@@ -89,9 +92,11 @@ def draw_frequency_panel(
 
     _fill_panel(surf)
     _right_border(surf)
-    _header(surf, font, 'FREQUENCY')
+    _header(surf, font, 'FREQUENCY', font_scale)
 
-    w = surf.get_width()
+    w  = surf.get_width()
+    sp = int(FONT_SIZE_PANEL       * font_scale)
+    sl = int(FONT_SIZE_PANEL_LARGE * font_scale)
 
     # Colour by frequency band
     if freq_hz < 49.0 or freq_hz > 51.0:
@@ -103,9 +108,9 @@ def draw_frequency_panel(
 
     # Large Hz readout
     hz_str = f'{freq_hz:.2f} Hz'
-    rect = font.get_rect(hz_str, size=FONT_SIZE_PANEL_LARGE)
+    rect = font.get_rect(hz_str, size=sl)
     tx = (w - rect.width) // 2
-    font.render_to(surf, (tx, _HEADER_H + 6), hz_str, col, size=FONT_SIZE_PANEL_LARGE)
+    font.render_to(surf, (tx, _HEADER_H + 6), hz_str, col, size=sl)
 
     # Analog bar: 45-55 Hz maps to 0-100% width
     bar_y = _HEADER_H + 48
@@ -122,7 +127,7 @@ def draw_frequency_panel(
     label_y = bar_y + _BAR_H + 4
     for hz_val, label in [(49.5, '49.5'), (50.0, '50.0'), (50.5, '50.5')]:
         lx = bar_x + int((hz_val - 45.0) / 10.0 * bar_w)
-        font.render_to(surf, (lx - 10, label_y), label, COL_TEXT_DIM, size=FONT_SIZE_PANEL)
+        font.render_to(surf, (lx - 10, label_y), label, COL_TEXT_DIM, size=sp)
 
     # Trend indicator
     trend_col = COL_TEXT_DIM if trend == 'STABLE' else col
@@ -133,7 +138,7 @@ def draw_frequency_panel(
     else:
         t_str = '— STABLE'
     trend_y = label_y + 14
-    font.render_to(surf, (_PAD, trend_y), t_str, trend_col, size=FONT_SIZE_PANEL)
+    font.render_to(surf, (_PAD, trend_y), t_str, trend_col, size=sp)
 
     if state is not None:
         h = int(state.sim_hour) % 24
@@ -142,15 +147,16 @@ def draw_frequency_panel(
         if paused:
             clock_str += '  PAUSED'
         clock_col = COL_TEXT_WARN if paused else COL_TEXT_SECONDARY
-        font.render_to(surf, (_PAD, trend_y + 14), clock_str, clock_col, size=FONT_SIZE_PANEL)
+        font.render_to(surf, (_PAD, trend_y + 14), clock_str, clock_col, size=sp)
 
 
 # ── Panel 2 — Power Balance ────────────────────────────────────────────────────
 
 def draw_power_panel(
-    surf:  pygame.Surface,
-    font:  pygame.freetype.Font,
+    surf:       pygame.Surface,
+    font:       pygame.freetype.Font,
     state=None,
+    font_scale: float = 1.0,
 ) -> None:
     """Power balance panel: generation, load, imbalance, reserves, inertia, losses."""
 
@@ -163,7 +169,9 @@ def draw_power_panel(
 
     _fill_panel(surf)
     _right_border(surf)
-    _header(surf, font, 'POWER BALANCE')
+    _header(surf, font, 'POWER BALANCE', font_scale)
+
+    sp = int(FONT_SIZE_PANEL * font_scale)
 
     rows: list[tuple[str, str, tuple]] = [
         ('GEN',      f'{gen_mw:,.0f} MW',    COL_TEXT_VALUE if gen_mw > 0 else COL_TEXT_DIM),
@@ -178,9 +186,9 @@ def draw_power_panel(
     val_x = surf.get_width() - _PAD
     for i, (lbl, val, col) in enumerate(rows):
         y = _row_y(i)
-        font.render_to(surf, (lbl_x, y), lbl, COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
-        rect = font.get_rect(val, size=FONT_SIZE_PANEL)
-        font.render_to(surf, (val_x - rect.width, y), val, col, size=FONT_SIZE_PANEL)
+        font.render_to(surf, (lbl_x, y), lbl, COL_TEXT_SECONDARY, size=sp)
+        rect = font.get_rect(val, size=sp)
+        font.render_to(surf, (val_x - rect.width, y), val, col, size=sp)
 
 
 # ── Panel 3 — Unit Dispatch ────────────────────────────────────────────────────
@@ -222,6 +230,7 @@ def draw_dispatch_panel(
     state,
     grid,
     scroll_row: int,
+    font_scale: float = 1.0,
 ) -> None:
     """Unit dispatch panel: scrollable list of units with state, bar, and MW output."""
 
@@ -238,7 +247,9 @@ def draw_dispatch_panel(
 
     _fill_panel(surf)
     _right_border(surf)
-    _header(surf, font, 'UNIT DISPATCH')
+    _header(surf, font, 'UNIT DISPATCH', font_scale)
+
+    sp = int(FONT_SIZE_PANEL * font_scale)
 
     w            = surf.get_width()
     visible_rows = (STRIP_HEIGHT - _HEADER_H) // _ROW_H
@@ -258,28 +269,28 @@ def draw_dispatch_panel(
         col  = _STATE_COL.get(ust, COL_TEXT_DIM)
         abbr = _STATE_ABBREV.get(ust, '???')
 
-        font.render_to(surf, (lbl_x, y), lbl, COL_TEXT_PRIMARY, size=FONT_SIZE_PANEL)
-        font.render_to(surf, (sta_x, y), abbr, col, size=FONT_SIZE_PANEL)
+        font.render_to(surf, (lbl_x, y), lbl, COL_TEXT_PRIMARY, size=sp)
+        font.render_to(surf, (sta_x, y), abbr, col, size=sp)
 
         if ust == 'STARTING':
             _bar(surf, bar_x, y + 1, bar_w, spct / 100.0, COL_UNIT_STARTING)
             pct_str = f'{spct:.0f}%'
-            font.render_to(surf, (mw_x, y), pct_str, COL_UNIT_STARTING, size=FONT_SIZE_PANEL)
+            font.render_to(surf, (mw_x, y), pct_str, COL_UNIT_STARTING, size=sp)
         elif ust == 'ONLINE':
             frac = out / rated if rated > 0 else 0.0
             _bar(surf, bar_x, y + 1, bar_w, frac, col)
             mw_str = f'{out:.0f}/{rated:.0f}'
-            rect = font.get_rect(mw_str, size=FONT_SIZE_PANEL)
+            rect = font.get_rect(mw_str, size=sp)
             font.render_to(surf, (mw_end - rect.width, y), mw_str,
-                           COL_TEXT_PRIMARY, size=FONT_SIZE_PANEL)
+                           COL_TEXT_PRIMARY, size=sp)
         else:
             _bar(surf, bar_x, y + 1, bar_w, 0.0, COL_METER_BG)
 
     if total > visible_rows:
         ind_str = f'↑↓ {start + 1}-{min(start + visible_rows, total)}/{total}'
-        rect = font.get_rect(ind_str, size=FONT_SIZE_PANEL)
+        rect = font.get_rect(ind_str, size=sp)
         font.render_to(surf, (w - rect.width - _PAD, 4),
-                       ind_str, COL_TEXT_DIM, size=FONT_SIZE_PANEL)
+                       ind_str, COL_TEXT_DIM, size=sp)
 
 
 # ── Panel 4 — Alarm Feed ───────────────────────────────────────────────────────
@@ -303,6 +314,7 @@ def draw_alarm_panel(
     blink_on:   bool,
     state,
     scroll_row: int,
+    font_scale: float = 1.0,
 ) -> None:
     """Alarm panel: scrollable alarm list with priority, timestamp, message."""
 
@@ -316,7 +328,9 @@ def draw_alarm_panel(
         alarms = _FALLBACK_ALARMS
 
     _fill_panel(surf)
-    _header(surf, font, 'ALARMS')
+    _header(surf, font, 'ALARMS', font_scale)
+
+    sp = int(FONT_SIZE_PANEL * font_scale)
 
     w            = surf.get_width()
     visible_rows = (STRIP_HEIGHT - _HEADER_H) // _ROW_H
@@ -342,15 +356,15 @@ def draw_alarm_panel(
                 msg_col = COL_TEXT_DIM
 
         dot_sym = '●' if not acked else '○'
-        font.render_to(surf, (dot_x,  y), dot_sym,  pri_col,         size=FONT_SIZE_PANEL)
-        font.render_to(surf, (pri_x,  y), pri[:4],  pri_col,         size=FONT_SIZE_PANEL)
-        font.render_to(surf, (time_x, y), ts,        COL_TEXT_DIM,    size=FONT_SIZE_PANEL)
-        font.render_to(surf, (msg_x,  y), msg,       msg_col,         size=FONT_SIZE_PANEL)
+        font.render_to(surf, (dot_x,  y), dot_sym,  pri_col,         size=sp)
+        font.render_to(surf, (pri_x,  y), pri[:4],  pri_col,         size=sp)
+        font.render_to(surf, (time_x, y), ts,        COL_TEXT_DIM,    size=sp)
+        font.render_to(surf, (msg_x,  y), msg,       msg_col,         size=sp)
 
     hint = '[A] ACK  [AA] ALL'
-    rect = font.get_rect(hint, size=FONT_SIZE_PANEL)
+    rect = font.get_rect(hint, size=sp)
     font.render_to(surf, (w - rect.width - _PAD, 4),
-                   hint, COL_TEXT_DIM, size=FONT_SIZE_PANEL)
+                   hint, COL_TEXT_DIM, size=sp)
 
 
 # ── Generation Mix panel ───────────────────────────────────────────────────────
@@ -392,9 +406,10 @@ _BAR_MAX_W = 60    # px — maximum bar width for 100% share
 
 
 def draw_genmix_panel(
-    surf: pygame.Surface,
-    font: pygame.freetype.Font,
+    surf:       pygame.Surface,
+    font:       pygame.freetype.Font,
     state,
+    font_scale: float = 1.0,
 ) -> None:
     """Generation mix panel: one row per active fuel type, MW + % + mini bar."""
 
@@ -402,10 +417,10 @@ def draw_genmix_panel(
     total_mw = sum(mix.values())
 
     _fill_panel(surf)
-    _header(surf, font, 'GEN MIX')
+    _header(surf, font, 'GEN MIX', font_scale)
     _right_border(surf)
 
-    w = surf.get_width()
+    sp = int(FONT_SIZE_PANEL * font_scale)
 
     label_x = _PAD
     mw_x    = label_x + 36
@@ -420,7 +435,7 @@ def draw_genmix_panel(
         col = _FUEL_COLOURS.get(fuel, COL_TEXT_SECONDARY)
 
         lbl = _FUEL_LABELS.get(fuel, fuel[:4])
-        font.render_to(surf, (label_x, y), lbl, col, size=FONT_SIZE_PANEL)
+        font.render_to(surf, (label_x, y), lbl, col, size=sp)
 
         if state is not None:
             mw_str = f'{mw:.0f}'
@@ -432,8 +447,8 @@ def draw_genmix_panel(
             pct_str = '--%'
             bar_w   = 0
 
-        font.render_to(surf, (mw_x,  y), mw_str,  COL_TEXT_VALUE,     size=FONT_SIZE_PANEL)
-        font.render_to(surf, (pct_x, y), pct_str, COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
+        font.render_to(surf, (mw_x,  y), mw_str,  COL_TEXT_VALUE,     size=sp)
+        font.render_to(surf, (pct_x, y), pct_str, COL_TEXT_SECONDARY, size=sp)
 
         if bar_w > 0:
             pygame.draw.rect(surf, col, pygame.Rect(bar_x, y + 1, bar_w, _BAR_H))
@@ -441,7 +456,8 @@ def draw_genmix_panel(
 
 # ── Forecast Load panel ────────────────────────────────────────────────────────
 
-def draw_forecast_panel(surf: pygame.Surface, font: pygame.freetype.Font, state) -> None:
+def draw_forecast_panel(surf: pygame.Surface, font: pygame.freetype.Font, state,
+                        font_scale: float = 1.0) -> None:
     """
     Draw the Forecast Load panel in the instrument strip.
 
@@ -451,7 +467,9 @@ def draw_forecast_panel(surf: pygame.Surface, font: pygame.freetype.Font, state)
     """
     _fill_panel(surf)
     _right_border(surf)
-    _header(surf, font, 'FORECAST LOAD')
+    _header(surf, font, 'FORECAST LOAD', font_scale)
+
+    sp = int(FONT_SIZE_PANEL * font_scale)
 
     w = surf.get_width()
     h = surf.get_height()
@@ -536,18 +554,18 @@ def draw_forecast_panel(surf: pygame.Surface, font: pygame.freetype.Font, state)
         x   = chart_left + i * slot_w
         lbl = f'{int(hours[i]):02d}'
         font.render_to(surf, (x, chart_bottom + 2), lbl,
-                       COL_TEXT_DIM, size=FONT_SIZE_PANEL)
+                       COL_TEXT_DIM, size=sp)
 
     # Legend
     lx = pad
     ly = h - legend_h + 1
     pygame.draw.rect(surf, COL_FORECAST_DEMAND,   pygame.Rect(lx,      ly, 8, 6))
     font.render_to(surf, (lx + 10, ly - 1), 'DEMAND',
-                   COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
+                   COL_TEXT_SECONDARY, size=sp)
     pygame.draw.rect(surf, COL_FORECAST_NETLOAD,  pygame.Rect(lx + 72, ly, 8, 6))
     font.render_to(surf, (lx + 82, ly - 1), 'NET LOAD',
-                   COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
+                   COL_TEXT_SECONDARY, size=sp)
     pygame.draw.line(surf, COL_FORECAST_NETDEMAND,
                      (lx + 158, ly + 3), (lx + 166, ly + 3), 1)
     font.render_to(surf, (lx + 170, ly - 1), 'NET DEMAND',
-                   COL_TEXT_SECONDARY, size=FONT_SIZE_PANEL)
+                   COL_TEXT_SECONDARY, size=sp)

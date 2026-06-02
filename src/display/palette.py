@@ -145,6 +145,11 @@ COL_CRISIS_WARN:    Colour = (180, 120, 20)     # Warning crisis border
 COL_CRISIS_CRIT:    Colour = (180, 30, 30)      # Critical crisis border
 
 # ─────────────────────────────────────────────
+# FPS COUNTER (always-on)
+# ─────────────────────────────────────────────
+COL_FPS_TEXT:       Colour = (50, 130, 70)      # Dim green — unobtrusive FPS readout
+
+# ─────────────────────────────────────────────
 # DEBUG OVERLAY
 # ─────────────────────────────────────────────
 COL_DEBUG_GRID:     Colour = (30, 35, 45)       # Faint coordinate grid

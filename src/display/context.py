@@ -47,7 +47,8 @@ def draw_unit_context(
     input_buffer: str,
     input_active: bool,
     blink_on:     bool,
-    cmd_active:   bool = False,
+    cmd_active:   bool  = False,
+    font_scale:   float = 1.0,
 ) -> None:
     """
     Draw the unit context panel at the top-left of the canvas surface.
@@ -68,7 +69,7 @@ def draw_unit_context(
     y   = CONTEXT_OVERLAY_Y
     w   = CONTEXT_OVERLAY_W
     pad = CONTEXT_OVERLAY_PAD
-    sz  = FONT_SIZE_CONTEXT
+    sz  = int(FONT_SIZE_CONTEXT * font_scale)
 
     is_dispatchable = unit_state in ('ONLINE', 'STARTING', 'SHUTDOWN')
     is_renewable    = unit.unit_type in ('WIND', 'SOLAR')
@@ -160,7 +161,7 @@ def draw_unit_context(
         # ── Row 3: START / STOP button or transition status ───────────────────
         _draw_cmd_row(surf, font, x, w, pad, sz, _ry(3),
                       show_start, show_stop, show_transition,
-                      unit_state, cmd_active)
+                      unit_state, cmd_active, font_scale)
 
     else:
         # ── Row 1: Not dispatchable ───────────────────────────────────────────
@@ -172,14 +173,16 @@ def draw_unit_context(
             _draw_cmd_row(surf, font, x, w, pad, sz, _ry(2),
                           show_start=True, show_stop=False,
                           show_transition=False,
-                          unit_state=unit_state, cmd_active=cmd_active)
+                          unit_state=unit_state, cmd_active=cmd_active,
+                          font_scale=font_scale)
 
 
 def draw_bus_context(
-    surf:  pygame.Surface,
-    font:  pygame.freetype.Font,
+    surf:       pygame.Surface,
+    font:       pygame.freetype.Font,
     bus,
     state,
+    font_scale: float = 1.0,
 ) -> None:
     """
     Draw a read-only bus context panel at the top-left of the canvas surface.
@@ -194,7 +197,7 @@ def draw_bus_context(
     y   = CONTEXT_OVERLAY_Y
     w   = CONTEXT_OVERLAY_W
     pad = CONTEXT_OVERLAY_PAD
-    sz  = FONT_SIZE_CONTEXT
+    sz  = int(FONT_SIZE_CONTEXT * font_scale)
 
     n_rows  = 2  # voltage row + kV label row
     panel_h = CONTEXT_OVERLAY_HDR_H + n_rows * CONTEXT_OVERLAY_ROW_H + pad * 2
@@ -237,7 +240,8 @@ def draw_line_context(
     font:       pygame.freetype.Font,
     line,
     state,
-    cmd_active: bool = False,
+    cmd_active: bool  = False,
+    font_scale: float = 1.0,
 ) -> None:
     """
     Draw the line context panel at the top-left of the canvas surface.
@@ -253,7 +257,7 @@ def draw_line_context(
     y   = CONTEXT_OVERLAY_Y
     w   = CONTEXT_OVERLAY_W
     pad = CONTEXT_OVERLAY_PAD
-    sz  = FONT_SIZE_CONTEXT
+    sz  = int(FONT_SIZE_CONTEXT * font_scale)
 
     if state is not None:
         line_status = state.line_status.get(line.label, 'IN_SERVICE')
@@ -374,7 +378,7 @@ def draw_line_context(
 def _draw_cmd_row(
     surf, font, x: int, w: int, pad: int, sz: int, row_y: int,
     show_start: bool, show_stop: bool, show_transition: bool,
-    unit_state: str, cmd_active: bool,
+    unit_state: str, cmd_active: bool, font_scale: float = 1.0,
 ) -> None:
     """Draw the START/STOP button or transition status line at row_y."""
     if show_start:

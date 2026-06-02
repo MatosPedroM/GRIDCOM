@@ -35,12 +35,12 @@ from display.panels import (
 )
 from display.palette import (
     COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID, COL_TEXT_DIM,
+    COL_FPS_TEXT,
 )
 import simulation.constants as _sim_const
 from simulation.constants import (
     CANVAS_HEIGHT, STRIP_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
-    LETTERBOX_COLOUR,
     FONT_SIZE_PANEL, FONT_SIZE_OVERLAY,
     PANEL_FREQ_X, PANEL_FREQ_W,
     PANEL_POWER_X, PANEL_POWER_W,
@@ -80,9 +80,25 @@ class Renderer:
         shift:         Active shift number; passed to GridCanvas.
     """
 
-    def __init__(self, display_surf: pygame.Surface, shift: int) -> None:
+    def __init__(
+        self,
+        display_surf: pygame.Surface,
+        shift: int,
+        display_size: tuple[int, int] | None = None,
+    ) -> None:
         self._display = display_surf
         self._native  = pygame.Surface((NATIVE_WIDTH, NATIVE_HEIGHT))
+
+        # Letterbox geometry: uniform scale so both axes expand by the same factor.
+        # min() picks the axis that runs out of space first; the other axis gets bars.
+        disp_w, disp_h = display_size if display_size else (NATIVE_WIDTH, NATIVE_HEIGHT)
+        self._scale    = min(disp_w / NATIVE_WIDTH, disp_h / NATIVE_HEIGHT)
+        scaled_w       = int(NATIVE_WIDTH  * self._scale)
+        scaled_h       = int(NATIVE_HEIGHT * self._scale)
+        offset_x       = (disp_w - scaled_w) // 2
+        offset_y       = (disp_h - scaled_h) // 2
+        self._letterbox_rect = pygame.Rect(offset_x, offset_y, scaled_w, scaled_h)
+        self._scaled_surf    = pygame.Surface((scaled_w, scaled_h))
 
         # Canvas region: top CANVAS_HEIGHT rows
         self._canvas_surf = self._native.subsurface(
@@ -93,13 +109,12 @@ class Renderer:
             pygame.Rect(0, CANVAS_HEIGHT, NATIVE_WIDTH, STRIP_HEIGHT)
         )
 
-        self._letterbox_rect = self._calc_letterbox(display_surf)
-
         font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
         if font_path.exists():
             self._font = pygame.freetype.Font(str(font_path), 11)
         else:
             self._font = pygame.freetype.SysFont('monospace', 11)
+        self._font.antialiased = True    # works with smoothscale bilinear filtering
 
         self._canvas = GridCanvas(shift=shift, font=self._font)
         self._editor = GridEditor(self._canvas)
@@ -145,11 +160,13 @@ class Renderer:
         self._line_cmd_active: bool = False
 
         # Debug state
-        self._mouse_pos:   tuple[int, int] = (0, 0)
-        self._click_pos:   tuple[int, int] | None = None
-        self._click_timer: float = 0.0
-        self._frame_time:  float = 0.0
-        self._fps:         float = 0.0
+        self._mouse_pos:       tuple[int, int] = (0, 0)
+        self._click_pos:       tuple[int, int] | None = None
+        self._click_timer:     float = 0.0
+        self._frame_time:      float = 0.0
+        self._fps:             float = 0.0
+        self._fps_smooth:      float = 0.0
+        self._debug_grid_surf: pygame.Surface | None = None  # cached on first debug draw
 
     # ─── Per-frame entry point ────────────────────────────────────────────────
 
@@ -363,6 +380,7 @@ class Renderer:
 
         self._frame_time = dt_real_s
         self._fps = 1.0 / dt_real_s if dt_real_s > 0.0 else 0.0
+        self._fps_smooth = 0.9 * self._fps_smooth + 0.1 * self._fps
 
         # ── Draw canvas ───────────────────────────────────────────────────────
         self._canvas.draw(
@@ -412,11 +430,16 @@ class Renderer:
         _has_unacked = (
             any(not a.acknowledged for a in state.active_alarms) if state else False
         )
+        # Quantise blink to phase index (0 or 1, changes at 2Hz) so the dirty key
+        # changes only 2×/s instead of every frame.
+        _blink_phase = (
+            int(self._blink_2hz_timer / (_BLINK_2HZ_PERIOD * 0.5)) if _has_unacked else 0
+        )
         alarm_key = (
             len(state.active_alarms)                               if state else 0,
             sum(1 for a in state.active_alarms if a.acknowledged)  if state else 0,
             self._alarm_scroll,
-            self._blink_2hz_on if _has_unacked else True,
+            _blink_phase,
         )
 
         if freq_key != self._panel_keys['freq']:
@@ -489,32 +512,29 @@ class Renderer:
         if _sim_const.EDITOR_MODE:
             self._editor.draw_overlay(self._canvas_surf, self._font)
 
+        # ── Always-on FPS counter (top-right of canvas; hidden under debug overlay) ──
+        if not _sim_const.DEBUG_DISPLAY:
+            fps_str = f'{self._fps_smooth:.0f}'
+            tw, _ = self._font.get_rect(fps_str, size=FONT_SIZE_OVERLAY)[2:4]
+            self._font.render_to(
+                self._canvas_surf,
+                (NATIVE_WIDTH - tw - 6, 4),
+                fps_str, COL_FPS_TEXT, size=FONT_SIZE_OVERLAY,
+            )
+
         # ── Debug overlay ──────────────────────────────────────────────────────
         if _sim_const.DEBUG_DISPLAY:
             self._draw_debug()
 
-        # ── Scale to display with letterboxing ────────────────────────────────
-        self._display.fill(LETTERBOX_COLOUR)
-        pygame.transform.scale(
-            self._native,
-            self._letterbox_rect.size,
-            self._display.subsurface(self._letterbox_rect),
-        )
+        # ── Letterbox blit: uniform scale onto physical display ───────────────
+        # Fill black bars first, then scale the native surface uniformly and blit
+        # it centred. pygame.transform.scale writes into a pre-allocated surface to
+        # avoid a per-frame allocation.
+        self._display.fill((0, 0, 0))
+        pygame.transform.smoothscale(self._native, self._scaled_surf.get_size(), self._scaled_surf)
+        self._display.blit(self._scaled_surf, self._letterbox_rect.topleft)
 
     # ─── Letterbox helpers ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _calc_letterbox(display_surf: pygame.Surface) -> pygame.Rect:
-        dw, dh = display_surf.get_size()
-        if dw / dh >= NATIVE_WIDTH / NATIVE_HEIGHT:
-            sh, sw = dh, int(dh * NATIVE_WIDTH / NATIVE_HEIGHT)
-        else:
-            sw, sh = dw, int(dw * NATIVE_HEIGHT / NATIVE_WIDTH)
-        return pygame.Rect((dw - sw) // 2, (dh - sh) // 2, sw, sh)
-
-    def set_display(self, display_surf: pygame.Surface) -> None:
-        self._display = display_surf
-        self._letterbox_rect = self._calc_letterbox(display_surf)
 
     # ─── Debug overlay ────────────────────────────────────────────────────────
 
@@ -598,40 +618,50 @@ class Renderer:
             print(f'[DEBUG CLICK] x={nx}, y={ny}{suffix}')
 
     def _draw_debug(self) -> None:
-        grid_spacing = 120
         font = self._font
+        so   = FONT_SIZE_OVERLAY
 
-        # Faint coordinate grid
-        for x in range(0, NATIVE_WIDTH, grid_spacing):
-            pygame.draw.line(self._native, COL_DEBUG_GRID, (x, 0), (x, CANVAS_HEIGHT), 1)
-        for y in range(0, CANVAS_HEIGHT, grid_spacing):
-            pygame.draw.line(self._native, COL_DEBUG_GRID, (0, y), (NATIVE_WIDTH, y), 1)
+        # Faint coordinate grid — built once, blitted every frame
+        if self._debug_grid_surf is None:
+            self._debug_grid_surf = pygame.Surface(
+                (NATIVE_WIDTH, CANVAS_HEIGHT), pygame.SRCALPHA
+            )
+            self._debug_grid_surf.fill((0, 0, 0, 0))
+            for x in range(0, NATIVE_WIDTH, 120):
+                pygame.draw.line(
+                    self._debug_grid_surf, COL_DEBUG_GRID, (x, 0), (x, CANVAS_HEIGHT), 1
+                )
+            for y in range(0, CANVAS_HEIGHT, 120):
+                pygame.draw.line(
+                    self._debug_grid_surf, COL_DEBUG_GRID, (0, y), (NATIVE_WIDTH, y), 1
+                )
+        self._native.blit(self._debug_grid_surf, (0, 0))
 
         # Mouse position — top-left
         mx, my = self._mouse_pos
         font.render_to(self._native, (4, 4),
-                       f'mouse {mx},{my}', COL_DEBUG_TEXT, size=FONT_SIZE_OVERLAY)
+                       f'mouse {mx},{my}', COL_DEBUG_TEXT, size=so)
 
         # FPS / frame time — top-right
         fps_str = f'{self._fps:.0f}fps  {self._frame_time*1000:.1f}ms'
-        tw, _ = font.get_rect(fps_str, size=FONT_SIZE_OVERLAY)[2:4]
+        tw, _ = font.get_rect(fps_str, size=so)[2:4]
         font.render_to(self._native, (NATIVE_WIDTH - tw - 8, 4),
-                       fps_str, COL_DEBUG_TEXT, size=FONT_SIZE_OVERLAY)
+                       fps_str, COL_DEBUG_TEXT, size=so)
 
         # AGC status — top-right, second line
         agc_str = f'AGC {"ON" if _sim_const.AGC_ENABLED else "OFF"}'
         agc_col = COL_DEBUG_TEXT if _sim_const.AGC_ENABLED else COL_TEXT_DIM
-        agc_w, _ = font.get_rect(agc_str, size=FONT_SIZE_OVERLAY)[2:4]
+        agc_w, _ = font.get_rect(agc_str, size=so)[2:4]
         font.render_to(self._native, (NATIVE_WIDTH - agc_w - 8, 18),
-                       agc_str, agc_col, size=FONT_SIZE_OVERLAY)
+                       agc_str, agc_col, size=so)
 
         # Resolution / scale — top-right, third line
-        dw, dh = self._display.get_size()
-        scale = self._letterbox_rect.width / NATIVE_WIDTH
-        res_str = f'{dw}\xd7{dh}  {NATIVE_WIDTH}\xd7{NATIVE_HEIGHT}  {scale:.2f}\xd7'
-        res_w, _ = font.get_rect(res_str, size=FONT_SIZE_OVERLAY)[2:4]
+        ww, wh = pygame.display.get_window_size()
+        scale = ww / NATIVE_WIDTH
+        res_str = f'{ww}\xd7{wh}  {NATIVE_WIDTH}\xd7{NATIVE_HEIGHT}  {scale:.2f}\xd7'
+        res_w, _ = font.get_rect(res_str, size=so)[2:4]
         font.render_to(self._native, (NATIVE_WIDTH - res_w - 8, 32),
-                       res_str, COL_DEBUG_TEXT, size=FONT_SIZE_OVERLAY)
+                       res_str, COL_DEBUG_TEXT, size=so)
 
         # Click position — shown for 3 seconds
         if self._click_pos is not None:
@@ -640,6 +670,6 @@ class Renderer:
                 cx, cy = self._click_pos
                 from display.palette import COL_DEBUG_CLICK
                 font.render_to(self._native, (4, 18),
-                               f'click {cx},{cy}', COL_DEBUG_CLICK, size=FONT_SIZE_OVERLAY)
+                               f'click {cx},{cy}', COL_DEBUG_CLICK, size=so)
             else:
                 self._click_pos = None

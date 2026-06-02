@@ -47,27 +47,23 @@ import simulation.constants as _const
 from debug_scenario import make_debug_sim, DEBUG_SCENARIO
 
 
-_letterbox_rect: pygame.Rect | None = None
+def _to_native(
+    pos: tuple[int, int],
+    letterbox: pygame.Rect,
+    scale: float,
+) -> tuple[int, int]:
+    """Map a physical-display mouse position to native 1920×1080 coordinates.
 
-
-def _compute_letterbox(display_w: int, display_h: int) -> pygame.Rect:
-    target_aspect = NATIVE_WIDTH / NATIVE_HEIGHT
-    if display_w / display_h >= target_aspect:
-        sh = display_h
-        sw = int(display_h * target_aspect)
-    else:
-        sw = display_w
-        sh = int(display_w / target_aspect)
-    return pygame.Rect((display_w - sw) // 2, (display_h - sh) // 2, sw, sh)
-
-
-def _to_native(pos: tuple[int, int]) -> tuple[int, int]:
-    """Convert display-resolution mouse position to native 1920×1080 coordinates."""
-    assert _letterbox_rect is not None
-    rx = max(0, min(_letterbox_rect.width  - 1, pos[0] - _letterbox_rect.x))
-    ry = max(0, min(_letterbox_rect.height - 1, pos[1] - _letterbox_rect.y))
-    return (int(rx * NATIVE_WIDTH  / _letterbox_rect.width),
-            int(ry * NATIVE_HEIGHT / _letterbox_rect.height))
+    Subtracts the letterbox offset then divides by the uniform scale factor.
+    Clamps to the valid native surface range so clicks on black bars don't
+    produce out-of-bounds coordinates.
+    """
+    nx = int((pos[0] - letterbox.left) / scale)
+    ny = int((pos[1] - letterbox.top)  / scale)
+    return (
+        max(0, min(NATIVE_WIDTH  - 1, nx)),
+        max(0, min(NATIVE_HEIGHT - 1, ny)),
+    )
 
 
 # Handover schedules: unit outputs (MW) at the start of each shift.
@@ -92,7 +88,8 @@ def _make_sim_and_renderer(
     grid     = Grid(shift)
     sim      = GridSimulation(grid=grid, shift_number=shift, difficulty='standard',
                               initial_schedule=_SHIFT_SCHEDULES.get(shift, {}))
-    renderer = Renderer(display_surf, shift=shift)
+    renderer = Renderer(display_surf, shift=shift,
+                        display_size=display_surf.get_size())
     renderer.set_grid(grid)
     return sim, grid, renderer
 
@@ -103,14 +100,12 @@ def main() -> None:
 
     load_layout()
 
-    # Query monitor size BEFORE set_mode (Info() is unreliable after)
-    _info = pygame.display.Info()
-    monitor_w, monitor_h = _info.current_w, _info.current_h
-    display_surf = pygame.display.set_mode((monitor_w, monitor_h), pygame.FULLSCREEN)
+    # FULLSCREEN at the monitor's native resolution. Letterbox scaling is handled
+    # manually in Renderer — a uniform scale factor maps 1920×1080 onto the physical
+    # display with equal-sized black bars, preventing the axis-asymmetric distortion
+    # that pygame.SCALED produces on non-16:9 monitors.
+    display_surf = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     pygame.display.set_caption('GRIDCOM : Grid Control Terminal')
-
-    global _letterbox_rect
-    _letterbox_rect = _compute_letterbox(monitor_w, monitor_h)
 
     clock = pygame.time.Clock()
     shift = 1
@@ -118,7 +113,8 @@ def main() -> None:
 
     if _const.DEBUG_SCENARIO_ACTIVE:
         sim, grid = make_debug_sim(DEBUG_SCENARIO)
-        renderer  = Renderer(display_surf, shift=DEBUG_SCENARIO.shift_number)
+        renderer  = Renderer(display_surf, shift=DEBUG_SCENARIO.shift_number,
+                             display_size=display_surf.get_size())
         renderer.set_grid(grid)
         shift = DEBUG_SCENARIO.shift_number
     else:
@@ -142,18 +138,7 @@ def main() -> None:
                 if (event.key == pygame.K_RETURN
                       and bool(mods & pygame.KMOD_ALT)
                       and _const.DEBUG_DISPLAY):
-                    _is_fullscreen = bool(display_surf.get_flags() & pygame.FULLSCREEN)
-                    if _is_fullscreen:
-                        display_surf = pygame.display.set_mode(
-                            (NATIVE_WIDTH, NATIVE_HEIGHT), pygame.RESIZABLE
-                        )
-                    else:
-                        _dinfo = pygame.display.Info()
-                        display_surf = pygame.display.set_mode(
-                            (_dinfo.current_w, _dinfo.current_h), pygame.FULLSCREEN
-                        )
-                    _letterbox_rect = _compute_letterbox(*display_surf.get_size())
-                    renderer.set_display(display_surf)
+                    pygame.display.toggle_fullscreen()
 
                 elif event.key in (pygame.K_ESCAPE, pygame.K_q):
                     if _const.EDITOR_MODE:
@@ -236,11 +221,11 @@ def main() -> None:
                     renderer.on_enter(sim)
 
             elif event.type == pygame.MOUSEMOTION:
-                renderer.on_mouse_move(_to_native(event.pos))
+                renderer.on_mouse_move(_to_native(event.pos, renderer._letterbox_rect, renderer._scale))
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    native_pos = _to_native(event.pos)
+                    native_pos = _to_native(event.pos, renderer._letterbox_rect, renderer._scale)
                     if _const.EDITOR_MODE:
                         renderer.on_mouse_down(native_pos)
                     else:
@@ -248,10 +233,10 @@ def main() -> None:
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1 and _const.EDITOR_MODE:
-                    renderer.on_mouse_up(_to_native(event.pos))
+                    renderer.on_mouse_up(_to_native(event.pos, renderer._letterbox_rect, renderer._scale))
 
             elif event.type == pygame.MOUSEWHEEL:
-                renderer.on_scroll(event.y, _to_native(pygame.mouse.get_pos()))
+                renderer.on_scroll(event.y, _to_native(pygame.mouse.get_pos(), renderer._letterbox_rect, renderer._scale))
 
         # Advance simulation
         if speed > 0.0:

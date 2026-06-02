@@ -231,9 +231,15 @@ class GridSimulation:
         self._agc_prev_delta_f: float = 0.0
 
         # AGC log state (used when AGC_LOG is True)
-        self._agc_log_file    = None
-        self._agc_log_writer  = None
-        self._agc_log_headers: list[str] | None = None
+        self._agc_log_file         = None
+        self._agc_log_writer       = None
+        self._agc_log_headers:     list[str] | None = None
+        self._agc_log_flush_counter: int = 0
+
+        # Forecast cache (recomputed only when sim hour integer changes)
+        self._cached_demand_fc:    dict = {}
+        self._cached_renew_fc:     dict = {}
+        self._cached_forecast_hour: int = -1
 
         # Crisis state
         self._crisis_active:  bool      = False
@@ -672,7 +678,10 @@ class GridSimulation:
             AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ,
             *unit_vals,
         ])
-        self._agc_log_file.flush()
+        self._agc_log_flush_counter += 1
+        if self._agc_log_flush_counter >= 10:
+            self._agc_log_file.flush()
+            self._agc_log_flush_counter = 0
 
     def __del__(self) -> None:
         if self._agc_log_file is not None:
@@ -916,10 +925,15 @@ class GridSimulation:
                     + snap['outputs_mw'].get(unit.label, 0.0)
                 )
 
-        # Demand + renewable forecasts for remaining shift
+        # Demand + renewable forecasts — recomputed only when sim_hour integer advances
         end_hour = self._start_hour + self._duration_minutes / 60.0
-        demand_fc = self._demand.forecast_by_hour(sim_hour, end_hour, step=0.5)
-        renew_fc  = self._renewables.forecast_by_hour(sim_hour, end_hour, step=0.5)
+        cur_hour_int = int(sim_hour)
+        if cur_hour_int != self._cached_forecast_hour:
+            self._cached_demand_fc    = self._demand.forecast_by_hour(sim_hour, end_hour, step=0.5)
+            self._cached_renew_fc     = self._renewables.forecast_by_hour(sim_hour, end_hour, step=0.5)
+            self._cached_forecast_hour = cur_hour_int
+        demand_fc = self._cached_demand_fc
+        renew_fc  = self._cached_renew_fc
 
         wind_fc:  dict = {}
         solar_fc: dict = {}

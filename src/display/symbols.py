@@ -34,6 +34,65 @@ UNIT_GAP:   int = 2    # gap between unit squares in a multi-unit station
 HALF_BUS:   int = BUS_SIZE // 2
 HALF_UNIT:  int = UNIT_SIZE // 2
 
+
+# ─────── PRIVATE COLOUR HELPERS (needed at module load for cache dicts) ──────
+
+def _dim(col: tuple, factor: float) -> tuple:
+    """Multiply RGB components by factor (darkening)."""
+    return (
+        min(255, int(col[0] * factor)),
+        min(255, int(col[1] * factor)),
+        min(255, int(col[2] * factor)),
+    )
+
+
+def _brighten(col: tuple, factor: float) -> tuple:
+    """Multiply RGB components by factor (brightening), clamped to 255."""
+    return (
+        min(255, int(col[0] * factor)),
+        min(255, int(col[1] * factor)),
+        min(255, int(col[2] * factor)),
+    )
+
+
+def _blend(a: tuple, b: tuple, t: float) -> tuple:
+    """Linear interpolation between colours a and b at parameter t (0–1)."""
+    return (
+        int(a[0] + (b[0] - a[0]) * t),
+        int(a[1] + (b[1] - a[1]) * t),
+        int(a[2] + (b[2] - a[2]) * t),
+    )
+
+
+def _draw_dashed_line(
+    surf: pygame.Surface,
+    col: tuple,
+    start: tuple,
+    end: tuple,
+    dash: int,
+    gap: int,
+    width: int,
+) -> None:
+    """Draw a dashed line between start and end."""
+    x1, y1 = start
+    x2, y2 = end
+    dx = x2 - x1
+    dy = y2 - y1
+    length = max(1, (dx * dx + dy * dy) ** 0.5)
+    ux = dx / length
+    uy = dy / length
+
+    pos = 0.0
+    while pos < length:
+        seg_end = min(pos + dash, length)
+        sx = int(x1 + ux * pos)
+        sy = int(y1 + uy * pos)
+        ex = int(x1 + ux * seg_end)
+        ey = int(y1 + uy * seg_end)
+        pygame.draw.line(surf, col, (sx, sy), (ex, ey), width)
+        pos += dash + gap
+
+
 # Unit type → fill colour
 _UNIT_TYPE_COLOUR: dict[str, tuple] = {
     'COAL':      COL_UNIT_COAL,
@@ -44,6 +103,25 @@ _UNIT_TYPE_COLOUR: dict[str, tuple] = {
     'HYDRO_ROR': COL_UNIT_HYDRO,
     'WIND':      COL_UNIT_WIND,
     'SOLAR':     COL_UNIT_SOLAR,
+}
+
+# Pre-computed fill colours for every (unit_type, unit_state) combination.
+# draw_unit_square calls _dim() on every redraw; these avoid the per-call arithmetic.
+_UNIT_FILL_CACHE: dict[tuple[str, str], tuple[int, int, int]] = {
+    (ut, st): (
+        _dim(col, 0.45) if st == 'ONLINE'   else
+        _dim(col, 0.30) if st == 'STARTING' else
+        _dim(col, 0.25) if st == 'SHUTDOWN' else
+        _dim(col, 0.18)  # OFFLINE / unknown
+    )
+    for ut, col in _UNIT_TYPE_COLOUR.items()
+    for st in ('ONLINE', 'STARTING', 'SHUTDOWN', 'OFFLINE')
+}
+
+# Pre-computed brightened bar colours for ONLINE units (one per type).
+_UNIT_BAR_CACHE: dict[str, tuple[int, int, int]] = {
+    ut: _brighten(col, 1.5)
+    for ut, col in _UNIT_TYPE_COLOUR.items()
 }
 
 # Voltage level → bus colour
@@ -154,18 +232,17 @@ def draw_unit_square(
     x = cx - HALF_UNIT
     y = cy - HALF_UNIT
 
-    # Fill colour and border based on state
+    # Fill colour from pre-computed cache; border determined by state
+    state_key = unit_state if unit_state in ('ONLINE', 'STARTING', 'SHUTDOWN') else 'OFFLINE'
+    fill_col  = _UNIT_FILL_CACHE.get((unit_type, state_key),
+                                     _dim(type_col, 0.18))
     if unit_state == 'ONLINE':
-        fill_col   = _dim(type_col, 0.45)
         border_col = COL_UNIT_ONLINE
     elif unit_state == 'STARTING':
-        fill_col   = _dim(type_col, 0.30)
         border_col = COL_UNIT_STARTING if blink_on else COL_UNIT_OFFLINE
     elif unit_state == 'SHUTDOWN':
-        fill_col   = _dim(type_col, 0.25)
         border_col = COL_UNIT_SHUTDOWN
-    else:  # OFFLINE or unknown
-        fill_col   = _dim(type_col, 0.18)
+    else:
         border_col = COL_UNIT_BORDER
 
     pygame.draw.rect(surf, fill_col, (x, y, UNIT_SIZE, UNIT_SIZE))
@@ -178,7 +255,7 @@ def draw_unit_square(
         interior = UNIT_SIZE - 2   # inside the border
         bar_h = max(1, int(interior * min(output_fraction, 1.0)))
         bar_y = y + UNIT_SIZE - 1 - bar_h
-        bar_col = _brighten(type_col, 1.5)
+        bar_col = _UNIT_BAR_CACHE.get(unit_type, _brighten(type_col, 1.5))
         pygame.draw.rect(surf, bar_col, (x + 1, bar_y, interior, bar_h))
 
 
@@ -243,6 +320,7 @@ def draw_interconnector(
     flow_mw: float,
     label: str,
     font: pygame.freetype.Font,
+    font_scale: float = 1.0,
 ) -> None:
     """
     Draw an interconnector terminus: horizontal line ending in filled chevron.
@@ -276,8 +354,9 @@ def draw_interconnector(
 
     # Flow label
     flow_str = f'{flow_mw:+.0f}MW' if abs(flow_mw) > 1.0 else '0MW'
-    font.render_to(surf, (cx - line_len, cy - 14), label, COL_TEXT_SECONDARY, size=FONT_SIZE_OVERLAY)
-    font.render_to(surf, (cx - line_len, cy + 4),  flow_str, col, size=FONT_SIZE_OVERLAY)
+    so = int(FONT_SIZE_OVERLAY * font_scale)
+    font.render_to(surf, (cx - line_len, cy - 14), label, COL_TEXT_SECONDARY, size=so)
+    font.render_to(surf, (cx - line_len, cy + 4),  flow_str, col, size=so)
 
 
 # ─────── HYDRAULIC CONNECTOR ─────────────────────────────────────────────────
@@ -381,59 +460,3 @@ def _draw_line_segment(
         _draw_dashed_line(surf, col, (x1, y1), (x2, y2), dash=3, gap=3, width=1)
 
 
-# ─────── PRIVATE HELPERS ─────────────────────────────────────────────────────
-
-def _dim(col: tuple, factor: float) -> tuple:
-    """Multiply RGB components by factor (darkening)."""
-    return (
-        min(255, int(col[0] * factor)),
-        min(255, int(col[1] * factor)),
-        min(255, int(col[2] * factor)),
-    )
-
-
-def _brighten(col: tuple, factor: float) -> tuple:
-    """Multiply RGB components by factor (brightening), clamped to 255."""
-    return (
-        min(255, int(col[0] * factor)),
-        min(255, int(col[1] * factor)),
-        min(255, int(col[2] * factor)),
-    )
-
-
-def _blend(a: tuple, b: tuple, t: float) -> tuple:
-    """Linear interpolation between colours a and b at parameter t (0–1)."""
-    return (
-        int(a[0] + (b[0] - a[0]) * t),
-        int(a[1] + (b[1] - a[1]) * t),
-        int(a[2] + (b[2] - a[2]) * t),
-    )
-
-
-def _draw_dashed_line(
-    surf: pygame.Surface,
-    col: tuple,
-    start: tuple,
-    end: tuple,
-    dash: int,
-    gap: int,
-    width: int,
-) -> None:
-    """Draw a dashed line between start and end."""
-    x1, y1 = start
-    x2, y2 = end
-    dx = x2 - x1
-    dy = y2 - y1
-    length = max(1, (dx * dx + dy * dy) ** 0.5)
-    ux = dx / length
-    uy = dy / length
-
-    pos = 0.0
-    while pos < length:
-        seg_end = min(pos + dash, length)
-        sx = int(x1 + ux * pos)
-        sy = int(y1 + uy * pos)
-        ex = int(x1 + ux * seg_end)
-        ey = int(y1 + uy * seg_end)
-        pygame.draw.line(surf, col, (sx, sy), (ex, ey), width)
-        pos += dash + gap

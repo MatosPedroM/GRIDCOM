@@ -39,7 +39,7 @@ from simulation.grid import Grid
 from simulation.simulation import GridSimulation
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
-    TARGET_FPS,
+    TARGET_FPS, SIM_TICK_INTERVAL_S,
     TIME_COMPRESSION,
     SPEED_PAUSE, SPEED_SLOW, SPEED_NORMAL, SPEED_FAST, SPEED_VERY_FAST,
 )
@@ -110,9 +110,10 @@ def main() -> None:
     )
     pygame.display.set_caption('GRIDCOM : Grid Control Terminal')
 
-    clock = pygame.time.Clock()
-    shift = 1
-    speed = SPEED_NORMAL
+    clock     = pygame.time.Clock()
+    shift     = 1
+    speed     = SPEED_NORMAL
+    sim_accum = 0.0   # accumulates real time until next simulation tick
 
     if _const.DEBUG_SCENARIO_ACTIVE:
         sim, grid = make_debug_sim(DEBUG_SCENARIO)
@@ -123,6 +124,7 @@ def main() -> None:
     else:
         sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
 
+    state   = sim.get_state()   # initial state; updated every SIM_TICK_INTERVAL_S
     running = True
     while running:
         dt = clock.tick(TARGET_FPS) / 1000.0
@@ -195,12 +197,15 @@ def main() -> None:
                 elif event.key == pygame.K_F1 and not _const.EDITOR_MODE:
                     shift = 1
                     sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
+                    state = sim.get_state(); sim_accum = 0.0
                 elif event.key == pygame.K_F3 and not _const.EDITOR_MODE:
                     shift = 3
                     sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
+                    state = sim.get_state(); sim_accum = 0.0
                 elif event.key == pygame.K_F5 and not _const.EDITOR_MODE:
                     shift = 5
                     sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
+                    state = sim.get_state(); sim_accum = 0.0
 
                 # Unit target input — checked before pause so digits aren't swallowed
                 elif (not _const.EDITOR_MODE and not ctrl and not shift_held
@@ -241,11 +246,14 @@ def main() -> None:
             elif event.type == pygame.MOUSEWHEEL:
                 renderer.on_scroll(event.y, _to_native(pygame.mouse.get_pos(), renderer._letterbox_rect, renderer._scale))
 
-        # Advance simulation
-        if speed > 0.0:
-            dt_sim_s = dt * TIME_COMPRESSION * speed
-            sim.tick(dt_sim_s)
-        state = sim.get_state()
+        # Advance simulation at fixed 10 Hz rate regardless of render FPS.
+        # Accumulate real time and only tick when the interval is reached,
+        # passing the full accumulated dt so simulated time stays accurate.
+        sim_accum += dt
+        if speed > 0.0 and sim_accum >= SIM_TICK_INTERVAL_S:
+            sim.tick(sim_accum * TIME_COMPRESSION * speed)
+            state = sim.get_state()
+            sim_accum = 0.0
 
         renderer.tick(dt, state=state, speed_mult=speed)
         pygame.display.flip()

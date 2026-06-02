@@ -141,14 +141,14 @@ class GridCanvas:
         scaled_w  = int(NATIVE_WIDTH  * scale)
         scaled_ch = int(CANVAS_HEIGHT * scale)
 
-        # Canvas cache: standalone surface redrawn only when sim state visibly changes
-        self._canvas_surf_cache: pygame.Surface = pygame.Surface((scaled_w, scaled_ch))
+        # Canvas cache: converted to display pixel format for hardware-accelerated blits.
+        self._canvas_surf_cache: pygame.Surface = pygame.Surface((scaled_w, scaled_ch)).convert()
         self._canvas_key: object = object()  # sentinel forces first-frame draw
 
-        # Pre-baked hydraulic connector surface (all 3 dashed lines, drawn once at init)
+        # Pre-baked hydraulic connector surface — convert_alpha() for fast SRCALPHA blits.
         self._hydraulic_surf: pygame.Surface = pygame.Surface(
             (scaled_w, scaled_ch), pygame.SRCALPHA
-        )
+        ).convert_alpha()
         self._hydraulic_surf.fill((0, 0, 0, 0))
         dash_w = max(1, round(scale))
         for fb, tb in self._hydraulic:
@@ -177,7 +177,7 @@ class GridCanvas:
             max_y = max(y1, y2) + pad
             w = max(1, max_x - min_x)
             h = max(1, max_y - min_y)
-            surf = pygame.Surface((w, h), pygame.SRCALPHA)
+            surf = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
             surf.fill((0, 0, 0, 0))
             ox, oy = min_x, min_y
             td = max(1, int(6 * scale))

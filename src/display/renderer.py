@@ -103,8 +103,8 @@ class Renderer:
         # Paint letterbox bars black once — they never change so no per-frame fill needed.
         self._display.fill((0, 0, 0))
 
-        # Native surface is already the physical game-area size — no scaling blit needed.
-        self._native        = pygame.Surface((scaled_w, scaled_h))
+        # Native surface converted to display pixel format for hardware-accelerated blits.
+        self._native        = pygame.Surface((scaled_w, scaled_h)).convert()
         self._display_dirty = True   # force first-frame blit to display
 
         # Canvas region: top scaled_canvas_h rows
@@ -141,16 +141,15 @@ class Renderer:
         self._dispatch_scroll: int = 0
         self._alarm_scroll:    int = 0
 
-        # Panel surface cache: standalone surfaces redrawn only when data changes.
-        # Sizes are scaled so panels fill the physically-sized strip surface.
+        # Panel surface cache: converted to display pixel format for fast blits.
         _sc = self._scale
         self._panel_cache: dict[str, pygame.Surface] = {
-            'freq':     pygame.Surface((int(PANEL_FREQ_W     * _sc), scaled_strip_h)),
-            'power':    pygame.Surface((int(PANEL_POWER_W    * _sc), scaled_strip_h)),
-            'dispatch': pygame.Surface((int(PANEL_DISPATCH_W * _sc), scaled_strip_h)),
-            'forecast': pygame.Surface((int(PANEL_FORECAST_W * _sc), scaled_strip_h)),
-            'genmix':   pygame.Surface((int(PANEL_GENMIX_W   * _sc), scaled_strip_h)),
-            'alarm':    pygame.Surface((int(PANEL_ALARM_W    * _sc), scaled_strip_h)),
+            'freq':     pygame.Surface((int(PANEL_FREQ_W     * _sc), scaled_strip_h)).convert(),
+            'power':    pygame.Surface((int(PANEL_POWER_W    * _sc), scaled_strip_h)).convert(),
+            'dispatch': pygame.Surface((int(PANEL_DISPATCH_W * _sc), scaled_strip_h)).convert(),
+            'forecast': pygame.Surface((int(PANEL_FORECAST_W * _sc), scaled_strip_h)).convert(),
+            'genmix':   pygame.Surface((int(PANEL_GENMIX_W   * _sc), scaled_strip_h)).convert(),
+            'alarm':    pygame.Surface((int(PANEL_ALARM_W    * _sc), scaled_strip_h)).convert(),
         }
         # Sentinel objects force a full draw on the first frame
         self._panel_keys: dict[str, object] = {k: object() for k in self._panel_cache}

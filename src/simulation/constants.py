@@ -147,7 +147,8 @@ NATIVE_WIDTH:  int = 1920
 NATIVE_HEIGHT: int = 1080
 CANVAS_HEIGHT: int = 844        # Top portion — grid schematic
 STRIP_HEIGHT:  int = 236        # Bottom portion — instrument strip
-TARGET_FPS:    int = 60
+TARGET_FPS:           int   = 60
+SIM_TICK_INTERVAL_S:  float = 0.1    # Simulation advances at 10 Hz regardless of render FPS
 LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
 
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size

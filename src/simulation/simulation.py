@@ -31,6 +31,7 @@ from simulation.constants import (
     F_NOMINAL,
     F_ALERT_LOW, F_ALERT_HIGH,
     F_CRITICAL_LOW, F_CRITICAL_HIGH,
+    F_TRIP_ISLAND_HIGH, F_TRIP_ISLAND_LOW,
     F_IN_BOUNDS_TOL,
     OVERLOAD_WARN_PCT, OVERLOAD_CRIT_PCT,
     V_WARNING_LOW, V_CRITICAL_LOW,
@@ -300,12 +301,7 @@ class GridSimulation:
         sim_hour = self._start_hour + self._sim_time_min / 60.0
 
         # 2. Update demand
-        self._demand.update(
-            sim_hour,
-            total_generation_mw=self._fleet.total_generation_mw(),
-            deterministic=False,
-            dt_sim_seconds=dt_sim_seconds,
-        )
+        self._demand.update(sim_hour, self._fleet.total_generation_mw())
 
         # 3. Renewable outputs → fleet
         rng_outputs = self._renewables.update(sim_hour, deterministic=False)
@@ -329,8 +325,9 @@ class GridSimulation:
 
         # 6. Build injection vectors (exclude load on buses already blacked out)
         in_service = self._get_in_service_lines()
-        _islands_pre    = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
-        _blackout_pre   = self._cascade.get_blackout_zones(_islands_pre, self._grid)
+        _active_gen_buses = self._get_active_generation_buses()
+        _islands_pre      = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
+        _blackout_pre     = self._cascade.get_blackout_zones(_islands_pre, _active_gen_buses)
         p_injections         = self._build_p_injections(_blackout_pre)
         q_injections, pv_buses = self._build_q_injections()
 
@@ -371,9 +368,14 @@ class GridSimulation:
 
         # 11. Island detection and isolated unit protection
         self._trip_isolated_units(in_service)
-        islands        = self._cascade.find_islands(self._grid.get_active_buses(),
-                                                     in_service)
-        blackout_zones = self._cascade.get_blackout_zones(islands, self._grid)
+        islands = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
+        _active_gen_buses_post = self._get_active_generation_buses()
+
+        if self._trip_frequency_runaway_islands(islands, _active_gen_buses_post):
+            _active_gen_buses_post = self._get_active_generation_buses()
+            islands = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
+
+        blackout_zones = self._cascade.get_blackout_zones(islands, _active_gen_buses_post)
 
         # 12. Alarms
         self._update_loading_alarms(lf_result.line_loading_pct)
@@ -542,8 +544,7 @@ class GridSimulation:
         for step in range(steps):
             hour = start_hour + step * dt_s / 3600.0
 
-            demand_fc.update(hour, fleet_fc.total_generation_mw(),
-                             deterministic=True)
+            demand_fc.update(hour, fleet_fc.total_generation_mw())
             for lbl, mw in renew_fc.update(hour, deterministic=True).items():
                 fleet_fc.set_renewable_output(lbl, mw)
             fleet_fc.tick(dt_s)
@@ -737,6 +738,92 @@ class GridSimulation:
                         self._log.debug(f'[CASCADE] {unit.label} tripped — isolated '
                                         f'at t={self._sim_time_min:.1f} min')
 
+    def _get_active_generation_buses(self) -> frozenset:
+        """Return frozenset of bus labels with at least one ONLINE or SHUTDOWN unit."""
+        buses: set[str] = set()
+        for unit in self._grid.get_active_units():
+            model = self._fleet._units.get(unit.label)
+            if model is not None and model.state in ('ONLINE', 'SHUTDOWN'):
+                buses.add(unit.bus_label)
+        return frozenset(buses)
+
+    def _trip_frequency_runaway_islands(
+        self,
+        islands: list,
+        active_generation_buses: frozenset,
+    ) -> bool:
+        """
+        For each non-slack island with active generation, simulate a short
+        frequency step. If frequency would leave [F_TRIP_ISLAND_LOW,
+        F_TRIP_ISLAND_HIGH], trip all units in that island.
+
+        Models the under/over-frequency protection relay that operates within
+        seconds of islanding when generation has no load path (or vice versa).
+
+        Returns True if any units were tripped (caller should re-detect islands).
+        """
+        any_tripped = False
+        for island in islands:
+            if SLACK_BUS in island:
+                continue
+            if not (island & active_generation_buses):
+                continue  # no generation — blackout zone, handled elsewhere
+
+            island_gen_mw = 0.0
+            island_unit_types: list[tuple[str, float]] = []
+            for unit in self._grid.get_active_units():
+                if unit.bus_label not in island:
+                    continue
+                model = self._fleet._units.get(unit.label)
+                if model is not None and model.state in ('ONLINE', 'SHUTDOWN'):
+                    island_gen_mw += model.current_mw
+                    island_unit_types.append((unit.unit_type, model.current_mw))
+
+            if island_gen_mw < 1.0:
+                continue
+
+            island_load_mw = sum(
+                abs(mw)
+                for bus, mw in self._demand.p_load_injections().items()
+                if bus in island
+            )
+
+            _test_fm = FrequencyModel()
+            _test_fm.update(
+                dt_sim_seconds=30.0,
+                p_generation_mw=island_gen_mw,
+                p_load_mw=island_load_mw,
+                online_unit_types=island_unit_types,
+            )
+            test_freq = _test_fm.frequency_hz
+
+            if test_freq >= F_TRIP_ISLAND_HIGH or test_freq <= F_TRIP_ISLAND_LOW:
+                for unit in self._grid.get_active_units():
+                    if unit.bus_label not in island:
+                        continue
+                    model = self._fleet._units.get(unit.label)
+                    if model is not None and model.state != 'OFFLINE':
+                        self._fleet.trip_unit(unit.label)
+                        any_tripped = True
+                        self._raise_alarm(
+                            priority='CRITICAL',
+                            message=f'{unit.label} tripped — island freq runaway',
+                            element_label=unit.label,
+                            detail=(
+                                f'Island at {unit.bus_label}: '
+                                f'gen={island_gen_mw:.0f} MW '
+                                f'load={island_load_mw:.0f} MW '
+                                f'→ f={test_freq:.2f} Hz. '
+                                f'Over/under-frequency relay operated.'
+                            ),
+                        )
+                        if self._log:
+                            self._log.debug(
+                                f'[CASCADE] {unit.label} tripped — island freq runaway '
+                                f'({test_freq:.2f} Hz) at t={self._sim_time_min:.1f} min'
+                            )
+        return any_tripped
+
     # ─────── ALARM MANAGEMENT ─────────────────────────────────────────────
 
     def _raise_alarm(
@@ -885,7 +972,7 @@ class GridSimulation:
         """Build initial state snapshot at t=0 without advancing time."""
         sim_hour = self._start_hour
 
-        self._demand.update(sim_hour, 0.0, deterministic=True)
+        self._demand.update(sim_hour, 0.0)
         for lbl, mw in self._renewables.update(sim_hour, deterministic=True).items():
             self._fleet.set_renewable_output(lbl, mw)
 
@@ -898,7 +985,9 @@ class GridSimulation:
             self._grid.get_active_buses(),
             self._get_in_service_lines(),
         )
-        blackout = self._cascade.get_blackout_zones(islands, self._grid)
+        blackout = self._cascade.get_blackout_zones(
+            islands, self._get_active_generation_buses()
+        )
         self._state = self._build_state(sim_hour, lf_r, vr_r, islands, blackout)
 
     def _build_state(

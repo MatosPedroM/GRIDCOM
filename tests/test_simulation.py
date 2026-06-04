@@ -185,19 +185,19 @@ def test_grid_loads() -> bool:
         # ── Demand profile query ──────────────────────────────────────────
         try:
             g = Grid(1)
-            # Shift 1 distributes load to 220kV buses (ASHF, WRNT, FAIR, DUNM)
-            load_ashf_morning = g.get_load_at_bus('ASHF', 9.0)
-            load_ashf_night   = g.get_load_at_bus('ASHF', 3.0)
+            # Shift 1 has a single load bus: LD01 (150kV load substation).
+            load_ld01_morning = g.get_load_at_bus('LD01', 9.0)
+            load_ld01_night   = g.get_load_at_bus('LD01', 3.0)
             load_slack        = g.get_load_at_bus('MDBY', 9.0)
 
-            assert load_ashf_morning > 0.0, "ASHF morning load should be > 0"
-            assert load_ashf_night   > 0.0, "ASHF night load should be > 0"
-            assert load_ashf_morning > load_ashf_night, \
+            assert load_ld01_morning > 0.0, "LD01 morning load should be > 0"
+            assert load_ld01_night   > 0.0, "LD01 night load should be > 0"
+            assert load_ld01_morning > load_ld01_night, \
                 "Morning load should exceed night load"
             assert load_slack == 0.0, \
                 "Slack bus MDBY should have zero load"
-            print(f"  Demand profile query: morning={load_ashf_morning:.1f}MW "
-                  f"night={load_ashf_night:.1f}MW — PASS")
+            print(f"  Demand profile query: morning={load_ld01_morning:.1f}MW "
+                  f"night={load_ld01_night:.1f}MW — PASS")
 
         except AssertionError as e:
             print(f"  Demand profile: FAIL — {e}")
@@ -957,21 +957,22 @@ def test_demand_model() -> bool:
 
     try:
         from simulation.demand import DemandModel
-        from data.profiles import SHIFT_SPECS, LOAD_DISTRIBUTION, get_load_distribution
+        from data.profiles import SHIFT_SPECS, get_substation_demand_specs
 
         spec = SHIFT_SPECS[5]   # shift 5 uses LD01-LD06 load substations
 
         # ── Deterministic forecast matches profile ─────────────────────────
         try:
             dm = DemandModel(spec)
-            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            dm.update(9.0, total_generation_mw=2000.0)
             forecast = dm.get_forecast_mw(9.0)
             assert abs(dm.total_demand_mw - forecast) < 0.01, \
                 f"Deterministic demand should equal forecast: " \
                 f"got {dm.total_demand_mw:.2f} vs {forecast:.2f}"
 
             # Bus demands should sum to total
-            bus_sum = sum(dm.get_bus_demand_mw(b) for b in get_load_distribution(spec.shift_number))
+            load_buses = list(get_substation_demand_specs(spec.shift_number).keys())
+            bus_sum = sum(dm.get_bus_demand_mw(b) for b in load_buses)
             assert abs(bus_sum - dm.total_demand_mw) < 0.01, \
                 f"Bus demands {bus_sum:.2f} don't sum to total {dm.total_demand_mw:.2f}"
 
@@ -984,9 +985,9 @@ def test_demand_model() -> bool:
         # ── Morning > night (profile shape) ───────────────────────────────
         try:
             dm = DemandModel(spec)
-            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            dm.update(9.0, total_generation_mw=2000.0)
             morning = dm.total_demand_mw
-            dm.update(3.0, total_generation_mw=1000.0, deterministic=True)
+            dm.update(3.0, total_generation_mw=1000.0)
             night = dm.total_demand_mw
             assert morning > night, \
                 f"Morning demand ({morning:.1f}) should exceed night ({night:.1f})"
@@ -995,37 +996,15 @@ def test_demand_model() -> bool:
             print(f"  Profile shape: FAIL -- {e}")
             all_passed = False
 
-        # ── Stochastic noise is bounded ────────────────────────────────────
-        try:
-            rng = np.random.default_rng(seed=42)
-            dm = DemandModel(spec, rng=rng)
-            forecast = dm.get_forecast_mw(12.0)
-            samples = []
-            for _ in range(100):
-                dm.update(12.0, total_generation_mw=2000.0, deterministic=False)
-                samples.append(dm.total_demand_mw)
-            # All samples should be within ±2% of forecast (3σ clipping at 1.5%)
-            for s in samples:
-                assert abs(s - forecast) / forecast < 0.03, \
-                    f"Noisy demand {s:.1f} more than 3% from forecast {forecast:.1f}"
-            # Mean should be close to forecast
-            mean = sum(samples) / len(samples)
-            assert abs(mean - forecast) / forecast < 0.005, \
-                f"Mean demand {mean:.1f} too far from forecast {forecast:.1f}"
-            print(f"  Noise bounded: mean={mean:.1f} MW vs forecast={forecast:.1f} MW -- PASS")
-        except AssertionError as e:
-            print(f"  Noise bounds: FAIL -- {e}")
-            all_passed = False
-
         # ── Load shed reduces effective demand ─────────────────────────────
         try:
             dm = DemandModel(spec)
-            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            dm.update(9.0, total_generation_mw=2000.0)
             before_shed = dm.total_demand_mw
             ld01_before = dm.get_bus_demand_mw('LD01')
 
             dm.shed_load('LD01', 0.5)   # shed 50% of LD01
-            dm.update(9.0, total_generation_mw=2000.0, deterministic=True)
+            dm.update(9.0, total_generation_mw=2000.0)
             after_shed = dm.total_demand_mw
             ld01_after = dm.get_bus_demand_mw('LD01')
 
@@ -1050,7 +1029,7 @@ def test_demand_model() -> bool:
             from simulation.constants import LOSSES_FRACTION
             dm = DemandModel(spec)
             gen_mw = 2000.0
-            dm.update(9.0, total_generation_mw=gen_mw, deterministic=True)
+            dm.update(9.0, total_generation_mw=gen_mw)
             expected_losses = gen_mw * LOSSES_FRACTION
             assert abs(dm.losses_mw - expected_losses) < 0.01, \
                 f"Losses should be {expected_losses:.1f} MW, got {dm.losses_mw:.2f}"
@@ -1283,7 +1262,7 @@ def test_cascade_model() -> bool:
             print(f"  Split network: FAIL — {e}")
             all_passed = False
 
-        # ── Isolated buses form non-viable blackout zones ──────────────────
+        # ── Isolated buses — all blacked out when no units are online ─────
         try:
             g5 = Grid(5)
             buses5 = g5.get_active_buses()
@@ -1295,21 +1274,24 @@ def test_cascade_model() -> bool:
                 f"With no lines, each bus should be its own island: " \
                 f"expected {len(buses5)}, got {len(islands)}"
 
-            blackout = cm.get_blackout_zones(islands, g5)
+            # With no units ONLINE or SHUTDOWN, active_generation_buses is empty.
+            # Every island is non-viable → every bus is blacked out.
+            empty_gen_buses: frozenset = frozenset()
+            blackout_all = cm.get_blackout_zones(islands, empty_gen_buses)
+            assert blackout_all == frozenset(b.label for b in buses5), \
+                f"With no online generation, all buses should be blacked out"
 
-            # Buses with no generation unit attached must be blacked out.
-            gen_buses = {u.bus_label for u in g5.get_active_units()}
-            no_gen_buses = {b.label for b in buses5 if b.label not in gen_buses}
-            for lb in no_gen_buses:
-                assert lb in blackout, \
-                    f"Bus {lb} (no generation) should be in blackout zones"
-            # Buses that host generation are viable — must NOT be blacked out.
-            for gb in gen_buses:
-                assert gb not in blackout, \
-                    f"Bus {gb} (has generation) should not be blacked out"
+            # With one specific bus "online", only that bus's island is viable.
+            sample_gen_bus = g5.get_active_buses()[0].label
+            one_gen_buses: frozenset = frozenset({sample_gen_bus})
+            blackout_one = cm.get_blackout_zones(islands, one_gen_buses)
+            assert sample_gen_bus not in blackout_one, \
+                f"Bus {sample_gen_bus} (simulated online) should not be blacked out"
+            assert len(blackout_one) == len(buses5) - 1, \
+                f"All buses except {sample_gen_bus} should be blacked out"
 
-            print(f"  Isolated buses: {len(blackout)}/{len(buses5)} blacked out "
-                  f"({len(gen_buses)} gen buses survive) — PASS")
+            print(f"  Isolated buses: {len(blackout_all)}/{len(buses5)} blacked out "
+                  f"with no online gen; 1-online case verified — PASS")
 
         except AssertionError as e:
             print(f"  Isolated buses: FAIL — {e}")

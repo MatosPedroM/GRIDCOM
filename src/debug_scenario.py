@@ -82,33 +82,30 @@ def make_debug_sim(scenario: DebugScenario) -> tuple[GridSimulation, Grid]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 DEBUG_SCENARIO: DebugScenario = DebugScenario(
-    description='Shift 1 Dispatch Stress Test — L22 out, demand near peak, limited thermal headroom',
-    shift_number=5,
-    start_hour=6.0,         # 09:00 — morning ramp complete, demand climbing
-    peak_demand_mw=1800.0,  # near Shift 1 peak (normal = 2200 MW)
+    # Minimal starting state: one HYDRO_PUMP unit feeding one load bus.
+    # Topology: DUNH-1 (STHW) → L06 → MDBY(slack) + L08 → ASHF → L14 → DUNM
+    #           → L15 → RDST → L22 → BRCK → L37 → LD01
+    # L01 (MDBY-CNTR) and L28 (DUNM-DUND) are tripped on init, isolating
+    # CNTR (HART offline) and DUND (DUND offline) as correct blackout zones.
+    # Use this to verify: power flow delivery, AGC frequency control (Ctrl+A),
+    # and frequency runaway trip when L22 is opened (isolates LD01 from DUNH-1).
+    description='Minimal: DUNH-1 (100 MW HYDRO_PUMP) → LD01 (90 MW). AGC + power flow test.',
+    shift_number=1,
+    start_hour=9.0,
+    peak_demand_mw=225.0,       # overridden entirely by demand_schedule below
     initial_schedule={
-        'HART-1': 680.0,    # nuclear baseload
-        'HART-2': 680.0,
-        'RVSD-1': 280.0,    # coal raised from 200 MW handover — tighter headroom
-        'RVSD-3': 240.0,    # RVSD-2 still OOS (COALCOM easter egg)
-        'DUNH-1': 100.0,
-        'DUNH-2': 100.0,
-        'DUND-1':  40.0,
-        'DUND-2':  40.0,
-        'BR01-1':  30.0,
-        'BR01-2':  30.0,
+        'DUNH-1': 100.0,        # HYDRO_PUMP, 200 MW rated — starts at 100 MW
     },
-    line_outages=['L22'],           # L22 (RDST–BRCK) out → BRCK and LD01 isolated
-    interconnector_north_mw=100.0,
+    # Keep in service: L06(STHW-MDBY), L08(STHW-ASHF), L14(ASHF-DUNM),
+    #                  L15(DUNM-RDST), L22(RDST-BRCK), L37(BRCK-LD01)
+    line_outages=['L01', 'L28'],
+    interconnector_north_mw=0.0,
     interconnector_south_mw=0.0,
     reservoir_levels={
-        'DUNH': 0.50,               # placeholder — no effect until Stage 13
+        'DUNH': 0.70,
     },
     demand_schedule={
-         6.0: 2100.0,   # 06:00 — morning low
-         9.0: 2100.0,   # 09:00 — ramp complete (scenario start)
-        12.0: 2180.0,   # midday plateau
-        18.0: 2180.0,   # evening peak
-        22.0: 2180.0,   # late-night decline
+         0.0: 90.0,   # flat 90 MW all day — ~10 MW headroom above DUNH-1 output
+        24.0: 90.0,   # AGC should settle DUNH-1 near 92–93 MW to cover losses
     },
 )

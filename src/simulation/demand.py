@@ -3,11 +3,9 @@ src/simulation/demand.py
 
 Demand model for the GRIDCOM simulation.
 
-Wraps per-substation demand profiles from data.profiles with per-tick Gaussian
-noise. Total system demand is the bottom-up sum of active substation demands.
-Supports fractional load shed per substation.
-
-In run_forecast_mode() the caller passes deterministic=True to suppress noise.
+Wraps per-substation demand profiles from data.profiles. Total system demand
+is the bottom-up sum of active substation demands. Supports fractional load
+shed per substation.
 
 See SIMULATION_API.md — total_load_mw, net_imbalance_mw for output contract.
 See DOMAIN_GLOSSARY.md — "Demand Model" for definitions.
@@ -15,11 +13,7 @@ See DOMAIN_GLOSSARY.md — "Demand Model" for definitions.
 
 import logging
 
-import numpy as np
-
 from simulation.constants import (
-    DEMAND_NOISE_STD_FRACTION,
-    DEMAND_NOISE_UPDATE_S,
     LOSSES_FRACTION,
     DEBUG_SIMULATION,
 )
@@ -57,10 +51,10 @@ def _interpolate_override(
 
 class DemandModel:
     """
-    System demand model with stochastic noise and per-bus load shed.
+    System demand model with per-bus load shed.
 
-    Maintains the actual (noisy) demand at each load substation.
-    The deterministic forecast is available separately via get_forecast_mw().
+    Demand follows the deterministic per-substation profile exactly.
+    The forecast is always identical to the live demand (no noise).
 
     Total effective load passed to the power balance includes losses:
         total_load_eff = total_demand_actual + losses_mw
@@ -69,29 +63,26 @@ class DemandModel:
     updated each tick by the caller passing current generation.
 
     Attributes:
-        total_demand_mw:  Current actual system demand (MW), excluding losses.
+        total_demand_mw:  Current system demand (MW), excluding losses.
         losses_mw:        Estimated transmission losses (MW).
         total_load_mw:    total_demand_mw + losses_mw — used for power balance.
 
     Usage:
         dm = DemandModel(spec)
         # Each tick:
-        dm.update(sim_hour, total_generation_mw, rng)
+        dm.update(sim_hour, total_generation_mw)
         # Query per-bus injections for load flow:
         p_load = dm.p_load_injections()   # {bus_label: -load_mw}  (negative)
     """
 
-    def __init__(self, spec: ShiftSpec, rng: np.random.Generator | None = None) -> None:
+    def __init__(self, spec: ShiftSpec) -> None:
         """
         Initialise demand model for a shift.
 
         Args:
             spec: ShiftSpec for this shift — provides peak_demand_mw.
-            rng:  Optional numpy random generator for reproducible noise.
-                  If None, a fresh default_rng() is created.
         """
         self._spec = spec
-        self._rng = rng if rng is not None else np.random.default_rng()
 
         self._substation_specs: dict[BusLabel, SubstationDemandSpec] = (
             get_substation_demand_specs(spec.shift_number)
@@ -102,17 +93,13 @@ class DemandModel:
             bus: 0.0 for bus in self._substation_specs
         }
 
-        # Current actual demand per bus (MW), initialised to zero.
+        # Current demand per bus (MW), initialised to zero.
         self._bus_demand: dict[BusLabel, float] = {
             bus: 0.0 for bus in self._substation_specs
         }
 
         self._total_demand_mw: float = 0.0
         self._losses_mw: float = 0.0
-
-        # Noise hold: re-sample only every DEMAND_NOISE_UPDATE_S simulated seconds.
-        self._noise_fraction: float = 0.0
-        self._noise_timer_s:  float = DEMAND_NOISE_UPDATE_S  # fire immediately on first tick
 
         self._demand_override: dict[float, float] | None = None
 
@@ -139,8 +126,6 @@ class DemandModel:
         self,
         sim_hour: float,
         total_generation_mw: float,
-        deterministic: bool = False,
-        dt_sim_seconds: float = 0.0,
     ) -> None:
         """
         Advance demand state to the current sim_hour.
@@ -149,58 +134,30 @@ class DemandModel:
             sim_hour:            Current time of day in decimal hours.
             total_generation_mw: Current total online generation (MW).
                                  Used to estimate losses.
-            deterministic:       If True, suppress noise (forecast mode).
-            dt_sim_seconds:      Elapsed sim time this tick (seconds). Used to
-                                 pace noise re-sampling.
         """
-        if deterministic:
-            noise_fraction = 0.0
-        else:
-            self._noise_timer_s += dt_sim_seconds
-            if self._noise_timer_s >= DEMAND_NOISE_UPDATE_S:
-                self._noise_timer_s = 0.0
-                raw = float(self._rng.normal(0.0, DEMAND_NOISE_STD_FRACTION))
-                self._noise_fraction = float(np.clip(
-                    raw,
-                    -3.0 * DEMAND_NOISE_STD_FRACTION,
-                     3.0 * DEMAND_NOISE_STD_FRACTION,
-                ))
-            noise_fraction = self._noise_fraction
-
-        # Clip noise to ±3σ to prevent runaway values.
-        noise_fraction = float(np.clip(
-            noise_fraction,
-            -3.0 * DEMAND_NOISE_STD_FRACTION,
-             3.0 * DEMAND_NOISE_STD_FRACTION,
-        ))
-
         total_unshed = 0.0
 
         if self._demand_override:
             # Override mode: total MW is prescribed; distribute across substations
-            # proportional to their profile weights at this hour, then apply noise.
+            # proportional to their profile weights at this hour.
             override_total = _interpolate_override(
                 self._demand_override, sim_hour, self._spec.peak_demand_mw)
-            noisy_total = max(0.0, override_total * (1.0 + noise_fraction))
             weights = {
                 bus: get_profile_value(spec.profile, sim_hour) * spec.peak_mw
                 for bus, spec in self._substation_specs.items()
             }
             weight_sum = sum(weights.values()) or 1.0
             for bus, w in weights.items():
-                raw = noisy_total * (w / weight_sum)
                 shed_factor = max(0.0, 1.0 - self._shed_fractions.get(bus, 0.0))
-                self._bus_demand[bus] = raw * shed_factor
+                self._bus_demand[bus] = override_total * (w / weight_sum) * shed_factor
                 total_unshed += self._bus_demand[bus]
         else:
-            # Bottom-up: each substation has its own profile; noise applied uniformly.
+            # Bottom-up: each substation follows its own profile.
             for bus, spec in self._substation_specs.items():
-                forecast_bus = get_profile_value(spec.profile, sim_hour) * spec.peak_mw
-                noisy = max(0.0, forecast_bus * (1.0 + noise_fraction))
+                profile_mw = get_profile_value(spec.profile, sim_hour) * spec.peak_mw
                 shed_factor = max(0.0, 1.0 - self._shed_fractions.get(bus, 0.0))
-                effective = noisy * shed_factor
-                self._bus_demand[bus] = effective
-                total_unshed += effective
+                self._bus_demand[bus] = profile_mw * shed_factor
+                total_unshed += self._bus_demand[bus]
 
         self._total_demand_mw = total_unshed
         self._losses_mw = total_generation_mw * LOSSES_FRACTION

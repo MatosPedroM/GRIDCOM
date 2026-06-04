@@ -66,44 +66,47 @@ class CascadeModel:
 
         return islands
 
-    def check_island_viability(self, island: frozenset, grid) -> bool:
+    def check_island_viability(
+        self,
+        island: frozenset,
+        active_generation_buses: frozenset,
+    ) -> bool:
         """
         Determine whether an island can sustain itself.
 
-        An island is viable if it contains at least one bus that hosts
-        at least one active generation unit. Without generation the
-        island collapses (blackout).
+        An island is viable if it contains at least one bus with an ONLINE
+        or SHUTDOWN generation unit. OFFLINE and STARTING units do not count.
 
         Args:
-            island:  frozenset[str] — bus labels in this island.
-            grid:    Grid object — used to query unit bus assignments.
+            island:                   frozenset[str] — bus labels in this island.
+            active_generation_buses:  frozenset[str] — buses with at least one
+                                      ONLINE or SHUTDOWN unit. Computed by caller
+                                      via GridSimulation._get_active_generation_buses().
 
         Returns:
-            True if viable (has generation), False otherwise.
+            True if viable (has active generation), False otherwise.
         """
-        for unit in grid.get_active_units():
-            if unit.bus_label in island:
-                return True
-        return False
+        return bool(island & active_generation_buses)
 
     def get_blackout_zones(
         self,
         islands: list,
-        grid,
+        active_generation_buses: frozenset,
     ) -> frozenset:
         """
         Return the set of bus labels in all non-viable islands.
 
         Args:
-            islands:  list[frozenset[str]] from find_islands().
-            grid:     Grid object passed to check_island_viability().
+            islands:                  list[frozenset[str]] from find_islands().
+            active_generation_buses:  frozenset[str] — passed to
+                                      check_island_viability().
 
         Returns:
             frozenset[str] — all bus labels currently blacked out.
         """
         blackout: set[str] = set()
         for island in islands:
-            if not self.check_island_viability(island, grid):
+            if not self.check_island_viability(island, active_generation_buses):
                 blackout.update(island)
         return frozenset(blackout)
 

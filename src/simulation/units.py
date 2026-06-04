@@ -46,7 +46,7 @@ from data.fleet import GenerationUnit
 _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
 
 # Unit types eligible for AGC dispatch (fast-response units only).
-_AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'HYDRO_ROR', 'CCGT'})
+_AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'HYDRO_ROR', 'HYDRO_PUMP', 'CCGT'})
 
 # Unit types that require minimum output > 0 when online.
 # For these types, min_mw from fleet.py is already correct.

@@ -58,6 +58,8 @@ F_ALERT_HIGH:     float = 50.2  # Warning alarm threshold (above nominal)
 F_ALERT_LOW:      float = 49.8  # Warning alarm threshold (below nominal)
 F_CRITICAL_HIGH:  float = 50.5  # Critical alarm threshold
 F_CRITICAL_LOW:   float = 49.5  # Critical alarm threshold
+F_TRIP_ISLAND_HIGH: float = 50.5  # Over-frequency relay trip for isolated islands
+F_TRIP_ISLAND_LOW:  float = 49.5  # Under-frequency relay trip for isolated islands
 F_IN_BOUNDS_TOL:  float = 0.2   # Tolerance for frequency_in_bounds_pct scoring
 F_STABLE_TOL:     float = 0.005 # Hz — threshold for STABLE vs RISING/FALLING trend
 
@@ -197,8 +199,6 @@ SPEED_VERY_FAST: float = 10.00
 # ─────────────────────────────────────────────
 # DEMAND NOISE
 # ─────────────────────────────────────────────
-DEMAND_NOISE_STD_FRACTION: float = 0.000001    # Std dev of demand noise as fraction of mean
-DEMAND_NOISE_UPDATE_S:     float = 60.0     # Simulated seconds between noise re-samples
 WIND_NOISE_STD_FRACTION:   float = 0.03     # Wind forecast noise
 SOLAR_NOISE_STD_FRACTION:  float = 0.01     # Solar forecast noise (small)
 

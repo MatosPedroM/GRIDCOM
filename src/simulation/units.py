@@ -34,6 +34,8 @@ See SIMULATION_API.md for the unit_states / unit_outputs_mw contract.
 See DOMAIN_GLOSSARY.md for unit type definitions and ramp/inertia values.
 """
 
+import logging
+
 from simulation.constants import (
     MIN_OUTPUT_FRACTION,
     DEBUG_SIMULATION,
@@ -153,8 +155,8 @@ class UnitModel:
         self._state = 'STARTING'
         self._start_timer_min = 0.0
         if DEBUG_SIMULATION:
-            print(f'[UNITS] {self.label} OFFLINE -> STARTING '
-                  f'(cold start {self._spec.cold_start_min:.0f} min)')
+            logging.getLogger('sim').debug(f'[UNITS] {self.label} OFFLINE -> STARTING '
+                                           f'(cold start {self._spec.cold_start_min:.0f} min)')
         return True
 
     def stop(self) -> bool:
@@ -172,7 +174,7 @@ class UnitModel:
         self._state = 'SHUTDOWN'
         self._target_mw = 0.0
         if DEBUG_SIMULATION:
-            print(f'[UNITS] {self.label} ONLINE -> SHUTDOWN')
+            logging.getLogger('sim').debug(f'[UNITS] {self.label} ONLINE -> SHUTDOWN')
         return True
 
     def trip(self) -> None:
@@ -181,8 +183,8 @@ class UnitModel:
         Zeroes output and clears reactive injection.
         """
         if DEBUG_SIMULATION and self._state != 'OFFLINE':
-            print(f'[UNITS] {self.label} TRIPPED from {self._state} '
-                  f'({self._current_mw:.1f} MW -> 0)')
+            logging.getLogger('sim').debug(f'[UNITS] {self.label} TRIPPED from {self._state} '
+                                           f'({self._current_mw:.1f} MW -> 0)')
         self._state = 'OFFLINE'
         self._current_mw = 0.0
         self._target_mw = 0.0
@@ -275,8 +277,8 @@ class UnitModel:
             self._current_mw = self._spec.min_mw
             self._target_mw = self._spec.min_mw
             if DEBUG_SIMULATION:
-                print(f'[UNITS] {self.label} STARTING -> ONLINE '
-                      f'(min output {self._spec.min_mw:.1f} MW)')
+                logging.getLogger('sim').debug(f'[UNITS] {self.label} STARTING -> ONLINE '
+                                               f'(min output {self._spec.min_mw:.1f} MW)')
 
     def _tick_online(self, dt_sim_seconds: float) -> None:
         """Ramp output toward target at the unit's ramp rate."""
@@ -312,7 +314,7 @@ class UnitModel:
             self._state = 'OFFLINE'
             self._q_injection_mvar = 0.0
             if DEBUG_SIMULATION:
-                print(f'[UNITS] {self.label} SHUTDOWN -> OFFLINE')
+                logging.getLogger('sim').debug(f'[UNITS] {self.label} SHUTDOWN -> OFFLINE')
 
 
 class FleetModel:

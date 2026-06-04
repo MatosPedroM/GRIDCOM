@@ -21,6 +21,7 @@ See SIMULATION_API.md for the complete public interface.
 from __future__ import annotations
 
 import csv
+import logging
 import os
 
 import numpy as np
@@ -35,7 +36,7 @@ from simulation.constants import (
     V_WARNING_LOW, V_CRITICAL_LOW,
     ALARM_MESSAGE_MAX_LEN,
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
-    DEBUG_SIMULATION,
+    DEBUG_SIMULATION, SIM_DEBUG_LOG,
     AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ, AGC_INTEGRAL_MAX,
     SLACK_BUS,
 )
@@ -230,6 +231,20 @@ class GridSimulation:
         self._agc_integral:     float = 0.0
         self._agc_prev_delta_f: float = 0.0
 
+        # Debug file logger (used when DEBUG_SIMULATION is True)
+        if DEBUG_SIMULATION:
+            os.makedirs('logs', exist_ok=True)
+            _logger = logging.getLogger('sim')
+            _logger.setLevel(logging.DEBUG)
+            _logger.propagate = False
+            _logger.handlers.clear()
+            _handler = logging.FileHandler(SIM_DEBUG_LOG, mode='w', encoding='utf-8')
+            _handler.setFormatter(logging.Formatter('%(message)s'))
+            _logger.addHandler(_handler)
+            self._log = _logger
+        else:
+            self._log = None
+
         # AGC log state (used when AGC_LOG is True)
         self._agc_log_file         = None
         self._agc_log_writer       = None
@@ -312,12 +327,14 @@ class GridSimulation:
         if _sim_const.AGC_ENABLED:
             self._apply_agc(dt_sim_seconds)
 
-        # 6. Build injection vectors
-        p_injections         = self._build_p_injections()
+        # 6. Build injection vectors (exclude load on buses already blacked out)
+        in_service = self._get_in_service_lines()
+        _islands_pre    = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
+        _blackout_pre   = self._cascade.get_blackout_zones(_islands_pre, self._grid)
+        p_injections         = self._build_p_injections(_blackout_pre)
         q_injections, pv_buses = self._build_q_injections()
 
         # 7. DC load flow
-        in_service = self._get_in_service_lines()
         lf_result  = self._loadflow.solve(p_injections)
 
         # 8. Voltage
@@ -342,9 +359,9 @@ class GridSimulation:
                     detail=(f'Line {line_label} sustained loading above 100%. '
                             f'Protection relay operated. Line removed from service.'),
                 )
-                if DEBUG_SIMULATION:
-                    print(f'[CASCADE] Line {line_label} tripped at '
-                          f't={self._sim_time_min:.1f} min')
+                if self._log:
+                    self._log.debug(f'[CASCADE] Line {line_label} tripped at '
+                                    f't={self._sim_time_min:.1f} min')
 
             in_service = self._get_in_service_lines()
             self._loadflow.rebuild(in_service)
@@ -589,12 +606,13 @@ class GridSimulation:
 
     # ─────── INJECTION BUILDERS ───────────────────────────────────────────
 
-    def _build_p_injections(self) -> dict:
+    def _build_p_injections(self, blackout_zones: frozenset = frozenset()) -> dict:
         p: dict = {b.label: 0.0 for b in self._grid.get_active_buses()}
         for bus_label, mw in self._fleet.p_injections().items():
             p[bus_label] = p.get(bus_label, 0.0) + mw
         for bus_label, mw in self._demand.p_load_injections().items():
-            p[bus_label] = p.get(bus_label, 0.0) + mw
+            if bus_label not in blackout_zones:
+                p[bus_label] = p.get(bus_label, 0.0) + mw
         # Interconnector schedules folded into slack bus imbalance
         for mw in self._intc_schedule.values():
             p['MDBY'] = p.get('MDBY', 0.0) + mw
@@ -715,9 +733,9 @@ class GridSimulation:
                         detail=(f'Unit {unit.label} lost grid connection '
                                 f'after line trip. Protection relay operated.'),
                     )
-                    if DEBUG_SIMULATION:
-                        print(f'[CASCADE] {unit.label} tripped — isolated '
-                              f'at t={self._sim_time_min:.1f} min')
+                    if self._log:
+                        self._log.debug(f'[CASCADE] {unit.label} tripped — isolated '
+                                        f'at t={self._sim_time_min:.1f} min')
 
     # ─────── ALARM MANAGEMENT ─────────────────────────────────────────────
 
@@ -1015,9 +1033,11 @@ class GridSimulation:
     # ─────── DEBUG ────────────────────────────────────────────────────────
 
     def _print_debug(self, lf_result, vr_result) -> None:
+        if not self._log:
+            return
         max_load = max(lf_result.line_loading_pct.values(), default=0.0)
         min_v    = min(vr_result.bus_voltages.values(), default=1.0)
-        print(
+        self._log.debug(
             f'[SIM] t={self._sim_time_min:6.2f}min '
             f'f={self._frequency.frequency_hz:.3f}Hz '
             f'gen={self._fleet.total_generation_mw():.0f}MW '

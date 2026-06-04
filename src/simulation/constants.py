@@ -11,7 +11,7 @@ See CLAUDE.md Rule 1.
 # ─────────────────────────────────────────────
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
-DEBUG_SIMULATION: bool = False
+DEBUG_SIMULATION: bool = True
 DEBUG_DISPLAY:    bool = False
 DEBUG_EVENTS:     bool = False
 EDITOR_MODE:      bool = False
@@ -77,6 +77,7 @@ AGC_MAX_RATE_MW_S: float = 2.0   # Max total AGC correction rate (MW per sim-sec
 AGC_DEADBAND_HZ:   float = 0.05   # ±Hz inside which AGC is silent
 AGC_INTEGRAL_MAX:  float = 5.0   # Anti-windup clamp on integral accumulator (Hz·s)
 AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
+SIM_DEBUG_LOG:     str   = 'logs/sim_debug.log'  # DEBUG_SIMULATION output destination
 
 # ─────────────────────────────────────────────
 # LOSSES

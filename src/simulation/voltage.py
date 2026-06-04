@@ -27,6 +27,8 @@ See DOMAIN_GLOSSARY.md — "Decoupled Voltage Model" for definitions.
 See GRID_SIMULATION_MECHANICS.md Section 6 for physics detail.
 """
 
+import logging
+
 import numpy as np
 
 from simulation.constants import (
@@ -251,7 +253,7 @@ class VoltageModel:
             delta_v = np.linalg.solve(self._b_reduced, q_vec)
         except np.linalg.LinAlgError:
             if DEBUG_SIMULATION:
-                print('[VOLTAGE] WARNING: singular B\' matrix — returning zero ΔV')
+                logging.getLogger('sim').debug('[VOLTAGE] WARNING: singular B\' matrix — returning zero ΔV')
             delta_v = np.zeros(n_reduced, dtype=np.float64)
 
         result: dict[BusLabel, float] = {}

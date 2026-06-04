@@ -17,6 +17,8 @@ See SIMULATION_API.md — wind_forecast_mw, solar_forecast_mw for contract.
 See DOMAIN_GLOSSARY.md — "Renewables Model" for definitions.
 """
 
+import logging
+
 import numpy as np
 
 from simulation.constants import (
@@ -122,8 +124,8 @@ class RenewablesModel:
         if DEBUG_SIMULATION and (self._wind_units or self._solar_units):
             total_wind  = sum(self._wind_outputs.values())
             total_solar = sum(self._solar_outputs.values())
-            print(f'[RENEWABLES] hour={sim_hour:.2f} '
-                  f'wind={total_wind:.1f} MW  solar={total_solar:.1f} MW')
+            logging.getLogger('sim').debug(f'[RENEWABLES] hour={sim_hour:.2f} '
+                                           f'wind={total_wind:.1f} MW  solar={total_solar:.1f} MW')
 
         return outputs
 

@@ -10,6 +10,8 @@ See SIMULATION_API.md for the public interface contract.
 See DOMAIN_GLOSSARY.md — "The DC Load Flow (GRIDCOM Specific)" for definitions.
 """
 
+import logging
+
 import numpy as np
 
 from simulation.constants import S_BASE, YSHUNT_REG, DEBUG_SIMULATION
@@ -164,7 +166,7 @@ class DCLoadFlow:
             # Singular matrix — network is islanded or disconnected.
             # Return zero angles; caller must check island state.
             if DEBUG_SIMULATION:
-                print('[LOADFLOW] WARNING: singular B matrix — returning zero angles')
+                logging.getLogger('sim').debug('[LOADFLOW] WARNING: singular B matrix — returning zero angles')
             theta_reduced = np.zeros(len(p_vector), dtype=np.float64)
 
         theta_full = self._expand_theta(theta_reduced)

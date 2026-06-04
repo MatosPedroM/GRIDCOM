@@ -13,6 +13,8 @@ See SIMULATION_API.md — total_load_mw, net_imbalance_mw for output contract.
 See DOMAIN_GLOSSARY.md — "Demand Model" for definitions.
 """
 
+import logging
+
 import numpy as np
 
 from simulation.constants import (
@@ -205,8 +207,8 @@ class DemandModel:
 
         if DEBUG_SIMULATION:
             bus_str = '  '.join(f'{b}={self._bus_demand[b]:.0f}' for b in self._bus_demand)
-            print(f'[DEMAND] hour={sim_hour:.2f} total={total_unshed:.1f} '
-                  f'losses={self._losses_mw:.1f} MW  [{bus_str}]')
+            logging.getLogger('sim').debug(f'[DEMAND] hour={sim_hour:.2f} total={total_unshed:.1f} '
+                                           f'losses={self._losses_mw:.1f} MW  [{bus_str}]')
 
     # ─────── LOAD SHED ────────────────────────────────────────────────────
 
@@ -228,8 +230,8 @@ class DemandModel:
         new_shed = min(1.0, self._shed_fractions[bus_label] + float(fraction))
         self._shed_fractions[bus_label] = new_shed
         if DEBUG_SIMULATION:
-            print(f'[DEMAND] Load shed at {bus_label}: '
-                  f'{new_shed * 100:.0f}% total')
+            logging.getLogger('sim').debug(f'[DEMAND] Load shed at {bus_label}: '
+                                           f'{new_shed * 100:.0f}% total')
         return True
 
     def clear_shed(self, bus_label: BusLabel) -> bool:

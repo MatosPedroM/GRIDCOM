@@ -30,7 +30,8 @@ _GRIDCOM_ART = [
     ' ╚═════╝ ╚═╝   ╚═╝╚═╝╚═════╝  ╚═════╝  ╚═════╝ ╚═╝     ╚═╝',
 ]
 
-_ART_SEP = '═' * 62   # matches visual width of the art block
+_SEP     = '═' * 64   # standard separator for text screens
+_ART_SEP = '═' * 62   # separator sized to match the block-letter art width
 
 
 # ─── Splash screen ────────────────────────────────────────────────────────────

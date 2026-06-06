@@ -23,7 +23,7 @@ from display.palette import (
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM, COL_TEXT_VALUE,
     COL_TEXT_HEADING, COL_TEXT_GOOD, COL_TEXT_WARN, COL_TEXT_CRIT,
     COL_FREQ_NOMINAL, COL_FREQ_ALERT, COL_FREQ_CRITICAL,
-    COL_METER_BG, COL_METER_TICK,
+    COL_METER_BG, COL_METER_TICK, COL_FORECAST_CUR_BG,
     COL_UNIT_ONLINE, COL_UNIT_STARTING, COL_UNIT_OFFLINE,
     COL_UNIT_TRIPPED, COL_UNIT_SHUTDOWN,
     COL_ALARM_CRIT, COL_ALARM_WARN, COL_ALARM_INFO, COL_ALARM_ACK,
@@ -556,7 +556,7 @@ def draw_forecast_panel(surf: pygame.Surface, font: pygame.freetype.Font, state,
         is_past = (slot_hour < cur_hour - 0.25)
 
         if is_cur:
-            pygame.draw.rect(surf, COL_METER_BG,
+            pygame.draw.rect(surf, COL_FORECAST_CUR_BG,
                              pygame.Rect(1, row_y - max(1, int(2 * fs)), w - 2, rh))
 
         col = (COL_TEXT_PRIMARY   if is_cur  else

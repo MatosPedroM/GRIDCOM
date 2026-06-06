@@ -35,7 +35,8 @@ from display.panels import (
 )
 from display.palette import (
     COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID, COL_TEXT_DIM,
-    COL_FPS_TEXT,
+    COL_FPS_TEXT, COL_150KV,
+    COL_TEXT_BODY, COL_TEXT_SCREEN_HDR, COL_MENU_CURSOR, COL_MENU_DISABLED,
 )
 import simulation.constants as _sim_const
 from simulation.constants import (
@@ -49,6 +50,8 @@ from simulation.constants import (
     PANEL_GENMIX_X, PANEL_GENMIX_W,
     PANEL_ALARM_X, PANEL_ALARM_W,
     FLOW_ANIMATION,
+    TEXT_SCREEN_FONT_SIZE, TEXT_SCREEN_LEFT_MARGIN, TEXT_SCREEN_TOP_MARGIN, TEXT_SCREEN_ROW_H,
+    MENU_FONT_SIZE, MENU_ROW_H, MENU_LEFT_MARGIN, MENU_TOP_MARGIN,
 )
 from utils.helpers import resource_path
 from data.profiles import SHIFT_SPECS
@@ -366,6 +369,134 @@ class Renderer:
         elif self._selected_label is not None:
             self.clear_selection()
 
+    # ─── Text screen rendering ────────────────────────────────────────────────
+
+    def tick_text_screen(
+        self,
+        dt_real_s:     float,
+        lines:         list,   # list[tuple[str, tuple[int,int,int]]]
+        chars_revealed: int,
+    ) -> None:
+        """Render one frame of a full-screen terminal text display.
+
+        Args:
+            dt_real_s:      Real-time delta in seconds since last frame.
+            lines:          List of (text, colour) pairs to render.
+            chars_revealed:  Number of characters to reveal (typewriter effect).
+                             Pass sum of all line lengths to show everything.
+        """
+        self._blink_timer += dt_real_s
+        if self._blink_timer >= _BLINK_PERIOD:
+            self._blink_timer -= _BLINK_PERIOD
+        self._blink_on = self._blink_timer < _BLINK_PERIOD * 0.5
+
+        self._native.fill(COL_BACKGROUND)
+
+        sc  = self._scale
+        fso = int(TEXT_SCREEN_FONT_SIZE * sc)
+        x0  = int(TEXT_SCREEN_LEFT_MARGIN * sc)
+        y0  = int(TEXT_SCREEN_TOP_MARGIN  * sc)
+        row = int(TEXT_SCREEN_ROW_H       * sc)
+
+        total_chars = sum(len(text) for text, _ in lines)
+        budget      = chars_revealed
+        y           = y0
+
+        for text, colour in lines:
+            if budget <= 0:
+                break
+            visible = text[:budget] if budget < len(text) else text
+            budget -= len(text)
+            if visible:
+                self._font.render_to(self._native, (x0, y), visible, colour, size=fso)
+            y += row
+
+        if chars_revealed >= total_chars and self._blink_on:
+            self._font.render_to(
+                self._native,
+                (x0, y + row),
+                '[PRESS ANY KEY TO CONTINUE]',
+                COL_150KV,
+                size=fso,
+            )
+
+        self._display.blit(self._native, self._letterbox_rect.topleft)
+        self._display_dirty = False
+
+    # ─── Menu screen rendering ────────────────────────────────────────────────
+
+    def tick_menu_screen(
+        self,
+        dt_real_s:    float,
+        title_lines:  list,
+        items:        list,
+        selected_idx: int,
+        footer_hint:  str = '[UP / DOWN]  Navigate    [ENTER]  Select    [ESC]  Back',
+    ) -> None:
+        """Render one frame of a cursor-based menu screen.
+
+        Args:
+            dt_real_s:   Real-time delta in seconds.
+            title_lines: list[tuple[str, colour]] — header block above the items.
+            items:       list[tuple[str, bool]] — (label, enabled) pairs.
+            selected_idx: Index of the currently highlighted item.
+            footer_hint: Navigation hint rendered near the bottom of the screen.
+        """
+        self._blink_timer += dt_real_s
+        if self._blink_timer >= _BLINK_PERIOD:
+            self._blink_timer -= _BLINK_PERIOD
+        self._blink_on = self._blink_timer < _BLINK_PERIOD * 0.5
+
+        sc  = self._scale
+        fsh = int(TEXT_SCREEN_FONT_SIZE * sc)   # header/separator font size
+        fsm = int(MENU_FONT_SIZE        * sc)   # menu item font size
+        x0  = int(MENU_LEFT_MARGIN      * sc)
+        y0  = int(TEXT_SCREEN_TOP_MARGIN * sc)
+        hrow = int(TEXT_SCREEN_ROW_H    * sc)
+        mrow = int(MENU_ROW_H           * sc)
+
+        self._native.fill(COL_BACKGROUND)
+
+        # Title block
+        y = y0
+        for text, colour in title_lines:
+            if text:
+                self._font.render_to(self._native, (x0, y), text, colour, size=fsh)
+            y += hrow
+
+        # Menu items, starting below title
+        y = int(MENU_TOP_MARGIN * sc)
+        cursor_x = x0
+        label_x  = x0 + int(24 * sc)   # indent label past the cursor glyph
+
+        for i, item in enumerate(items):
+            label, enabled = item[0], item[1]
+            is_selected = (i == selected_idx)
+
+            if not enabled:
+                colour = COL_MENU_DISABLED
+                self._font.render_to(self._native, (label_x, y), label, colour, size=fsm)
+            elif is_selected:
+                self._font.render_to(self._native, (cursor_x, y), '>', COL_MENU_CURSOR, size=fsm)
+                self._font.render_to(self._native, (label_x,  y), label, COL_MENU_CURSOR, size=fsm)
+            else:
+                self._font.render_to(self._native, (label_x, y), label, COL_TEXT_BODY, size=fsm)
+
+            y += mrow
+
+        # Footer hint near bottom
+        footer_y = int((NATIVE_HEIGHT - 60) * sc)
+        self._font.render_to(
+            self._native,
+            (x0, footer_y),
+            footer_hint,
+            COL_TEXT_DIM,
+            size=fsh,
+        )
+
+        self._display.blit(self._native, self._letterbox_rect.topleft)
+        self._display_dirty = False
+
     # ─── Per-frame entry point ────────────────────────────────────────────────
 
     def tick(
@@ -452,7 +583,7 @@ class Renderer:
         )
         forecast_key = (
             len(state.demand_forecast_mw) if state else 0,
-            int(state.sim_hour)           if state else 0,
+            int(state.sim_hour * 2)       if state else 0,
         )
         genmix_key = (
             tuple(round(v) for _, v in sorted(state.gen_mix_mw.items())) if state else None,

@@ -122,6 +122,14 @@ COL_TEXT_GOOD:      Colour = (80, 200, 100)     # Good status
 COL_TEXT_WARN:      Colour = (220, 160, 40)     # Warning status
 COL_TEXT_CRIT:      Colour = (220, 50, 50)      # Critical status
 COL_TEXT_HEADING:   Colour = (220, 180, 60)     # Panel headings — amber
+COL_TEXT_BODY:      Colour = (0, 180, 80)       # Terminal screen body text — dim green
+COL_TEXT_SCREEN_HDR: Colour = (0, 255, 136)     # Terminal screen header/separator — bright green
+
+# ─────────────────────────────────────────────
+# MENUS
+# ─────────────────────────────────────────────
+COL_MENU_CURSOR:    Colour = (0, 255, 136)      # Selected menu item — bright green
+COL_MENU_DISABLED:  Colour = (60, 70, 85)       # Unavailable menu item — dim grey
 
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANELS
@@ -130,6 +138,7 @@ COL_FREQ_NOMINAL:   Colour = (60, 200, 100)     # Frequency at nominal
 COL_FREQ_ALERT:     Colour = (220, 160, 40)     # Frequency at alert threshold
 COL_FREQ_CRITICAL:  Colour = (220, 50, 50)      # Frequency at critical threshold
 COL_METER_BG:       Colour = (12, 16, 22)       # Meter background
+COL_FORECAST_CUR_BG: Colour = (18, 42, 28)     # Current forecast slot row highlight — dark green tint
 COL_METER_TICK:     Colour = (60, 70, 85)       # Meter tick marks
 
 # ─────────────────────────────────────────────

@@ -232,7 +232,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_PUMP', rated_mw=200.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=90.0, q_min_mvar=-50.0,
-        can_pump=True, active_from_shift=1,
+        can_pump=True, active_from_shift=2,
         description='Dunmore Hydro Upper Unit 1 — 200MW pumped storage, 400kV.'),
 
     GenerationUnit(
@@ -240,7 +240,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_PUMP', rated_mw=200.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=90.0, q_min_mvar=-50.0,
-        can_pump=True, active_from_shift=1,
+        can_pump=True, active_from_shift=2,
         description='Dunmore Hydro Upper Unit 2 — 200MW pumped storage, 400kV.'),
 
     # ── DUNMORE HYDRO LOWER — DUND (2×65MW, 220kV, bus DUND) ─────────────

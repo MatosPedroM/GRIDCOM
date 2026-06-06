@@ -358,10 +358,15 @@ class GridCanvas:
             bx, by   = self._bus_pos[bus.label]
             blacked  = bus_blacked.get(bus.label, False)
             selected = (selected_label == bus.label)
-            draw_substation(target, bx, by,
-                            voltage_kv=bus.voltage_kv,
-                            blacked=blacked, selected=selected,
-                            scale=self._scale)
+            if bus.bus_type == 'LOAD':
+                draw_load_substation(target, bx, by,
+                                     blacked=blacked, selected=selected,
+                                     scale=self._scale)
+            else:
+                draw_substation(target, bx, by,
+                                voltage_kv=bus.voltage_kv,
+                                blacked=blacked, selected=selected,
+                                scale=self._scale)
 
         # ── Layer 7: Generation unit squares + collectors ──────────────────────
         for sl, units in self._station_units.items():

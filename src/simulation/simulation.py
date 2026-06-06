@@ -90,6 +90,7 @@ class SimulationState:
     spinning_reserve_mw:     float
     system_inertia_h:        float
     losses_mw:               float
+    bus_loads:               dict   # {bus_label: demand_mw} live load at each LD bus
 
     # Network — buses
     bus_voltages:            dict
@@ -1077,6 +1078,8 @@ class GridSimulation:
             spinning_reserve_mw=reserve,
             system_inertia_h=h_sys,
             losses_mw=self._demand.losses_mw,
+            bus_loads={bus: self._demand.get_bus_demand_mw(bus)
+                       for bus in self._demand._bus_demand},
 
             bus_voltages=dict(vr_result.bus_voltages),
             bus_angles=dict(lf_result.bus_angles),

@@ -70,11 +70,7 @@ def _to_native(
 # Units absent from the dict start OFFLINE.
 _SHIFT_SCHEDULES: dict[int, dict] = {
     1: {
-        'HART-1': 680.0, 'HART-2': 680.0,   # nuclear baseload
-        'RVSD-1': 200.0, 'RVSD-3': 200.0,   # coal overnight (RVSD-2 OOS)
-        'DUNH-1': 100.0, 'DUNH-2': 100.0,   # Dunmore hydro
-        'DUND-1':  40.0, 'DUND-2':  40.0,   # Dunmore downstream
-        'BR01-1':  30.0, 'BR01-2':  30.0,   # Brent run-of-river
+        'DUND-1': 16.0,   # Dunmore lower hydro — sole generator (tutorial)
     },
     3: {},   # TODO: tune when shift 3 is tested
     5: {},   # TODO: tune when shift 5 is tested

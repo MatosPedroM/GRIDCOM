@@ -51,12 +51,13 @@ from simulation.constants import (
     FLOW_ANIMATION,
 )
 from utils.helpers import resource_path
+from data.profiles import SHIFT_SPECS
 
 
 _BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
 _BLINK_PERIOD     = 1.0   # seconds per blink cycle (canvas, dispatch panel)
 _HIT_RADIUS       = 10    # px — Chebyshev hit radius for bus/unit selection
-_LINE_HIT_PX      = 6     # px — max perpendicular distance for line selection
+_LINE_HIT_PX      = 8     # px — max perpendicular distance for line selection
 
 
 def _point_segment_dist(px: int, py: int,
@@ -96,6 +97,7 @@ class Renderer:
         scaled_h             = int(NATIVE_HEIGHT * self._scale)
         scaled_canvas_h      = int(CANVAS_HEIGHT * self._scale)
         scaled_strip_h       = scaled_h - scaled_canvas_h
+        self._scaled_canvas_h = scaled_canvas_h
         offset_x             = (disp_w - scaled_w) // 2
         offset_y             = (disp_h - scaled_h) // 2
         self._letterbox_rect = pygame.Rect(offset_x, offset_y, scaled_w, scaled_h)
@@ -124,7 +126,12 @@ class Renderer:
         self._font.antialiased = False   # hard pixel edges; NN-equivalent at integer scale
 
         self._canvas = GridCanvas(shift=shift, font=self._font, scale=self._scale)
-        self._editor = GridEditor(self._canvas)
+        self._editor = GridEditor(self._canvas, scale=self._scale)
+        _spec = SHIFT_SPECS.get(shift)
+        self._shift_title: str = (
+            f'SHIFT {shift}  —  {_spec.difficulty_label.upper()}'
+            if _spec else f'SHIFT {shift}'
+        )
         self._flow   = FlowAnimator()
 
         # Grid reference for dispatch panel (set by main via set_grid)
@@ -184,7 +191,7 @@ class Renderer:
 
     def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:
         """Route mouse wheel to dispatch or alarm panel based on native-space position."""
-        if pos[1] < CANVAS_HEIGHT:
+        if pos[1] < self._scaled_canvas_h:
             return
         nx = pos[0]
         if PANEL_DISPATCH_X <= nx < PANEL_DISPATCH_X + PANEL_DISPATCH_W:
@@ -570,6 +577,17 @@ class Renderer:
             )
             native_changed = True
 
+        # ── Shift title (top-centre of canvas) ───────────────────────────────
+        fso = int(FONT_SIZE_OVERLAY * self._scale)
+        tw, _ = self._font.get_rect(self._shift_title, size=fso)[2:4]
+        cx = (self._canvas_surf.get_width() - tw) // 2
+        self._font.render_to(
+            self._canvas_surf,
+            (cx, int(6 * self._scale)),
+            self._shift_title, COL_TEXT_DIM, size=fso,
+        )
+        native_changed = True
+
         # ── Debug overlay ──────────────────────────────────────────────────────
         if _sim_const.DEBUG_DISPLAY:
             self._draw_debug()
@@ -615,7 +633,7 @@ class Renderer:
     def on_click(self, pos: tuple[int, int]) -> None:
         """Hit-test buses and unit squares; update selection. Canvas clicks only."""
         nx, ny = pos
-        if ny >= CANVAS_HEIGHT:
+        if ny >= self._scaled_canvas_h:
             return
 
         best_label: str | None = None

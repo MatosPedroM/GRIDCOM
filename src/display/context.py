@@ -189,7 +189,8 @@ def draw_bus_context(
     hdh = int(CONTEXT_OVERLAY_HDR_H * fs)
     sz  = int(FONT_SIZE_CONTEXT * fs)
 
-    n_rows  = 2
+    is_load_bus = (bus.bus_type == 'LOAD')
+    n_rows  = 3 if is_load_bus else 2
     panel_h = hdh + n_rows * rh + pad * 2
 
     panel_rect = pygame.Rect(x, y, w, panel_h)
@@ -204,8 +205,9 @@ def draw_bus_context(
 
     hdr_y = y + pad + max(1, int(2 * fs))
     font.render_to(surf, (x + pad, hdr_y), bus.label, COL_TEXT_HEADING, size=sz)
-    type_rect = font.get_rect('BUS', size=sz)
-    font.render_to(surf, (x + w - pad - type_rect.width, hdr_y), 'BUS', COL_TEXT_DIM, size=sz)
+    type_label = 'LOAD' if is_load_bus else 'BUS'
+    type_rect = font.get_rect(type_label, size=sz)
+    font.render_to(surf, (x + w - pad - type_rect.width, hdr_y), type_label, COL_TEXT_DIM, size=sz)
 
     kv_str = f'{bus.voltage_kv:.0f} kV'
     font.render_to(surf, (x + pad, _ry(0)), 'Voltage level:', COL_TEXT_PRIMARY, size=sz)
@@ -220,6 +222,17 @@ def draw_bus_context(
         v_str = '--'
     v_rect = font.get_rect(v_str, size=sz)
     font.render_to(surf, (x + w - pad - v_rect.width, _ry(1)), v_str, COL_TEXT_VALUE, size=sz)
+
+    if is_load_bus:
+        font.render_to(surf, (x + pad, _ry(2)), 'Load:', COL_TEXT_PRIMARY, size=sz)
+        if state is not None:
+            load_mw = state.bus_loads.get(bus.label)
+            load_str = f'{load_mw:.1f} MW' if load_mw is not None else '--'
+        else:
+            load_str = '--'
+        load_rect = font.get_rect(load_str, size=sz)
+        font.render_to(surf, (x + w - pad - load_rect.width, _ry(2)),
+                       load_str, COL_TEXT_VALUE, size=sz)
 
 
 def draw_line_context(

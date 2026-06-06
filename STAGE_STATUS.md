@@ -14,6 +14,18 @@
 
 ## Session Log
 
+### Session 25 (Canvas Load Substation Fix + Live Load in Context)
+- Edited: `src/display/canvas.py` — Layer 6 now dispatches `draw_load_substation()` for `bus_type == 'LOAD'` buses and `draw_substation()` for all others; fixes LD01 rendering with downward-triangle symbol and reveals DUND/DUND-1 as a proper transmission node
+- Edited: `src/simulation/simulation.py` — added `bus_loads: dict` field to `SimulationState`; populated in `_build_state()` from `self._demand.get_bus_demand_mw()`
+- Edited: `src/display/context.py` — `draw_bus_context()`: header tag changes to 'LOAD' for load buses; panel grows to 3 rows; third row shows live demand MW
+- Validated: 9/9 tests pass
+
+### Session 24 (Shift 1 Rewrite — Minimal Tutorial Grid)
+- Edited: `src/data/topology.py` — added `active_until_shift: int = 99` field to `Line` dataclass; updated `get_lines_by_shift()` to filter on both bounds; pushed 6 buses (CNTR, STHW, ASHF, RDST, DUNM, BRCK) and 8 lines (L01, L06, L08, L14, L15, L22, L28, L37) from `active_from_shift=1` to `active_from_shift=2`; added tutorial-only lines L46 (MDBY↔DUND, 400kV transformer link) and L47 (DUND↔LD01, 150kV feeder), both `active_until_shift=1`; updated docstring comment
+- Edited: `src/data/profiles.py` — ShiftSpec[1]: start_hour=4.0, duration_hours=3.0, grid_size=3, peak_demand_mw=55.0, difficulty_label='Tutorial', new handover_notes; SUBSTATION_LOAD_MW[1]['LD01']: rescaled entire 0–24h table from 2200 MW to 55 MW peak
+- Edited: `src/main.py` — `_SHIFT_SCHEDULES[1]`: replaced multi-unit handover with single entry `'DUND-1': 18.0`
+- Validated: 9/9 tests pass
+
 ### Session 23 (Stage 22 — Load-State Line Colouring)
 - Edited: `src/display/palette.py` — added `COL_LINE_ENERGISED` (40,160,80); updated `COL_LINE_NORMAL` comment
 - Edited: `src/display/symbols.py` — `draw_transmission_line()`: removed voltage→colour lookup dict; `base_col` is now always `COL_LINE_ENERGISED`; updated import and docstring
@@ -204,7 +216,8 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
   ✓ tests/test_simulation.py   — test_grid_loads() — PASS
 
   Grid sizes by shift:
-    Shift 1:  9 buses,  8 lines, 11 units
+    Shift 1:  3 buses,  2 lines,  1 active unit (DUND-1, tutorial)
+    Shift 2:  9 buses,  8 lines, 11 units
     Shift 3: 28 buses, 29 lines, 29 units
     Shift 5: 40 buses, 45 lines, 47 units
 

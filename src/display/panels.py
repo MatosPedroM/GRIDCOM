@@ -182,7 +182,7 @@ def draw_power_panel(
         ('BAL',      f'{bal_mw:+,.0f} MW',   COL_TEXT_GOOD if bal_mw >= 0 else COL_TEXT_CRIT),
         ('SPIN RES', f'{spin_mw:,.0f} MW',   COL_TEXT_SECONDARY),
         ('INERTIA',  f'{inertia_h:.1f} s',   COL_TEXT_SECONDARY),
-        ('LOSSES',   f'{losses_mw:,.0f} MW', COL_TEXT_DIM),
+        ('LOSSES',   f'{losses_mw:.1f} MW',   COL_TEXT_DIM),
     ]
 
     lbl_x = pad
@@ -475,123 +475,112 @@ def draw_genmix_panel(
 def draw_forecast_panel(surf: pygame.Surface, font: pygame.freetype.Font, state,
                         font_scale: float = 1.0) -> None:
     """
-    Draw the Forecast Load panel in the instrument strip.
+    Draw the Forecast panel in the instrument strip.
 
-    Shows demand bars (blue-grey), net-load-after-renewables bars (amber),
-    and a red polyline for gross demand (Net Demand line).
-    Bar slots have a 10% inter-bar gap.
+    Four-column scrolling table: TIME | LOAD | WIND | SOLAR.
+    Wind and solar show '--' when no units are active for the shift.
+    Current time slot is highlighted; window auto-scrolls (2 past rows visible).
     """
     _fill_panel(surf)
     _right_border(surf)
-    _header(surf, font, 'FORECAST LOAD', font_scale)
-
-    fs = font_scale
-    sp = int(FONT_SIZE_PANEL * fs)
-
-    w = surf.get_width()
-    h = surf.get_height()
-
-    legend_h = max(6, int(14 * fs))
-    pad      = int(_PAD * fs)
-    hh       = int(_HEADER_H * fs)
-    chart_top    = hh + pad
-    chart_bottom = h - legend_h - pad - max(1, int(2 * fs))
-    chart_h      = chart_bottom - chart_top
-    chart_left   = pad + max(1, int(4 * fs))
-    chart_right  = w - pad
+    _header(surf, font, 'FORECAST', font_scale)
 
     if state is None:
         return
 
     demand_fc = state.demand_forecast_mw
-    wind_fc   = state.wind_forecast_mw
-    solar_fc  = state.solar_forecast_mw
-
     if not demand_fc:
         return
 
-    hours = sorted(demand_fc.keys())
-    if not hours:
-        return
+    fs  = font_scale
+    sp  = int(FONT_SIZE_PANEL * fs)
+    pad = int(_PAD * fs)
+    hh  = int(_HEADER_H * fs)
+    rh  = int(_ROW_H * fs)
+    w   = surf.get_width()
+    h   = surf.get_height()
 
-    # Aggregate renewables per hour
-    ren_by_hour: dict = {}
-    for unit_data in wind_fc.values():
-        for hh, mw in unit_data.items():
-            ren_by_hour[hh] = ren_by_hour.get(hh, 0.0) + mw
-    for unit_data in solar_fc.values():
-        for hh, mw in unit_data.items():
-            ren_by_hour[hh] = ren_by_hour.get(hh, 0.0) + mw
+    # Column right-edge x positions
+    col_time_x  = pad
+    col_load_x  = int(w * 0.36)
+    col_wind_x  = int(w * 0.63)
+    col_solar_x = w - pad
 
-    demand_vals  = [demand_fc[hh]                                          for hh in hours]
-    netload_vals = [max(0.0, demand_fc[hh] - ren_by_hour.get(hh, 0.0))    for hh in hours]
+    # Aggregate wind and solar forecasts by hour
+    wind_by_hour: dict = {}
+    for unit_data in state.wind_forecast_mw.values():
+        for slot_h, mw in unit_data.items():
+            wind_by_hour[slot_h] = wind_by_hour.get(slot_h, 0.0) + mw
+    solar_by_hour: dict = {}
+    for unit_data in state.solar_forecast_mw.values():
+        for slot_h, mw in unit_data.items():
+            solar_by_hour[slot_h] = solar_by_hour.get(slot_h, 0.0) + mw
+    has_wind  = bool(wind_by_hour)
+    has_solar = bool(solar_by_hour)
 
-    max_mw = max(demand_vals) if demand_vals else 1.0
-    if max_mw <= 0.0:
-        max_mw = 1.0
+    # Column header row
+    col_hdr_y = hh + max(1, int(2 * fs))
+    font.render_to(surf, (col_time_x, col_hdr_y), 'TIME', COL_TEXT_HEADING, size=sp)
+    for hdr_lbl, cx in (('LOAD', col_load_x), ('WIND', col_wind_x), ('SOLAR', col_solar_x)):
+        r = font.get_rect(hdr_lbl, size=sp)
+        font.render_to(surf, (cx - r.width, col_hdr_y), hdr_lbl, COL_TEXT_HEADING, size=sp)
 
-    n       = len(hours)
-    chart_w = chart_right - chart_left
-    slot_w  = max(1, chart_w // n)
-    bar_w   = max(1, int(slot_w * 0.9))
+    # Horizontal divider under column headers
+    div_y = hh + rh - max(1, int(2 * fs))
+    pygame.draw.line(surf, COL_PANEL_BORDER, (0, div_y), (w, div_y), 1)
 
-    # Demand and net-load bars
-    for i, hh in enumerate(hours):
-        x = chart_left + i * slot_w
+    # Vertical column separators
+    sep_bottom = h - pad
+    for sep_x in (col_load_x + pad // 2, col_wind_x + pad // 2):
+        pygame.draw.line(surf, COL_PANEL_BORDER, (sep_x, div_y), (sep_x, sep_bottom), 1)
 
-        d_h  = int(demand_vals[i]  / max_mw * chart_h)
-        nl_h = int(netload_vals[i] / max_mw * chart_h)
-
-        if d_h > 0:
-            pygame.draw.rect(surf, COL_FORECAST_DEMAND,
-                             pygame.Rect(x, chart_bottom - d_h, bar_w, d_h))
-        if nl_h > 0:
-            pygame.draw.rect(surf, COL_FORECAST_NETLOAD,
-                             pygame.Rect(x, chart_bottom - nl_h, bar_w, nl_h))
-
-    # Net Demand polyline (red) — connects midpoints of each demand slot
-    if n >= 2:
-        points = []
-        for i, hh in enumerate(hours):
-            px = chart_left + i * slot_w + bar_w // 2
-            py = chart_bottom - int(demand_vals[i] / max_mw * chart_h)
-            points.append((px, py))
-        pygame.draw.lines(surf, COL_FORECAST_NETDEMAND, False, points, 1)
-
-    # Current-time cursor
+    slots    = sorted(demand_fc.items())
     cur_hour = state.sim_hour
-    if hours[0] <= cur_hour <= hours[-1]:
-        frac  = (cur_hour - hours[0]) / (hours[-1] - hours[0]) if hours[-1] != hours[0] else 0.0
-        cur_x = chart_left + int(frac * chart_w)
-        pygame.draw.line(surf, COL_TEXT_SECONDARY,
-                         (cur_x, chart_top), (cur_x, chart_bottom), 1)
 
-    # Hour labels — every ~8th slot to avoid crowding
-    step = max(1, n // 8)
-    lbl_off = max(1, int(2 * fs))
-    for i in range(0, n, step):
-        x   = chart_left + i * slot_w
-        lbl = f'{int(hours[i]):02d}'
-        font.render_to(surf, (x, chart_bottom + lbl_off), lbl,
-                       COL_TEXT_DIM, size=sp)
+    # Current slot: last slot at or before cur_hour
+    cur_idx = 0
+    for i, (slot_h, _) in enumerate(slots):
+        if slot_h <= cur_hour:
+            cur_idx = i
 
-    # Legend
-    lx   = pad
-    ly   = h - legend_h + max(1, int(1 * fs))
-    sw   = max(4, int(8  * fs))
-    sh   = max(3, int(6  * fs))
-    lg1  = int(10  * fs)
-    lg2  = int(72  * fs)
-    lg3  = int(82  * fs)
-    lg4  = int(158 * fs)
-    lg5  = int(166 * fs)
-    lg6  = int(170 * fs)
-    pygame.draw.rect(surf, COL_FORECAST_DEMAND,  pygame.Rect(lx,       ly, sw, sh))
-    font.render_to(surf, (lx + lg1, ly - 1), 'DEMAND', COL_TEXT_SECONDARY, size=sp)
-    pygame.draw.rect(surf, COL_FORECAST_NETLOAD, pygame.Rect(lx + lg2, ly, sw, sh))
-    font.render_to(surf, (lx + lg3, ly - 1), 'NET LOAD', COL_TEXT_SECONDARY, size=sp)
-    pygame.draw.line(surf, COL_FORECAST_NETDEMAND,
-                     (lx + lg4, ly + max(1, int(3 * fs))),
-                     (lx + lg5, ly + max(1, int(3 * fs))), 1)
-    font.render_to(surf, (lx + lg6, ly - 1), 'NET DEMAND',
-                   COL_TEXT_SECONDARY, size=sp)
+    # Visible window: up to 2 past rows + current + future rows filling panel
+    table_top = hh + rh
+    max_rows  = max(1, (h - table_top - pad) // rh)
+    past_rows = min(2, cur_idx)
+    start_idx = cur_idx - past_rows
+    visible   = slots[start_idx: start_idx + max_rows]
+
+    for row_i, (slot_hour, load_mw) in enumerate(visible):
+        row_y   = table_top + row_i * rh + max(1, int(2 * fs))
+        is_cur  = (slot_hour == slots[cur_idx][0])
+        is_past = (slot_hour < cur_hour - 0.25)
+
+        if is_cur:
+            pygame.draw.rect(surf, COL_METER_BG,
+                             pygame.Rect(1, row_y - max(1, int(2 * fs)), w - 2, rh))
+
+        col = (COL_TEXT_PRIMARY   if is_cur  else
+               COL_TEXT_DIM       if is_past else
+               COL_TEXT_SECONDARY)
+
+        # TIME column — left-aligned
+        total_min = int(round(slot_hour * 60))
+        time_str  = f'{total_min // 60:02d}:{total_min % 60:02d}'
+        font.render_to(surf, (col_time_x, row_y), time_str, col, size=sp)
+
+        # LOAD column — right-aligned
+        load_str  = f'{load_mw:.0f}'
+        load_rect = font.get_rect(load_str, size=sp)
+        font.render_to(surf, (col_load_x - load_rect.width, row_y), load_str, col, size=sp)
+
+        # WIND column — right-aligned
+        wind_val  = wind_by_hour.get(slot_hour)
+        wind_str  = f'{wind_val:.0f}' if (has_wind and wind_val is not None) else '--'
+        wind_rect = font.get_rect(wind_str, size=sp)
+        font.render_to(surf, (col_wind_x - wind_rect.width, row_y), wind_str, col, size=sp)
+
+        # SOLAR column — right-aligned
+        solar_val  = solar_by_hour.get(slot_hour)
+        solar_str  = f'{solar_val:.0f}' if (has_solar and solar_val is not None) else '--'
+        solar_rect = font.get_rect(solar_str, size=sp)
+        font.render_to(surf, (col_solar_x - solar_rect.width, row_y), solar_str, col, size=sp)

@@ -16,7 +16,7 @@ DEBUG_DISPLAY:    bool = False
 DEBUG_EVENTS:     bool = False
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
-DEBUG_SCENARIO_ACTIVE: bool = True
+DEBUG_SCENARIO_ACTIVE: bool = False
 
 # ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES
@@ -71,12 +71,12 @@ DROOP_R: float = 0.04           # 4% droop setting (per-unit on machine base)
 # ─────────────────────────────────────────────
 # AUTOMATIC GENERATION CONTROL (AGC)
 # ─────────────────────────────────────────────
-AGC_ENABLED:       bool  = True  # Toggled at runtime via Ctrl+A; starts disabled
-AGC_KP:            float = 8.0    # Proportional gain (MW per Hz of error)
-AGC_KI:            float = 0.15   # Integral gain (MW per Hz·sim-second of error)
-AGC_KD:            float = 25.0   # Derivative gain (MW per Hz/sim-second of error)
-AGC_MAX_RATE_MW_S: float = 2.0   # Max total AGC correction rate (MW per sim-second)
-AGC_DEADBAND_HZ:   float = 0.05   # ±Hz inside which AGC is silent
+AGC_ENABLED:       bool  = False  # Toggled at runtime via Ctrl+A; starts disabled
+AGC_KP:            float = 100.0    # Proportional gain (MW per Hz of error)
+AGC_KI:            float = 0.01   # Integral gain (MW per Hz·sim-second of error)
+AGC_KD:            float = 1000.0   # Derivative gain (MW per Hz/sim-second of error)
+AGC_MAX_RATE_MW_S: float = 100.0   # Max total AGC correction rate (MW per sim-second)
+AGC_DEADBAND_HZ:   float = 0.01   # ±Hz inside which AGC is silent
 AGC_INTEGRAL_MAX:  float = 5.0   # Anti-windup clamp on integral accumulator (Hz·s)
 AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
 SIM_DEBUG_LOG:     str   = 'logs/sim_debug.log'  # DEBUG_SIMULATION output destination
@@ -141,7 +141,7 @@ INTC_S_CAPACITY_MW: float = 600.0       # INTC-S max import/export
 # SIMULATION TIMING
 # ─────────────────────────────────────────────
 SIM_TICKS_PER_SECOND: int   = 10        # Simulation ticks per real second
-TIME_COMPRESSION:     float = 24.0      # 1 sim hour = 2.5 real minutes
+TIME_COMPRESSION:     float = 48.0      # 1 sim hour = 1.25 real minutes
 
 # ─────────────────────────────────────────────
 # DISPLAY / RENDERING

@@ -56,7 +56,6 @@ from simulation.constants import (
     TIME_COMPRESSION,
     SPEED_PAUSE, SPEED_SLOW, SPEED_NORMAL, SPEED_FAST, SPEED_VERY_FAST,
     TYPEWRITER_CHARS_PER_SEC,
-    SPLASH_DURATION_S,
 )
 import simulation.constants as _const
 from debug_scenario import make_debug_sim, DEBUG_SCENARIO
@@ -329,10 +328,6 @@ def main() -> None:
                         menu_selected = 0
 
             splash_timer += dt
-            if splash_timer >= SPLASH_DURATION_S:
-                game_state    = GameState.MAIN_MENU
-                menu_selected = 0
-
             splash_chars = min(splash_chars + TYPEWRITER_CHARS_PER_SEC * dt,
                                float(total) + 1)
             renderer.tick_splash_screen(dt, splash_lines, int(splash_chars))

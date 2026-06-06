@@ -501,21 +501,24 @@ class Renderer:
             self._blink_timer -= _BLINK_PERIOD
         self._blink_on = self._blink_timer < _BLINK_PERIOD * 0.5
 
-        sc  = self._scale
-        fsh = int(TEXT_SCREEN_FONT_SIZE * sc)   # header/separator font size
-        fsm = int(MENU_FONT_SIZE        * sc)   # menu item font size
-        x0  = int(MENU_LEFT_MARGIN      * sc)
-        y0  = int(TEXT_SCREEN_TOP_MARGIN * sc)
-        hrow = int(TEXT_SCREEN_ROW_H    * sc)
-        mrow = int(MENU_ROW_H           * sc)
+        sc    = self._scale
+        fsh   = int(TEXT_SCREEN_FONT_SIZE * sc)   # header/separator font size
+        fsm   = int(MENU_FONT_SIZE        * sc)   # menu item font size
+        x0    = int(MENU_LEFT_MARGIN      * sc)
+        y0    = int(TEXT_SCREEN_TOP_MARGIN * sc)
+        hrow  = int(TEXT_SCREEN_ROW_H    * sc)
+        mrow  = int(MENU_ROW_H           * sc)
+        surf_w = self._native.get_width()
 
         self._native.fill(COL_BACKGROUND)
 
-        # Title block
+        # Title block — each line centred horizontally
         y = y0
         for text, colour in title_lines:
             if text:
-                self._font.render_to(self._native, (x0, y), text, colour, size=fsh)
+                rect = self._font.get_rect(text, size=fsh)
+                cx   = max(0, (surf_w - rect.width) // 2)
+                self._font.render_to(self._native, (cx, y), text, colour, size=fsh)
             y += hrow
 
         # Menu items, starting below title

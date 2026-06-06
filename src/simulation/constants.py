@@ -171,7 +171,7 @@ SPLASH_DURATION_S:  float = 4.0   # seconds before splash auto-advances to main 
 MENU_FONT_SIZE:     int   = 22    # px — menu item font size
 MENU_ROW_H:         int   = 30    # px — row height for menu items
 MENU_LEFT_MARGIN:   int   = 120   # px — left margin for menus (matches text screen)
-MENU_TOP_MARGIN:    int   = 200   # px — top margin for menu item list
+MENU_TOP_MARGIN:    int   = 340   # px — top margin for menu item list (below art title block)
 
 # ─────────────────────────────────────────────
 # UNIT CONTEXT OVERLAY

@@ -17,37 +17,51 @@ from display.palette import (
 H = COL_TEXT_SCREEN_HDR   # bright green — headers, separators
 B = COL_TEXT_BODY          # dim green — body text
 
-_SEP = '═' * 64
+# ─── GRIDCOM Unicode block art (COALCOM style) ───────────────────────────────
+# Letters: G  R  I  D  C  O  M — 6 rows tall, box-drawing characters only.
+# C, O, M reused from COALCOM; G, R, I, D designed to match.
+
+_GRIDCOM_ART = [
+    ' ██████╗ ██████╗  ██╗██████╗  ██████╗  ██████╗ ███╗   ███╗',
+    '██╔════╝ ██╔══██╗ ██║██╔══██╗██╔════╝ ██╔═══██╗████╗ ████║',
+    '██║  ███╗███████╔╝██║██║  ██║██║      ██║   ██║██╔████╔██║',
+    '██║   ██║██╔══██╗ ██║██║  ██║██║      ██║   ██║██║╚██╔╝██║',
+    '╚██████╔╝██║  ╚██╗██║██████╔╝╚██████╗ ╚██████╔╝██║ ╚═╝ ██║',
+    ' ╚═════╝ ╚═╝   ╚═╝╚═╝╚═════╝  ╚═════╝  ╚═════╝ ╚═╝     ╚═╝',
+]
+
+_ART_SEP = '═' * 62   # matches visual width of the art block
 
 
 # ─── Splash screen ────────────────────────────────────────────────────────────
 
-_GRIDCOM_ART = [
-    r'  ____  ____  ___  ____   ____  ___  __  __',
-    r' / ___|  _ \ |_ _||  _ \ / ___/ _ \ |  \/  |',
-    r'| |  _  | |_) || | | | | || |  | | | || |\/| |',
-    r'| |_| | |  _ < | | | |_| || |__| |_| || |  | |',
-    r' \____|  |_| \_\___|____/  \____\___/ |_|  |_|',
-]
-
-
 def build_splash_lines() -> list:
     """Lines for the title splash screen. Rendered via tick_splash_screen()."""
-    lines: list = [
-        ('', B),
-        ('', B),
-    ]
+    lines: list = [('', B), (_ART_SEP, H)]
     for row in _GRIDCOM_ART:
         lines.append((row, H))
     lines += [
         ('', B),
         ('GRID CONTROL TERMINAL', B),
-        ('', B),
+        (_ART_SEP, H),
         ('', B),
         ('NATIONAL ENERGY CONTROL CENTRE  —  ASHFORD  —  1994', B),
         ('', B),
         ('GRIDCOM v2.4.1  /  VPC SCADA SUITE', B),
         ('', B),
+    ]
+    return lines
+
+
+def build_menu_title_art() -> list:
+    """Title block for menu screens: separator + art + subtitle + separator."""
+    lines: list = [(_ART_SEP, H)]
+    for row in _GRIDCOM_ART:
+        lines.append((row, H))
+    lines += [
+        ('', B),
+        ('GRID CONTROL TERMINAL', B),
+        (_ART_SEP, H),
     ]
     return lines
 

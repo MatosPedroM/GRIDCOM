@@ -45,6 +45,7 @@ from display.menus import (
     build_continuous_placeholder_lines,
     build_campaign_intro_screens,
     build_campaign_end_lines,
+    build_menu_title_art,
 )
 from data.layout_override import load_layout
 from data.profiles import SHIFT_SPECS
@@ -103,13 +104,7 @@ def _hm(hours: float) -> str:
 # ─── Menu title block ─────────────────────────────────────────────────────────
 
 def _menu_title_lines() -> list:
-    H = COL_TEXT_SCREEN_HDR
-    return [
-        (_SEP, H),
-        (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', H),
-        (' GRIDCOM v2.4.1', H),
-        (_SEP, H),
-    ]
+    return build_menu_title_art()
 
 
 # ─── Text screen content builders ────────────────────────────────────────────

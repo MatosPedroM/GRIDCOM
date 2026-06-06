@@ -162,14 +162,14 @@ FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
 FONT_SIZE_CONTEXT:        int = 13      # unit context overlay text
 
 TYPEWRITER_CHARS_PER_SEC: int   = 400  # Characters revealed per real second on text screens
-TEXT_SCREEN_FONT_SIZE:    int   = 17   # px — font size for briefing/debrief screens
+TEXT_SCREEN_FONT_SIZE:    int   = 19   # px — font size for briefing/debrief screens
 TEXT_SCREEN_LEFT_MARGIN:  int   = 120  # px — left margin at native 1920×1080
 TEXT_SCREEN_TOP_MARGIN:   int   = 80   # px — top margin at native 1920×1080
-TEXT_SCREEN_ROW_H:        int   = 20   # px — row height at native 1920×1080
+TEXT_SCREEN_ROW_H:        int   = 22   # px — row height at native 1920×1080
 
 SPLASH_DURATION_S:  float = 4.0   # seconds before splash auto-advances to main menu
-MENU_FONT_SIZE:     int   = 20    # px — menu item font size
-MENU_ROW_H:         int   = 28    # px — row height for menu items
+MENU_FONT_SIZE:     int   = 22    # px — menu item font size
+MENU_ROW_H:         int   = 30    # px — row height for menu items
 MENU_LEFT_MARGIN:   int   = 120   # px — left margin for menus (matches text screen)
 MENU_TOP_MARGIN:    int   = 200   # px — top margin for menu item list
 

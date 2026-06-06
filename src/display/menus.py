@@ -22,26 +22,34 @@ _SEP = '═' * 64
 
 # ─── Splash screen ────────────────────────────────────────────────────────────
 
+_GRIDCOM_ART = [
+    r'  ____  ____  ___  ____   ____  ___  __  __',
+    r' / ___|  _ \ |_ _||  _ \ / ___/ _ \ |  \/  |',
+    r'| |  _  | |_) || | | | | || |  | | | || |\/| |',
+    r'| |_| | |  _ < | | | |_| || |__| |_| || |  | |',
+    r' \____|  |_| \_\___|____/  \____\___/ |_|  |_|',
+]
+
+
 def build_splash_lines() -> list:
-    """Lines for the title splash screen. Rendered via tick_text_screen()."""
-    return [
+    """Lines for the title splash screen. Rendered via tick_splash_screen()."""
+    lines: list = [
         ('', B),
         ('', B),
-        ('', B),
-        ('', B),
-        ('', B),
-        ('', B),
-        ('', B),
-        (' GRIDCOM', H),
-        (' GRID CONTROL TERMINAL', H),
-        ('', B),
-        (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', B),
-        (' 1994', B),
-        ('', B),
-        ('', B),
-        ('', B),
-        (' GRIDCOM v2.4.1  /  VPC SCADA SUITE', B),
     ]
+    for row in _GRIDCOM_ART:
+        lines.append((row, H))
+    lines += [
+        ('', B),
+        ('GRID CONTROL TERMINAL', B),
+        ('', B),
+        ('', B),
+        ('NATIONAL ENERGY CONTROL CENTRE  —  ASHFORD  —  1994', B),
+        ('', B),
+        ('GRIDCOM v2.4.1  /  VPC SCADA SUITE', B),
+        ('', B),
+    ]
+    return lines
 
 
 # ─── Menu item lists ──────────────────────────────────────────────────────────

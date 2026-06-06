@@ -335,7 +335,7 @@ def main() -> None:
 
             splash_chars = min(splash_chars + TYPEWRITER_CHARS_PER_SEC * dt,
                                float(total) + 1)
-            renderer.tick_text_screen(dt, splash_lines, int(splash_chars))
+            renderer.tick_splash_screen(dt, splash_lines, int(splash_chars))
 
         # ── MAIN MENU ────────────────────────────────────────────────────────
         elif game_state == GameState.MAIN_MENU:

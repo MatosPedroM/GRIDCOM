@@ -423,6 +423,60 @@ class Renderer:
         self._display.blit(self._native, self._letterbox_rect.topleft)
         self._display_dirty = False
 
+    # ─── Splash screen rendering ─────────────────────────────────────────────
+
+    def tick_splash_screen(
+        self,
+        dt_real_s:      float,
+        lines:          list,   # list[tuple[str, colour]]
+        chars_revealed: int,
+    ) -> None:
+        """Render one frame of the splash screen with horizontally and vertically
+        centred content.  All non-empty lines are individually centred by pixel
+        width.  Typewriter budget logic is identical to tick_text_screen()."""
+        self._blink_timer += dt_real_s
+        if self._blink_timer >= _BLINK_PERIOD:
+            self._blink_timer -= _BLINK_PERIOD
+        self._blink_on = self._blink_timer < _BLINK_PERIOD * 0.5
+
+        sc  = self._scale
+        fso = int(TEXT_SCREEN_FONT_SIZE * sc)
+        row = int(TEXT_SCREEN_ROW_H     * sc)
+
+        surf_w = self._native.get_width()
+        surf_h = self._native.get_height()
+
+        total_h = len(lines) * row
+        y0      = max(0, (surf_h - total_h) // 2)
+
+        self._native.fill(COL_BACKGROUND)
+
+        total_chars = sum(len(text) for text, _ in lines)
+        budget      = chars_revealed
+        y           = y0
+
+        for text, colour in lines:
+            if budget <= 0:
+                break
+            visible = text[:budget] if budget < len(text) else text
+            budget -= len(text)
+            if visible:
+                rect = self._font.get_rect(visible, size=fso)
+                x    = max(0, (surf_w - rect.width) // 2)
+                self._font.render_to(self._native, (x, y), visible, colour, size=fso)
+            y += row
+
+        if chars_revealed >= total_chars and self._blink_on:
+            hint    = '[  PRESS ANY KEY  ]'
+            hint_r  = self._font.get_rect(hint, size=fso)
+            hint_x  = max(0, (surf_w - hint_r.width) // 2)
+            self._font.render_to(
+                self._native, (hint_x, y + row), hint, COL_150KV, size=fso,
+            )
+
+        self._display.blit(self._native, self._letterbox_rect.topleft)
+        self._display_dirty = False
+
     # ─── Menu screen rendering ────────────────────────────────────────────────
 
     def tick_menu_screen(

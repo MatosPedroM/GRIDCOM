@@ -17,6 +17,7 @@ DEBUG_EVENTS:     bool = True
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
 DEBUG_SCENARIO_ACTIVE: bool = False
+DEV_SKIP_INTRO:        bool = True
 
 # ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES

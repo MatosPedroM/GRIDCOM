@@ -269,7 +269,7 @@ def main() -> None:
         shift      = 1
         difficulty = 'standard'
         sim, grid, renderer = _make_sim_and_renderer(display_surf, shift, difficulty)
-        game_state = GameState.SPLASH
+        game_state = GameState.BRIEFING if _const.DEV_SKIP_INTRO else GameState.SPLASH
 
     state = sim.get_state()
 

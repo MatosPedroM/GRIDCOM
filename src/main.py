@@ -200,10 +200,21 @@ def _to_native(
 # Units absent from the dict start OFFLINE.
 _SHIFT_SCHEDULES: dict[int, dict] = {
     1: {
-        'DUND-1': 16.0,   # Dunmore lower hydro — sole generator (tutorial)
+        'DUND-1': 16.0,    # Dunmore lower hydro — sole generator (tutorial)
+    },
+    2: {
+        'RVSD-1': 90.0,    # Riverside Coal 1 — technical minimum (90 MW)
+        'RVSD-3': 90.0,    # Riverside Coal 3 — technical minimum (90 MW)
+        'DUND-1': 40.0,    # Dunmore Lower 1  — AGC, regulating
     },
     3: {},   # TODO: tune when shift 3 is tested
     5: {},   # TODO: tune when shift 5 is tested
+}
+
+# AGC enabled state per shift (False = player must enable manually).
+_SHIFT_AGC_ENABLED: dict[int, bool] = {
+    1: False,
+    2: True,
 }
 
 
@@ -218,6 +229,7 @@ def _make_sim_and_renderer(
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
     renderer.set_grid(grid)
+    _const.AGC_ENABLED = _SHIFT_AGC_ENABLED.get(shift, False)
     return sim, grid, renderer
 
 

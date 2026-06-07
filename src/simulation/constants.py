@@ -123,7 +123,28 @@ COLD_START_HYDRO_MIN:   float = 5.0     # 5 minutes
 # ─────────────────────────────────────────────
 # UNIT OUTPUT LIMITS
 # ─────────────────────────────────────────────
-MIN_OUTPUT_FRACTION: float = 0.20       # Units run at minimum 20% of rated when online
+MIN_OUTPUT_FRACTION: float = 0.20       # Legacy fallback minimum (20% of rated)
+
+# Technical minimum output by unit type (fraction of rated_mw).
+# Below this level, stable generation cannot be sustained.
+TECH_MIN_FRAC_HYDRO:      float = 0.10
+TECH_MIN_FRAC_HYDRO_ROR:  float = 0.10
+TECH_MIN_FRAC_HYDRO_PUMP: float = 0.10
+TECH_MIN_FRAC_WIND:       float = 0.00
+TECH_MIN_FRAC_SOLAR:      float = 0.00
+TECH_MIN_FRAC_CCGT:       float = 0.25
+TECH_MIN_FRAC_COAL:       float = 0.35
+TECH_MIN_FRAC_NUCLEAR:    float = 0.60
+
+# Minimum cooldown after shutdown before restart is permitted (simulated minutes).
+COOLDOWN_MIN_HYDRO:       float =   2.0
+COOLDOWN_MIN_HYDRO_ROR:   float =   2.0
+COOLDOWN_MIN_HYDRO_PUMP:  float =   5.0
+COOLDOWN_MIN_WIND:        float =   1.0
+COOLDOWN_MIN_SOLAR:       float =   1.0
+COOLDOWN_MIN_CCGT:        float =  45.0
+COOLDOWN_MIN_COAL:        float = 150.0
+COOLDOWN_MIN_NUCLEAR:     float = 360.0
 
 # ─────────────────────────────────────────────
 # PUMPED STORAGE

@@ -113,7 +113,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
         ramp_pct_per_min=1.0, inertia_h=6.0, cold_start_min=480.0,
         q_max_mvar=300.0, q_min_mvar=-150.0,
-        can_pump=False, active_from_shift=1,
+        can_pump=False, active_from_shift=3,
         description='Hartwell Nuclear Unit 1 — 700MW, 400kV. Baseload, always online.'),
 
     GenerationUnit(
@@ -121,7 +121,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
         ramp_pct_per_min=1.0, inertia_h=6.0, cold_start_min=480.0,
         q_max_mvar=300.0, q_min_mvar=-150.0,
-        can_pump=False, active_from_shift=1,
+        can_pump=False, active_from_shift=3,
         description='Hartwell Nuclear Unit 2 — 700MW, 400kV. Baseload, always online.'),
 
     # ── ASHFORD CCGT — ASHG (2×400MW, 220kV, bus ASHG) ───────────────────
@@ -232,7 +232,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_PUMP', rated_mw=200.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=90.0, q_min_mvar=-50.0,
-        can_pump=True, active_from_shift=2,
+        can_pump=True, active_from_shift=3,
         description='Dunmore Hydro Upper Unit 1 — 200MW pumped storage, 400kV.'),
 
     GenerationUnit(
@@ -240,7 +240,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO_PUMP', rated_mw=200.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=90.0, q_min_mvar=-50.0,
-        can_pump=True, active_from_shift=2,
+        can_pump=True, active_from_shift=3,
         description='Dunmore Hydro Upper Unit 2 — 200MW pumped storage, 400kV.'),
 
     # ── DUNMORE HYDRO LOWER — DUND (2×65MW, 220kV, bus DUND) ─────────────
@@ -257,7 +257,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO', rated_mw=65.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=28.0, q_min_mvar=-15.0,
-        can_pump=False, active_from_shift=1,
+        can_pump=False, active_from_shift=2,
         description='Dunmore Hydro Lower Unit 2 — 65MW downstream, 220kV.'),
 
     # ── RIVER ARDEN CASCADE — AR01-AR04 (2×units each, 220kV, run-of-river) ─

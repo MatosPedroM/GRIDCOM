@@ -61,13 +61,14 @@ SHIFT_SPECS: dict[int, ShiftSpec] = {
 
     2: ShiftSpec(
         shift_number=2, start_hour=10.0, duration_hours=4.0,
-        grid_size=12, has_phase1=False, peak_demand_mw=2400.0,
-        difficulty_label='Introductory',
+        grid_size=3, has_phase1=False, peak_demand_mw=315.0,
+        difficulty_label='Tutorial',
         handover_notes=(
             'Mid-morning handover.',
-            'RVSD-2 returned to service 09:45.',
-            'System normal. Demand at mid-morning plateau.',
-            'Unit start/stop controls unlocked this shift.',
+            'RVSD-1 and RVSD-3 on-line at technical minimum (90 MW each).',
+            'DUND-1 on-line at 40 MW. DUND-2 on planned maintenance outage.',
+            'Demand rising. DUND-1 is the sole AGC unit — headroom is limited.',
+            'AGC active — ramp RVSD as load grows to keep DUND-1 in its band.',
         ),
     ),
 
@@ -254,15 +255,17 @@ SUBSTATION_LOAD_MW: dict[int, dict[str, dict[float, float]]] = {
         },
     },
 
-    # ── SHIFT 2 ── 10:00-14:00, LD01 only, peak 2400 MW ─────────────────────
-    # Player sees midday plateau (residential mid-morning to lunch). k≈2.8.
+    # ── SHIFT 2 ── 10:00-14:00, LD01 only, peak 315 MW ──────────────────────
+    # RVSD-1 + RVSD-3 at TM (180 MW coal), DUND-1 at 40 MW = 220 MW initial.
+    # DUND-2 on outage — DUND-1 max 65 MW is the ceiling. Load rises above
+    # 245 MW (coal TM + DUND-1 max) to force RVSD ramping.
     2: {
         'LD01': {
-             0.0:  740,  1.0:  700,  2.0:  665,  3.0:  648,  4.0:  660,
-             5.0:  720,  6.0:  895,  7.0: 1178,  8.0: 1560,  9.0: 1920,
-            10.0: 2160, 11.0: 2248, 12.0: 2203, 13.0: 2138, 14.0: 2106,
-            15.0: 2160, 16.0: 2270, 17.0: 2347, 18.0: 2400, 19.0: 2366,
-            20.0: 2258, 21.0: 2083, 22.0: 1766, 23.0: 1286, 24.0:  861,
+             0.0: 100,  1.0:  95,  2.0:  90,  3.0:  88,  4.0:  90,
+             5.0:  98,  6.0: 120,  7.0: 155,  8.0: 185,  9.0: 210,
+            10.0: 215, 11.0: 245, 12.0: 268, 13.0: 292, 14.0: 315,
+            15.0: 312, 16.0: 305, 17.0: 298, 18.0: 290, 19.0: 278,
+            20.0: 262, 21.0: 238, 22.0: 208, 23.0: 165, 24.0: 122,
         },
     },
 

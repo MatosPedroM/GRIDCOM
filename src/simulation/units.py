@@ -40,6 +40,7 @@ from simulation.constants import (
     MIN_OUTPUT_FRACTION,
     DEBUG_SIMULATION,
 )
+import simulation.constants as _sim_const
 from data.fleet import GenerationUnit
 
 # Unit types that are non-dispatchable (renewables — output set externally).
@@ -47,6 +48,18 @@ _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
 
 # Unit types eligible for AGC dispatch (fast-response units only).
 _AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'HYDRO_ROR', 'HYDRO_PUMP', 'CCGT'})
+
+# Technical minimum fraction per unit type — used by AGC lower-bound and regulation indicator.
+_TECH_MIN_FRAC: dict[str, float] = {
+    'HYDRO':      _sim_const.TECH_MIN_FRAC_HYDRO,
+    'HYDRO_ROR':  _sim_const.TECH_MIN_FRAC_HYDRO_ROR,
+    'HYDRO_PUMP': _sim_const.TECH_MIN_FRAC_HYDRO_PUMP,
+    'WIND':       _sim_const.TECH_MIN_FRAC_WIND,
+    'SOLAR':      _sim_const.TECH_MIN_FRAC_SOLAR,
+    'CCGT':       _sim_const.TECH_MIN_FRAC_CCGT,
+    'COAL':       _sim_const.TECH_MIN_FRAC_COAL,
+    'NUCLEAR':    _sim_const.TECH_MIN_FRAC_NUCLEAR,
+}
 
 # Unit types that require minimum output > 0 when online.
 # For these types, min_mw from fleet.py is already correct.
@@ -426,7 +439,10 @@ class FleetModel:
         if delta_mw > 0:
             weights = [max(0.0, u._spec.rated_mw - u.current_mw) for u in eligible]
         else:
-            weights = [max(0.0, u.current_mw - u._spec.min_mw) for u in eligible]
+            weights = [
+                max(0.0, u.current_mw - _TECH_MIN_FRAC.get(u._spec.unit_type, MIN_OUTPUT_FRACTION) * u._spec.rated_mw)
+                for u in eligible
+            ]
 
         total_w = sum(weights)
         if total_w < 1.0:
@@ -439,6 +455,25 @@ class FleetModel:
             unit.set_target(new_target)
             assignments[unit.label] = new_target
         return assignments
+
+    def agc_regulation_state(self) -> tuple[float, float, float]:
+        """
+        Return (current_mw, min_mw, max_mw) for all online AGC-eligible units.
+
+        Used by the Regulation Availability indicator in the Power Balance panel.
+        min_mw is derived from per-type technical minimum fractions (not fleet min_mw).
+        """
+        current = min_total = max_total = 0.0
+        for unit in self._units.values():
+            if unit.state != 'ONLINE':
+                continue
+            if unit._spec.unit_type not in _AGC_UNIT_TYPES:
+                continue
+            frac = _TECH_MIN_FRAC.get(unit._spec.unit_type, MIN_OUTPUT_FRACTION)
+            current   += unit.current_mw
+            min_total += unit._spec.rated_mw * frac
+            max_total += unit._spec.rated_mw
+        return current, min_total, max_total
 
     # ─────── QUERIES — INDIVIDUAL ─────────────────────────────────────────
 

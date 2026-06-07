@@ -11,8 +11,8 @@ SimulationState is the complete snapshot transferred to the renderer
 and gameplay layer each frame. See SIMULATION_API.md for the full
 interface contract.
 
-EventSystem (src/simulation/events.py) is stubbed — scripted events
-are wired after the rendering stage (roadmap Stage 7).
+Scripted events are loaded from gameplay/shifts/shift_NN.py and
+fired at scheduled simulation times during each shift.
 
 See GRID_SIMULATION_MECHANICS.md for physics tick ordering.
 See SIMULATION_API.md for the complete public interface.
@@ -21,6 +21,7 @@ See SIMULATION_API.md for the complete public interface.
 from __future__ import annotations
 
 import csv
+import importlib
 import logging
 import os
 
@@ -51,6 +52,25 @@ from simulation.demand import DemandModel
 from simulation.renewables import RenewablesModel
 from simulation.cascade import CascadeModel
 from data.profiles import SHIFT_SPECS
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCRIPTED EVENT LOADER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _load_scripted_events(shift_number: int) -> list[dict]:
+    """
+    Load SCRIPTED_EVENTS from gameplay/shifts/shift_NN.py if the module exists.
+
+    Returns a list of mutable event dicts with a 'fired' flag added.
+    Returns [] if the shift module is absent or defines no events.
+    """
+    try:
+        mod = importlib.import_module(f'gameplay.shifts.shift_{shift_number:02d}')
+        raw = getattr(mod, 'SCRIPTED_EVENTS', [])
+        return [dict(e, fired=False) for e in raw]
+    except ImportError:
+        return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +111,11 @@ class SimulationState:
     system_inertia_h:        float
     losses_mw:               float
     bus_loads:               dict   # {bus_label: demand_mw} live load at each LD bus
+
+    # AGC regulation availability
+    agc_current_mw:          float  # total MW currently from online AGC units
+    agc_max_mw:              float  # total rated MW of online AGC units
+    agc_min_mw:              float  # total tech-minimum MW of online AGC units
 
     # Network — buses
     bus_voltages:            dict
@@ -168,8 +193,8 @@ class GridSimulation:
     Owns all physics sub-models and advances them each tick in the
     prescribed order from GRID_SIMULATION_MECHANICS.md.
 
-    The scripted event system (events.py) is stubbed — events will be
-    wired after the rendering stage is complete.
+    Scripted events are loaded from the corresponding gameplay/shifts/
+    shift_NN.py module and fired via _process_scripted_events() each tick.
     """
 
     def __init__(
@@ -265,6 +290,11 @@ class GridSimulation:
 
         # Cached state snapshot (built in _solve_and_snapshot)
         self._state: SimulationState | None = None
+
+        # Scripted events — loaded from gameplay/shifts/shift_NN.py if it exists.
+        # Each entry is a dict with keys: trigger_min, priority, message, detail,
+        # element, condition (callable|None), fired (bool, mutable).
+        self._scripted_events: list[dict] = _load_scripted_events(shift_number)
 
         # Build initial state snapshot
         self._solve_and_snapshot()
@@ -382,6 +412,7 @@ class GridSimulation:
         self._update_loading_alarms(lf_result.line_loading_pct)
         self._update_voltage_alarms(vr_result.bus_voltages)
         self._update_frequency_alarms()
+        self._process_scripted_events()
         self._expire_alarms()
 
         # 13. Crisis state
@@ -845,6 +876,25 @@ class GridSimulation:
             detail=detail,
         ))
 
+    def _process_scripted_events(self) -> None:
+        """Fire any scripted events whose trigger time has been reached."""
+        for evt in self._scripted_events:
+            if evt['fired']:
+                continue
+            if self._sim_time_min < evt['trigger_min']:
+                continue
+            cond = evt.get('condition')
+            if cond is not None and not cond(self._fleet):
+                evt['fired'] = True  # condition not met — skip, don't retry
+                continue
+            self._raise_alarm(
+                priority=evt['priority'],
+                message=evt['message'],
+                element_label=evt.get('element'),
+                detail=evt.get('detail', ''),
+            )
+            evt['fired'] = True
+
     def _update_loading_alarms(self, loading: dict) -> None:
         for lbl, pct in loading.items():
             if pct >= OVERLOAD_CRIT_PCT and lbl not in self._seen_crit:
@@ -1056,6 +1106,8 @@ class GridSimulation:
             if self._total_ticks > 0 else 100.0
         )
 
+        agc_cur, agc_min, agc_max = self._fleet.agc_regulation_state()
+
         line_status = {
             l.label: (
                 'IN_SERVICE' if self._line_in_service.get(l.label, True)
@@ -1080,6 +1132,10 @@ class GridSimulation:
             losses_mw=self._demand.losses_mw,
             bus_loads={bus: self._demand.get_bus_demand_mw(bus)
                        for bus in self._demand._bus_demand},
+
+            agc_current_mw=agc_cur,
+            agc_max_mw=agc_max,
+            agc_min_mw=agc_min,
 
             bus_voltages=dict(vr_result.bus_voltages),
             bus_angles=dict(lf_result.bus_angles),

@@ -8,11 +8,11 @@ Defines Bus and Line dataclasses plus all 40 buses (32 transmission +
 Canvas positions are in native 1920×844 pixels (the grid schematic area).
 active_from_shift controls which shifts each element is available in:
   Shift 1:     3 buses,  2 lines  (tutorial: MDBY/DUND/LD01 via L46/L47)
-  Shift 2:     9 buses,  8 lines  (south sub-grid; CNTR/STHW/ASHF/RDST/DUNM/BRCK added)
-  Shifts 3-4: 28 buses, 29 lines  (south + centre expansion)
+  Shift 2:     3 buses,  2 lines  (same grid; RVSD coal added, AGC tutorial)
+  Shift 3:    28 buses, 29 lines  (south sub-grid + centre expansion)
   Shifts 5-10: 40 buses, 45 lines (full grid)
 
-Lines L46 and L47 are tutorial-only (active_until_shift=1); all other lines
+Lines L46 and L47 cover Shifts 1-2 (active_until_shift=2); all other lines
 have active_until_shift=99 (effectively permanent).
 
 See GRID_TOPOLOGY_AND_DISPLAY.md for visual specification.
@@ -95,7 +95,7 @@ BUSES: list[Bus] = [
         canvas_x=520,  canvas_y=160, active_from_shift=1, is_slack=True),
 
     Bus(label='CNTR', name='Centrefield',  voltage_kv=400.0, bus_type='TRANSMISSION',
-        canvas_x=960,  canvas_y=120, active_from_shift=2),
+        canvas_x=960,  canvas_y=120, active_from_shift=3),
 
     Bus(label='NRTH', name='Northgate',    voltage_kv=400.0, bus_type='TRANSMISSION',
         canvas_x=1400, canvas_y=160, active_from_shift=5),
@@ -107,19 +107,19 @@ BUSES: list[Bus] = [
         canvas_x=280,  canvas_y=280, active_from_shift=3),
 
     Bus(label='STHW', name='Southwick',    voltage_kv=400.0, bus_type='TRANSMISSION',
-        canvas_x=760,  canvas_y=280, active_from_shift=2),
+        canvas_x=760,  canvas_y=280, active_from_shift=3),
 
     # ── 220kV RING ────────────────────────────────────────────────────────
     # Shift 1: ASHF, RDST, DUNM
     # Shift 3: WRNT, FAIR, COAL
     Bus(label='ASHF', name='Ashford',      voltage_kv=220.0, bus_type='TRANSMISSION',
-        canvas_x=640,  canvas_y=400, active_from_shift=2),
+        canvas_x=640,  canvas_y=400, active_from_shift=3),
 
     Bus(label='WRNT', name='Wrentham',     voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=1080, canvas_y=400, active_from_shift=3),
 
     Bus(label='RDST', name='Redstone',     voltage_kv=220.0, bus_type='TRANSMISSION',
-        canvas_x=360,  canvas_y=500, active_from_shift=2),
+        canvas_x=360,  canvas_y=500, active_from_shift=3),
 
     Bus(label='FAIR', name='Fairfield',    voltage_kv=220.0, bus_type='TRANSMISSION',
         canvas_x=860,  canvas_y=480, active_from_shift=3),
@@ -128,7 +128,7 @@ BUSES: list[Bus] = [
         canvas_x=1280, canvas_y=460, active_from_shift=3),
 
     Bus(label='DUNM', name='Dunmore',      voltage_kv=220.0, bus_type='TRANSMISSION',
-        canvas_x=520,  canvas_y=520, active_from_shift=2),
+        canvas_x=520,  canvas_y=520, active_from_shift=3),
 
     # ── 220kV — Centre expansion (Shifts 3+) ─────────────────────────────
     Bus(label='KELM', name='Kelmore',      voltage_kv=220.0, bus_type='TRANSMISSION',
@@ -154,7 +154,7 @@ BUSES: list[Bus] = [
     # Shift 3: STAN
     # Shift 5: FLDN
     Bus(label='BRCK', name='Brackley',     voltage_kv=150.0, bus_type='TRANSMISSION',
-        canvas_x=240,  canvas_y=580, active_from_shift=2),
+        canvas_x=240,  canvas_y=580, active_from_shift=3),
 
     Bus(label='STAN', name='Stanton',      voltage_kv=150.0, bus_type='TRANSMISSION',
         canvas_x=1080, canvas_y=580, active_from_shift=3),
@@ -241,7 +241,7 @@ LINES: list[Line] = [
 
     # ── 400kV BACKBONE ────────────────────────────────────────────────────
     Line(label='L01', from_bus='MDBY', to_bus='CNTR',
-         reactance_pu=0.050, rating_mw=2000.0, active_from_shift=2, voltage_kv=400.0),
+         reactance_pu=0.050, rating_mw=2000.0, active_from_shift=3, voltage_kv=400.0),
 
     Line(label='L02', from_bus='CNTR', to_bus='NRTH',
          reactance_pu=0.055, rating_mw=1800.0, active_from_shift=5, voltage_kv=400.0),
@@ -256,14 +256,14 @@ LINES: list[Line] = [
          reactance_pu=0.050, rating_mw=1600.0, active_from_shift=5, voltage_kv=400.0),
 
     Line(label='L06', from_bus='STHW', to_bus='MDBY',
-         reactance_pu=0.045, rating_mw=1800.0, active_from_shift=2, voltage_kv=400.0),
+         reactance_pu=0.045, rating_mw=1800.0, active_from_shift=3, voltage_kv=400.0),
 
     Line(label='L07', from_bus='EAST', to_bus='STHW',
          reactance_pu=0.060, rating_mw=1600.0, active_from_shift=3, voltage_kv=400.0),
 
     # ── 400kV ↔ 220kV TRANSFORMER LINKS (modelled as low-reactance lines) ─
     Line(label='L08', from_bus='STHW', to_bus='ASHF',
-         reactance_pu=0.020, rating_mw=1200.0, active_from_shift=2, voltage_kv=400.0),
+         reactance_pu=0.020, rating_mw=1200.0, active_from_shift=3, voltage_kv=400.0),
 
     Line(label='L09', from_bus='CNTR', to_bus='WRNT',
          reactance_pu=0.020, rating_mw=1200.0, active_from_shift=3, voltage_kv=400.0),
@@ -282,10 +282,10 @@ LINES: list[Line] = [
          reactance_pu=0.095, rating_mw=800.0, active_from_shift=3, voltage_kv=220.0),
 
     Line(label='L14', from_bus='ASHF', to_bus='DUNM',
-         reactance_pu=0.100, rating_mw=700.0, active_from_shift=2, voltage_kv=220.0),
+         reactance_pu=0.100, rating_mw=700.0, active_from_shift=3, voltage_kv=220.0),
 
     Line(label='L15', from_bus='DUNM', to_bus='RDST',
-         reactance_pu=0.110, rating_mw=600.0, active_from_shift=2, voltage_kv=220.0),
+         reactance_pu=0.110, rating_mw=600.0, active_from_shift=3, voltage_kv=220.0),
 
     Line(label='L16', from_bus='WRNT', to_bus='COAL',
          reactance_pu=0.085, rating_mw=800.0, active_from_shift=3, voltage_kv=220.0),
@@ -309,7 +309,7 @@ LINES: list[Line] = [
     # ── 150kV REGIONAL ────────────────────────────────────────────────────
     # L22 RDST→BRCK: Shift 1  |  L23 FLDN→STAN: Shift 3  |  L24 COAL→FLDN: Shift 5
     Line(label='L22', from_bus='RDST', to_bus='BRCK',
-         reactance_pu=0.150, rating_mw=450.0, active_from_shift=2, voltage_kv=150.0),
+         reactance_pu=0.150, rating_mw=450.0, active_from_shift=3, voltage_kv=150.0),
 
     Line(label='L23', from_bus='FLDN', to_bus='STAN',
          reactance_pu=0.140, rating_mw=450.0, active_from_shift=3, voltage_kv=150.0),
@@ -355,7 +355,7 @@ LINES: list[Line] = [
     # L37 BRCK→LD01: Shift 1  |  L38 STAN→LD02, L42 BRCK→LD06: Shift 3
     # L39/L40 STAN→LD03/LD04, L41 FLDN→LD05: Shift 5
     Line(label='L37', from_bus='BRCK', to_bus='LD01',
-         reactance_pu=0.080, rating_mw=400.0, active_from_shift=2, voltage_kv=150.0),
+         reactance_pu=0.080, rating_mw=400.0, active_from_shift=3, voltage_kv=150.0),
 
     Line(label='L38', from_bus='STAN', to_bus='LD02',
          reactance_pu=0.085, rating_mw=400.0, active_from_shift=3, voltage_kv=150.0),
@@ -374,7 +374,7 @@ LINES: list[Line] = [
 
     # ── DOWNSTREAM HYDRO CONNECTIONS ─────────────────────────────────────
     Line(label='L28', from_bus='DUNM', to_bus='DUND',
-         reactance_pu=0.080, rating_mw=200.0, active_from_shift=2, voltage_kv=220.0),
+         reactance_pu=0.080, rating_mw=200.0, active_from_shift=3, voltage_kv=220.0),
 
     Line(label='L29', from_bus='SLST', to_bus='STAN',
          reactance_pu=0.075, rating_mw=500.0, active_from_shift=3, voltage_kv=220.0),
@@ -387,17 +387,18 @@ LINES: list[Line] = [
     Line(label='L45', from_bus='KELM', to_bus='KELD',
          reactance_pu=0.040, rating_mw=160.0, active_from_shift=3, voltage_kv=220.0),
 
-    # ── TUTORIAL-ONLY LINES (Shift 1 only) ───────────────────────────────
+    # ── TUTORIAL LINES (Shifts 1-2) ──────────────────────────────────────
     # Direct MDBY→DUND transformer link and DUND→LD01 feeder for the
-    # minimal 3-bus tutorial grid. Superseded by the full south sub-grid
-    # from Shift 2 onwards (active_until_shift=1).
+    # 3-bus tutorial grid used in Shifts 1 and 2. Superseded by the full
+    # south sub-grid from Shift 3 onwards (active_until_shift=2).
+    # L47 is rated 350 MW to carry the full Shift 2 load (up to 315 MW).
     Line(label='L46', from_bus='MDBY', to_bus='DUND',
          reactance_pu=0.025, rating_mw=300.0, active_from_shift=1,
-         voltage_kv=400.0, active_until_shift=1),
+         voltage_kv=400.0, active_until_shift=2),
 
     Line(label='L47', from_bus='DUND', to_bus='LD01',
-         reactance_pu=0.120, rating_mw=150.0, active_from_shift=1,
-         voltage_kv=150.0, active_until_shift=1),
+         reactance_pu=0.120, rating_mw=350.0, active_from_shift=1,
+         voltage_kv=150.0, active_until_shift=2),
 ]
 
 

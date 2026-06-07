@@ -159,7 +159,7 @@ def draw_power_panel(
     state=None,
     font_scale: float = 1.0,
 ) -> None:
-    """Power balance panel: generation, load, imbalance, reserves, inertia, losses."""
+    """Power balance panel: generation, load, imbalance, reserves, inertia, losses, regulation band."""
 
     gen_mw    = state.total_generation_mw  if state else 3420.0
     load_mw   = state.total_load_mw        if state else 3380.0
@@ -167,6 +167,9 @@ def draw_power_panel(
     spin_mw   = state.spinning_reserve_mw  if state else 640.0
     inertia_h = state.system_inertia_h     if state else 4.8
     losses_mw = state.losses_mw            if state else 85.0
+    agc_cur   = state.agc_current_mw       if state else 40.0
+    agc_max   = state.agc_max_mw           if state else 65.0
+    agc_min   = state.agc_min_mw           if state else 6.5
 
     _fill_panel(surf)
     _right_border(surf)
@@ -182,7 +185,7 @@ def draw_power_panel(
         ('BAL',      f'{bal_mw:+,.0f} MW',   COL_TEXT_GOOD if bal_mw >= 0 else COL_TEXT_CRIT),
         ('SPIN RES', f'{spin_mw:,.0f} MW',   COL_TEXT_SECONDARY),
         ('INERTIA',  f'{inertia_h:.1f} s',   COL_TEXT_SECONDARY),
-        ('LOSSES',   f'{losses_mw:.1f} MW',   COL_TEXT_DIM),
+        ('LOSSES',   f'{losses_mw:.1f} MW',  COL_TEXT_DIM),
     ]
 
     lbl_x = pad
@@ -192,6 +195,66 @@ def draw_power_panel(
         font.render_to(surf, (lbl_x, y), lbl, COL_TEXT_SECONDARY, size=sp)
         rect = font.get_rect(val, size=sp)
         font.render_to(surf, (val_x - rect.width, y), val, col, size=sp)
+
+    # ── Regulation band section ──────────────────────────────────────────────
+    rh  = int(_ROW_H * fs)
+    bh  = max(2, int(_BAR_H * fs))
+    w   = surf.get_width()
+
+    # Divider below LOSSES row
+    div_y = _row_y(len(rows), fs) - max(2, int(4 * fs))
+    pygame.draw.line(surf, COL_PANEL_BORDER, (pad, div_y), (w - pad, div_y), 1)
+
+    # Sub-header
+    sub_y = div_y + max(2, int(3 * fs))
+    font.render_to(surf, (lbl_x, sub_y), 'REG BAND', COL_TEXT_HEADING, size=sp)
+
+    # Three rows: REG MIN, REG NOW, REG MAX
+    has_agc = agc_max > 0.0
+
+    def _reg_val(v: float) -> str:
+        return f'{v:.1f} MW' if has_agc else '--'
+
+    band_range = max(agc_max - agc_min, 1.0)
+    headroom_up = agc_max - agc_cur
+    headroom_dn = agc_cur - agc_min
+    margin = min(headroom_up, headroom_dn) / band_range if has_agc else 0.0
+    reg_col = COL_TEXT_GOOD if margin >= 0.20 else (COL_TEXT_WARN if margin >= 0.05 else COL_TEXT_CRIT)
+
+    reg_rows: list[tuple[str, str, tuple]] = [
+        ('REG MIN', _reg_val(agc_min), COL_TEXT_DIM),
+        ('REG NOW', _reg_val(agc_cur), reg_col),
+        ('REG MAX', _reg_val(agc_max), COL_TEXT_SECONDARY),
+    ]
+    base_y = sub_y + rh
+    for j, (lbl, val, col) in enumerate(reg_rows):
+        y = base_y + j * rh
+        font.render_to(surf, (lbl_x, y), lbl, COL_TEXT_SECONDARY, size=sp)
+        rect = font.get_rect(val, size=sp)
+        font.render_to(surf, (val_x - rect.width, y), val, col, size=sp)
+
+    # Horizontal regulation band bar
+    bar_x = pad
+    bar_w = w - pad * 2
+    bar_y = base_y + len(reg_rows) * rh + max(2, int(3 * fs))
+    pygame.draw.rect(surf, COL_METER_BG, pygame.Rect(bar_x, bar_y, bar_w, bh))
+
+    if has_agc and agc_max > 0.0:
+        # Available band: min to max (highlighted)
+        min_px = int(agc_min / agc_max * bar_w)
+        pygame.draw.rect(surf, COL_TEXT_DIM,
+                         pygame.Rect(bar_x + min_px, bar_y, bar_w - min_px, bh))
+        # Filled: min to current
+        cur_frac = max(0.0, min(1.0, (agc_cur - agc_min) / band_range))
+        fill_w = int((bar_w - min_px) * cur_frac)
+        if fill_w > 0:
+            pygame.draw.rect(surf, reg_col,
+                             pygame.Rect(bar_x + min_px, bar_y, fill_w, bh))
+        # Tick at current
+        cur_px = bar_x + int(agc_cur / agc_max * bar_w)
+        pygame.draw.line(surf, reg_col,
+                         (cur_px, bar_y - max(1, int(2 * fs))),
+                         (cur_px, bar_y + bh + max(1, int(1 * fs))), 1)
 
 
 # ── Panel 3 — Unit Dispatch ────────────────────────────────────────────────────

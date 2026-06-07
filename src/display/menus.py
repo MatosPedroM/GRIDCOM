@@ -69,6 +69,20 @@ def build_menu_title_art() -> list:
 
 # ─── Menu item lists ──────────────────────────────────────────────────────────
 
+def build_shift_select_items(completed_grades: dict) -> list:
+    """Shift progress screen items. Only the next unplayed shift is enabled."""
+    next_shift = max(completed_grades.keys(), default=0) + 1
+    items = []
+    for i in range(1, 11):
+        if i in completed_grades:
+            items.append((f'SHIFT {i:02d}  —  {completed_grades[i]}', False))
+        elif i == next_shift:
+            items.append((f'SHIFT {i:02d}  —  NEXT', True))
+        else:
+            items.append((f'SHIFT {i:02d}  —  LOCKED', False))
+    return items
+
+
 def build_main_menu_items() -> list:
     """Returns list of (label, enabled) for the main menu."""
     return [
@@ -278,61 +292,61 @@ def build_campaign_intro_screens() -> list:
         (' For now, that is enough.', B),
     ])
 
-    # ── Screen 4 — The First Entry ────────────────────────────────────────────
-    screens.append([
-        ('', B),
-        (_SEP, H),
-        (' NECC OPERATIONAL LOG', H),
-        (' 08/11/1994 — 09/11/1994', H),
-        (_SEP, H),
-        ('', B),
-        (' 23:52  Shift commenced. System status normal.', B),
-        ('        Handover received from R. Ferris.', B),
-        ('        All parameters within normal limits.', B),
-        ('        No active alarms.', B),
-        ('', B),
-        (' 23:52  Logged on to GRIDCOM terminal.', B),
-        ('', B),
-        ('', B),
-        (' 23:53  Commenced watch.', H),
-    ])
+    # # ── Screen 4 — The First Entry ────────────────────────────────────────────
+    # screens.append([
+    #     ('', B),
+    #     (_SEP, H),
+    #     (' NECC OPERATIONAL LOG', H),
+    #     (' 08/11/1994 — 09/11/1994', H),
+    #     (_SEP, H),
+    #     ('', B),
+    #     (' 23:52  Shift commenced. System status normal.', B),
+    #     ('        Handover received from R. Ferris.', B),
+    #     ('        All parameters within normal limits.', B),
+    #     ('        No active alarms.', B),
+    #     ('', B),
+    #     (' 23:52  Logged on to GRIDCOM terminal.', B),
+    #     ('', B),
+    #     ('', B),
+    #     (' 23:53  Commenced watch.', H),
+    # ])
 
-    # ── Screen 5 — Terminal Boot Sequence ─────────────────────────────────────
-    screens.append([
-        ('', B),
-        (' GRIDCOM v2.4.1  —  NATIONAL ENERGY CONTROL CENTRE', H),
-        (_SEP, H),
-        ('', B),
-        (' LOADING NETWORK TOPOLOGY...          32 nodes  OK', B),
-        (' LOADING GENERATION FLEET...          47 units  OK', B),
-        (' LOADING DEMAND FORECAST...                     OK', B),
-        (' INITIALISING LOAD FLOW SOLVER...               OK', B),
-        (' INITIALISING FREQUENCY MODEL...                OK', B),
-        (' CONNECTING TO SCADA DATALINK...                OK', B),
-        (' CONNECTING TO INTC-N...                        OK', B),
-        (' CONNECTING TO INTC-S...                        OK', B),
-        ('', B),
-        (' SYSTEM HEALTH CHECK...', B),
-        ('   DC LOAD FLOW:          NOMINAL', B),
-        ('   VOLTAGE SOLVER:        NOMINAL', B),
-        ('   FREQUENCY MONITOR:     NOMINAL', B),
-        ('   ALARM SYSTEM:          NOMINAL', B),
-        ('   RECORDING SYSTEM:      NOMINAL', B),
-        ('', B),
-        (' ALL SYSTEMS NOMINAL.', H),
-        ('', B),
-        (_SEP, H),
-        (' GRIDCOM READY.', H),
-        ('', B),
-        (' CURRENT TIME:  23:53  08/11/1994', B),
-        (' SYSTEM STATE:  NORMAL OPERATION', B),
-        (' ACTIVE ALARMS: NONE', B),
-        ('', B),
-        (' SHIFT 1 OF 10  —  OVERNIGHT TROUGH', H),
-        (' SIMULATED WINDOW:  02:00 — 04:00', B),
-        ('', B),
-        (_SEP, H),
-    ])
+    # # ── Screen 5 — Terminal Boot Sequence ─────────────────────────────────────
+    # screens.append([
+    #     ('', B),
+    #     (' GRIDCOM v2.4.1  —  NATIONAL ENERGY CONTROL CENTRE', H),
+    #     (_SEP, H),
+    #     ('', B),
+    #     (' LOADING NETWORK TOPOLOGY...          32 nodes  OK', B),
+    #     (' LOADING GENERATION FLEET...          47 units  OK', B),
+    #     (' LOADING DEMAND FORECAST...                     OK', B),
+    #     (' INITIALISING LOAD FLOW SOLVER...               OK', B),
+    #     (' INITIALISING FREQUENCY MODEL...                OK', B),
+    #     (' CONNECTING TO SCADA DATALINK...                OK', B),
+    #     (' CONNECTING TO INTC-N...                        OK', B),
+    #     (' CONNECTING TO INTC-S...                        OK', B),
+    #     ('', B),
+    #     (' SYSTEM HEALTH CHECK...', B),
+    #     ('   DC LOAD FLOW:          NOMINAL', B),
+    #     ('   VOLTAGE SOLVER:        NOMINAL', B),
+    #     ('   FREQUENCY MONITOR:     NOMINAL', B),
+    #     ('   ALARM SYSTEM:          NOMINAL', B),
+    #     ('   RECORDING SYSTEM:      NOMINAL', B),
+    #     ('', B),
+    #     (' ALL SYSTEMS NOMINAL.', H),
+    #     ('', B),
+    #     (_SEP, H),
+    #     (' GRIDCOM READY.', H),
+    #     ('', B),
+    #     (' CURRENT TIME:  23:53  08/11/1994', B),
+    #     (' SYSTEM STATE:  NORMAL OPERATION', B),
+    #     (' ACTIVE ALARMS: NONE', B),
+    #     ('', B),
+    #     (' SHIFT 1 OF 10  —  OVERNIGHT TROUGH', H),
+    #     (' SIMULATED WINDOW:  02:00 — 04:00', B),
+    #     ('', B),
+    #     (_SEP, H),
+    # ])
 
     return screens
 

@@ -46,6 +46,7 @@ from display.menus import (
     build_campaign_intro_screens,
     build_campaign_end_lines,
     build_menu_title_art,
+    build_shift_select_items,
 )
 from data.layout_override import load_layout
 from data.profiles import SHIFT_SPECS
@@ -74,6 +75,7 @@ class GameState(Enum):
     BRIEFING          = 'briefing'
     PLAYING           = 'playing'
     DEBRIEF           = 'debrief'
+    SHIFT_SELECT      = 'shift_select'
     CAMPAIGN_END      = 'campaign_end'
 
 
@@ -278,10 +280,21 @@ def main() -> None:
 
     # ── Menu state ───────────────────────────────────────────────────────────
     menu_selected = 0
-    main_menu_items     = build_main_menu_items()
+    _raw = build_main_menu_items()   # [NEW GAME, CONTINUE, QUIT]
+    main_menu_items = [
+        _raw[0],
+        ('', None),
+        _raw[1],
+        ('', None),
+        ('', None),
+        _raw[2],
+    ]
     mode_select_items   = build_mode_select_items()
     difficulty_items    = build_difficulty_items()
     menu_title          = _menu_title_lines()
+    shift_grades:  dict = {}
+    shift_select_items  = build_shift_select_items(shift_grades)
+    shift_select_idx    = 0
 
     # ── Continuous stub ──────────────────────────────────────────────────────
     continuous_lines = build_continuous_placeholder_lines()
@@ -342,9 +355,9 @@ def main() -> None:
                         if idx == 0:   # NEW GAME
                             game_state    = GameState.MODE_SELECT
                             menu_selected = 0
-                        elif idx == 1: # CONTINUE — disabled
+                        elif idx == 2: # CONTINUE — disabled
                             pass
-                        elif idx == 2: # QUIT
+                        elif idx == 5: # QUIT
                             running = False
                     elif event.key == pygame.K_ESCAPE:
                         pass   # already at top level
@@ -629,17 +642,23 @@ def main() -> None:
                     if int(debrief_chars) < total:
                         debrief_chars = float(total)
                     else:
+                        # Capture grade from current sim state
+                        _s = sim.get_state()
+                        _fp = _s.frequency_in_bounds_pct
+                        if _fp >= 95.0 and _s.load_shed_events == 0 and _s.cascade_events == 0:
+                            _grade = 'EXCELLENT'
+                        elif _fp >= 80.0 and _s.load_shed_events <= 1:
+                            _grade = 'SATISFACTORY'
+                        elif _fp >= 60.0:
+                            _grade = 'MARGINAL'
+                        else:
+                            _grade = 'UNSATISFACTORY'
+                        shift_grades[shift] = _grade
+
                         if shift < 10:
-                            shift += 1
-                            sim, grid, renderer = _make_sim_and_renderer(
-                                display_surf, shift, difficulty,
-                            )
-                            state          = sim.get_state()
-                            sim_accum      = 0.0
-                            _spec          = SHIFT_SPECS.get(shift)
-                            briefing_lines = build_briefing_lines(_spec) if _spec else []
-                            briefing_chars = 0.0
-                            game_state     = GameState.BRIEFING
+                            shift_select_items = build_shift_select_items(shift_grades)
+                            shift_select_idx   = shift   # index N = shift N+1 (next shift)
+                            game_state         = GameState.SHIFT_SELECT
                         else:
                             watch_s = (pygame.time.get_ticks() - campaign_start_time) / 1000.0
                             campaign_end_lines = build_campaign_end_lines(
@@ -653,6 +672,34 @@ def main() -> None:
             debrief_chars = min(debrief_chars + TYPEWRITER_CHARS_PER_SEC * dt,
                                 float(total) + 1)
             renderer.tick_text_screen(dt, debrief_lines, int(debrief_chars))
+
+        # ── SHIFT SELECT ─────────────────────────────────────────────────────
+        elif game_state == GameState.SHIFT_SELECT:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        next_shift = max(shift_grades.keys(), default=0) + 1
+                        shift = next_shift
+                        sim, grid, renderer = _make_sim_and_renderer(display_surf, shift, difficulty)
+                        state          = sim.get_state()
+                        sim_accum      = 0.0
+                        _spec          = SHIFT_SPECS.get(shift)
+                        briefing_lines = build_briefing_lines(_spec) if _spec else []
+                        briefing_chars = 0.0
+                        game_state     = GameState.BRIEFING
+                    elif event.key == pygame.K_ESCAPE:
+                        game_state    = GameState.MAIN_MENU
+                        menu_selected = 0
+
+            renderer.tick_menu_screen(
+                dt,
+                title_lines=menu_title,
+                items=shift_select_items,
+                selected_idx=shift_select_idx,
+                footer_hint='[ENTER]  Begin next shift    [ESC]  Main menu',
+            )
 
         # ── CAMPAIGN END ──────────────────────────────────────────────────────
         elif game_state == GameState.CAMPAIGN_END:

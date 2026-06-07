@@ -50,8 +50,8 @@ from simulation.constants import (
     PANEL_GENMIX_X, PANEL_GENMIX_W,
     PANEL_ALARM_X, PANEL_ALARM_W,
     FLOW_ANIMATION,
-    TEXT_SCREEN_FONT_SIZE, TEXT_SCREEN_LEFT_MARGIN, TEXT_SCREEN_TOP_MARGIN, TEXT_SCREEN_ROW_H,
-    MENU_FONT_SIZE, MENU_ROW_H, MENU_LEFT_MARGIN, MENU_TOP_MARGIN,
+    TEXT_SCREEN_FONT_SIZE, TEXT_SCREEN_TOP_MARGIN, TEXT_SCREEN_ROW_H,
+    MENU_FONT_SIZE, MENU_ROW_H, MENU_TOP_MARGIN,
 )
 from utils.helpers import resource_path
 from data.profiles import SHIFT_SPECS
@@ -394,9 +394,15 @@ class Renderer:
 
         sc  = self._scale
         fso = int(TEXT_SCREEN_FONT_SIZE * sc)
-        x0  = int(TEXT_SCREEN_LEFT_MARGIN * sc)
         y0  = int(TEXT_SCREEN_TOP_MARGIN  * sc)
         row = int(TEXT_SCREEN_ROW_H       * sc)
+
+        surf_w     = self._native.get_width()
+        max_line_w = max(
+            (self._font.get_rect(text, size=fso).width for text, _ in lines if text),
+            default=0,
+        )
+        x0 = max(0, (surf_w - max_line_w) // 2)
 
         total_chars = sum(len(text) for text, _ in lines)
         budget      = chars_revealed
@@ -412,13 +418,11 @@ class Renderer:
             y += row
 
         if chars_revealed >= total_chars and self._blink_on:
-            self._font.render_to(
-                self._native,
-                (x0, y + row),
-                '[PRESS ANY KEY TO CONTINUE]',
-                COL_150KV,
-                size=fso,
-            )
+            hint   = '[PRESS ANY KEY TO CONTINUE]'
+            hint_w = self._font.get_rect(hint, size=fso).width
+            hint_x = max(0, (self._native.get_width() - hint_w) // 2)
+            hint_y = int((NATIVE_HEIGHT - 60) * sc)
+            self._font.render_to(self._native, (hint_x, hint_y), hint, COL_150KV, size=fso)
 
         self._display.blit(self._native, self._letterbox_rect.topleft)
         self._display_dirty = False
@@ -504,7 +508,6 @@ class Renderer:
         sc    = self._scale
         fsh   = int(TEXT_SCREEN_FONT_SIZE * sc)   # header/separator font size
         fsm   = int(MENU_FONT_SIZE        * sc)   # menu item font size
-        x0    = int(MENU_LEFT_MARGIN      * sc)
         y0    = int(TEXT_SCREEN_TOP_MARGIN * sc)
         hrow  = int(TEXT_SCREEN_ROW_H    * sc)
         mrow  = int(MENU_ROW_H           * sc)
@@ -521,13 +524,21 @@ class Renderer:
                 self._font.render_to(self._native, (cx, y), text, colour, size=fsh)
             y += hrow
 
-        # Menu items, starting below title
-        y = int(MENU_TOP_MARGIN * sc)
-        cursor_x = x0
-        label_x  = x0 + int(24 * sc)   # indent label past the cursor glyph
+        # Menu items — block centred horizontally, items left-aligned within block
+        gap            = int(24 * sc)
+        cursor_glyph_w = self._font.get_rect('>', size=fsm).width
+        real_items     = [item for item in items if item[1] is not None]
+        max_label_w    = max(self._font.get_rect(item[0], size=fsm).width for item in real_items)
+        block_w        = cursor_glyph_w + gap + max_label_w
+        cursor_x       = max(0, (surf_w - block_w) // 2)
+        label_x        = cursor_x + gap
 
+        y = int(MENU_TOP_MARGIN * sc)
         for i, item in enumerate(items):
             label, enabled = item[0], item[1]
+            if enabled is None:
+                y += mrow
+                continue
             is_selected = (i == selected_idx)
 
             if not enabled:
@@ -541,15 +552,11 @@ class Renderer:
 
             y += mrow
 
-        # Footer hint near bottom
+        # Footer hint — centred
         footer_y = int((NATIVE_HEIGHT - 60) * sc)
-        self._font.render_to(
-            self._native,
-            (x0, footer_y),
-            footer_hint,
-            COL_TEXT_DIM,
-            size=fsh,
-        )
+        footer_w = self._font.get_rect(footer_hint, size=fsh).width
+        footer_x = max(0, (surf_w - footer_w) // 2)
+        self._font.render_to(self._native, (footer_x, footer_y), footer_hint, COL_TEXT_DIM, size=fsh)
 
         self._display.blit(self._native, self._letterbox_rect.topleft)
         self._display_dirty = False

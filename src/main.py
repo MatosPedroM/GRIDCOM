@@ -603,7 +603,11 @@ def main() -> None:
 
                     elif (event.key in (pygame.K_p, pygame.K_SPACE)
                           and not _const.EDITOR_MODE and not renderer._input_active):
-                        speed = SPEED_PAUSE if speed > 0.0 else SPEED_NORMAL
+                        if speed > 0.0:
+                            speed = SPEED_PAUSE
+                            sim_accum = 0.0
+                        else:
+                            speed = SPEED_NORMAL
 
                     elif not _const.EDITOR_MODE and event.key == pygame.K_BACKSPACE:
                         renderer.on_backspace()
@@ -629,11 +633,12 @@ def main() -> None:
                 elif event.type == pygame.MOUSEWHEEL:
                     renderer.on_scroll(event.y, _to_native(pygame.mouse.get_pos(), renderer._letterbox_rect, renderer._scale))
 
-            sim_accum += dt
-            if speed > 0.0 and sim_accum >= SIM_TICK_INTERVAL_S:
-                sim.tick(sim_accum * TIME_COMPRESSION * speed)
-                state = sim.get_state()
-                sim_accum = 0.0
+            if speed > 0.0:
+                sim_accum += dt
+                if sim_accum >= SIM_TICK_INTERVAL_S:
+                    sim.tick(sim_accum * TIME_COMPRESSION * speed)
+                    state = sim.get_state()
+                    sim_accum = 0.0
 
             renderer.tick(dt, state=state, speed_mult=speed)
 

@@ -177,11 +177,11 @@ SIM_TICK_INTERVAL_S:  float = 0.1    # Simulation advances at 10 Hz regardless o
 LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
 
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
-FONT_SIZE_LABEL:          int = 14      # bus/station labels on canvas
-FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
-FONT_SIZE_PANEL:          int = 13      # standard instrument strip text
-FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
-FONT_SIZE_CONTEXT:        int = 13      # unit context overlay text
+FONT_SIZE_LABEL:          int = 16      # bus/station labels on canvas
+FONT_SIZE_OVERLAY:        int = 17      # interconnector labels, debug overlay
+FONT_SIZE_PANEL:          int = 15      # standard instrument strip text
+FONT_SIZE_PANEL_LARGE:    int = 32      # frequency Hz readout
+FONT_SIZE_CONTEXT:        int = 15      # unit context overlay text
 
 TYPEWRITER_CHARS_PER_SEC: int   = 400  # Characters revealed per real second on text screens
 TEXT_SCREEN_FONT_SIZE:    int   = 19   # px — font size for briefing/debrief screens

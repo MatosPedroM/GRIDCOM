@@ -73,7 +73,7 @@ def test_grid_loads() -> bool:
             units3 = g3.get_active_units()
 
             expected_buses_3 = sum(1 for b in BUSES if b.active_from_shift <= 3)
-            expected_lines_3 = sum(1 for l in LINES if l.active_from_shift <= 3)
+            expected_lines_3 = sum(1 for l in LINES if l.active_from_shift <= 3 <= l.active_until_shift)
             expected_units_3 = sum(1 for u in UNITS if u.active_from_shift <= 3)
 
             assert len(buses3) == expected_buses_3, \
@@ -101,7 +101,7 @@ def test_grid_loads() -> bool:
             units5 = g5.get_active_units()
 
             expected_buses_5 = sum(1 for b in BUSES if b.active_from_shift <= 5)
-            expected_lines_5 = sum(1 for l in LINES if l.active_from_shift <= 5)
+            expected_lines_5 = sum(1 for l in LINES if l.active_from_shift <= 5 <= l.active_until_shift)
             expected_units_5 = sum(1 for u in UNITS if u.active_from_shift <= 5)
 
             assert len(buses5) == expected_buses_5, \
@@ -281,20 +281,15 @@ def test_loadflow_solves() -> bool:
         #   P_AC = (theta_A - theta_C)/X_AC = (0-(-0.01))/0.1 = 0.1 pu = 100 MW
 
         try:
-            # Build a minimal 3-bus grid-like structure using raw DCLoadFlow inputs.
-            # We test by building a real Grid(1) and overriding nothing — instead
-            # we test the math directly by checking the linear algebra is correct.
-
-            # Verify via Grid(1): inject known imbalance, check flow sign consistency.
+            # Use tutorial Grid(1): MDBY→DUND (L46), DUND→LD01 (L47), DUND→LD02 (L48).
             g1 = Grid(1)
             lf = DCLoadFlow(g1)
 
-            # All generation at MDBY (slack), load at ASHF and WRNT equally.
-            # Net injection: ASHF = -500 MW, WRNT = -500 MW, rest = 0.
-            # Slack absorbs +1000 MW. Flows should be non-zero and symmetric.
+            # Generation at MDBY (slack), load split across LD01 and LD02.
+            # Slack absorbs +1000 MW. Both feeder lines should carry flow.
             buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['ASHF'] = -500.0
-            buses['DUNM'] = -500.0
+            buses['LD01'] = -500.0
+            buses['LD02'] = -500.0
 
             result = lf.solve(buses)
 
@@ -316,40 +311,42 @@ def test_loadflow_solves() -> bool:
                 assert result.line_loading_pct[l.label] >= 0.0, \
                     f"Line {l.label} loading should be >= 0"
 
-            # Lines connecting STHW→ASHF and ASHF→DUNM must carry non-zero flow
-            assert abs(result.line_flows_mw['L08']) > 1.0, \
-                f"L08 (STHW-ASHF) should carry flow, got {result.line_flows_mw['L08']:.2f} MW"
-            assert abs(result.line_flows_mw['L14']) > 1.0, \
-                f"L14 (ASHF-DUNM) should carry flow, got {result.line_flows_mw['L14']:.2f} MW"
+            # Both feeders from DUND should carry non-zero flow
+            assert abs(result.line_flows_mw['L47']) > 1.0, \
+                f"L47 (DUND-LD01) should carry flow, got {result.line_flows_mw['L47']:.2f} MW"
+            assert abs(result.line_flows_mw['L48']) > 1.0, \
+                f"L48 (DUND-LD02) should carry flow, got {result.line_flows_mw['L48']:.2f} MW"
 
             print(f"  Grid(1) solve: slack angle=0, all angles/flows present — PASS")
-            print(f"    L08 flow={result.line_flows_mw['L08']:.1f} MW  "
-                  f"loading={result.line_loading_pct['L08']:.1f}%")
-            print(f"    L14 flow={result.line_flows_mw['L14']:.1f} MW  "
-                  f"loading={result.line_loading_pct['L14']:.1f}%")
+            print(f"    L47 flow={result.line_flows_mw['L47']:.1f} MW  "
+                  f"loading={result.line_loading_pct['L47']:.1f}%")
+            print(f"    L48 flow={result.line_flows_mw['L48']:.1f} MW  "
+                  f"loading={result.line_loading_pct['L48']:.1f}%")
 
         except AssertionError as e:
             print(f"  Grid(1) solve: FAIL — {e}")
             all_passed = False
 
         # ── Flow direction consistency ─────────────────────────────────────
-        # Inject generation at MDBY side (via STHW), load at ASHF.
-        # L08 goes STHW→ASHF: flow should be positive (toward load).
+        # Generation at MDBY (slack), load at LD01. Power must flow
+        # MDBY→DUND (L46, positive) then DUND→LD01 (L47, positive).
         try:
             g1 = Grid(1)
             lf = DCLoadFlow(g1)
 
             buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['ASHF'] = -1000.0  # load at ASHF
+            buses['LD01'] = -1000.0  # load at LD01
 
             result = lf.solve(buses)
 
-            # Power flows toward load: STHW→ASHF = positive on L08
-            assert result.line_flows_mw['L08'] > 0.0, \
-                f"L08 should flow STHW→ASHF (positive), got {result.line_flows_mw['L08']:.2f}"
+            # Power flows toward load: MDBY→DUND positive, DUND→LD01 positive
+            assert result.line_flows_mw['L46'] > 0.0, \
+                f"L46 should flow MDBY→DUND (positive), got {result.line_flows_mw['L46']:.2f}"
+            assert result.line_flows_mw['L47'] > 0.0, \
+                f"L47 should flow DUND→LD01 (positive), got {result.line_flows_mw['L47']:.2f}"
 
-            print(f"  Flow direction correct: L08={result.line_flows_mw['L08']:.1f} MW "
-                  f"(STHW->ASHF, load at ASHF) -- PASS")
+            print(f"  Flow direction correct: L46={result.line_flows_mw['L46']:.1f} MW "
+                  f"L47={result.line_flows_mw['L47']:.1f} MW -- PASS")
 
         except AssertionError as e:
             print(f"  Flow direction: FAIL — {e}")
@@ -360,8 +357,8 @@ def test_loadflow_solves() -> bool:
             g1 = Grid(1)
             lf = DCLoadFlow(g1)
             buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['ASHF'] = -600.0
-            buses['WRNT'] = -400.0
+            buses['LD01'] = -600.0
+            buses['LD02'] = -400.0
             result = lf.solve(buses)
 
             for line in g1.get_active_lines():
@@ -635,14 +632,15 @@ def test_unit_model() -> bool:
             all_passed = False
 
         # ── FleetModel aggregates ─────────────────────────────────────────
+        # Grid(3) used: HART-1/2 are at CNTR which is only active from Shift 3.
         try:
-            g1 = Grid(1)
+            g3 = Grid(3)
             schedule = {
                 'RVSD-1': 280.0,
                 'HART-1': 600.0,
                 'HART-2': 700.0,
             }
-            fleet = FleetModel(g1, initial_schedule=schedule)
+            fleet = FleetModel(g3, initial_schedule=schedule)
 
             total_gen = fleet.total_generation_mw()
             # Scheduled units + any renewables at 0 MW
@@ -1463,12 +1461,12 @@ def test_simulation_model() -> bool:
         # ── set_unit_target() — ONLINE unit accepts, OFFLINE rejects ──────
         try:
             g1 = Grid(1)
-            schedule = {'HART-1': 600.0, 'HART-2': 700.0}
+            schedule = {'DUND-1': 40.0}
             sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
                                  initial_schedule=schedule)
 
-            # HART-1 is ONLINE (in initial_schedule); set_unit_target should accept
-            accepted = sim.set_unit_target('HART-1', 650.0)
+            # DUND-1 is ONLINE (in initial_schedule); set_unit_target should accept
+            accepted = sim.set_unit_target('DUND-1', 50.0)
             assert accepted, "set_unit_target should return True for ONLINE unit"
 
             # RVSD-1 is OFFLINE (not in schedule); should reject

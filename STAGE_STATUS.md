@@ -14,6 +14,16 @@
 
 ## Session Log
 
+### Session 26 (Shift 1-2 Tutorial Grid Topology Redesign)
+- Edited: `src/data/topology.py` — L46 rating 300→500 MW (400kV standard); L47 changed from 150kV/350MW/0.120pu to 220kV/200MW/0.080pu; new L48 added (DUND→LD02, 220kV, 200MW, 0.080pu, active_until_shift=2); LD02 active_from_shift 3→1; module docstring and section comments updated
+- Edited: `src/data/profiles.py` — Shift 2 demand split 55%/45% between LD01 (peak 173MW) and LD02 (peak 142MW); total unchanged at 315MW peak
+- Edited: `tests/test_simulation.py` — fixed expected_lines_3/5 to filter by active_until_shift; updated test_loadflow_solves to use Grid(1) L47/L48 instead of removed Grid(1) lines L08/L14; updated test_unit_model FleetModel and test_simulation_model set_unit_target to use units in the active grid (pre-existing failures from Session 24 when CNTR/HART moved to Shift 3)
+- Validated: 9/9 tests pass
+
+New Shift 1-2 topology:
+  MDBY (400kV) ──L46 (500MW)──► DUND (220kV) ──L47 (200MW)──► LD01 (150kV)
+                                               └──L48 (200MW)──► LD02 (150kV)
+
 ### Session 25 (Canvas Load Substation Fix + Live Load in Context)
 - Edited: `src/display/canvas.py` — Layer 6 now dispatches `draw_load_substation()` for `bus_type == 'LOAD'` buses and `draw_substation()` for all others; fixes LD01 rendering with downward-triangle symbol and reveals DUND/DUND-1 as a proper transmission node
 - Edited: `src/simulation/simulation.py` — added `bus_loads: dict` field to `SimulationState`; populated in `_build_state()` from `self._demand.get_bus_demand_mw()`
@@ -216,8 +226,8 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
   ✓ tests/test_simulation.py   — test_grid_loads() — PASS
 
   Grid sizes by shift:
-    Shift 1:  3 buses,  2 lines,  1 active unit (DUND-1, tutorial)
-    Shift 2:  9 buses,  8 lines, 11 units
+    Shift 1:  4 buses,  3 lines,  6 active units (tutorial)
+    Shift 2:  4 buses,  3 lines, 11 units
     Shift 3: 28 buses, 29 lines, 29 units
     Shift 5: 40 buses, 45 lines, 47 units
 

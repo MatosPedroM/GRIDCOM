@@ -213,7 +213,7 @@ BUSES: list[Bus] = [
         canvas_x=480,  canvas_y=760, active_from_shift=1),
 
     Bus(label='LD02', name='Load Sub 2',   voltage_kv=150.0, bus_type='LOAD',
-        canvas_x=720,  canvas_y=780, active_from_shift=1),
+        canvas_x=720,  canvas_y=780, active_from_shift=2),
 
     Bus(label='LD03', name='Load Sub 3',   voltage_kv=150.0, bus_type='LOAD',
         canvas_x=960,  canvas_y=760, active_from_shift=5),
@@ -400,7 +400,7 @@ LINES: list[Line] = [
          voltage_kv=220.0, active_until_shift=2),
 
     Line(label='L48', from_bus='DUND', to_bus='LD02',
-         reactance_pu=0.080, rating_mw=200.0, active_from_shift=1,
+         reactance_pu=0.080, rating_mw=200.0, active_from_shift=2,
          voltage_kv=220.0, active_until_shift=2),
 ]
 

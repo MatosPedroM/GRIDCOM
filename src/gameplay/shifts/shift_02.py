@@ -4,10 +4,10 @@ src/gameplay/shifts/shift_02.py
 Shift 2 scenario definition — AGC regulation band tutorial.
 
 Narrative:
-  RVSD-1 and RVSD-3 are online at technical minimum (90 MW each).
+  RVSD-1 is online at technical minimum (90 MW). RVSD-3 remains offline (relay maintenance).
   DUND-1 is the sole AGC unit (max 65 MW); DUND-2 is on planned maintenance.
   Demand rises through the shift, pushing DUND-1 toward saturation.
-  The player must ramp RVSD to relieve DUND-1 and maintain regulation headroom.
+  The player must ramp RVSD-1 to relieve DUND-1 and maintain regulation headroom.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from __future__ import annotations
 # Starting dispatch — units absent from this dict start OFFLINE.
 INITIAL_SCHEDULE: dict[str, float] = {
     'RVSD-1': 90.0,   # Riverside Coal 1 — technical minimum (90 MW)
-    'RVSD-3': 90.0,   # Riverside Coal 3 — technical minimum (90 MW)
     'DUND-1': 40.0,   # Dunmore Lower 1  — AGC, regulating
+    # RVSD-3 absent → OFFLINE (relay maintenance, carried over from Shift 1)
     # DUND-2 absent → OFFLINE (planned maintenance outage)
 }
 

@@ -33,7 +33,7 @@ from data.topology import (
 from data.fleet import UNITS, STATION_POSITIONS, get_units_at_bus, get_unit, get_station_position
 from display.palette import (
     COL_BACKGROUND,
-    COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
+    COL_TEXT_PRIMARY,
 )
 from display.symbols import (
     draw_substation, draw_load_substation,
@@ -44,7 +44,7 @@ from display.symbols import (
     _draw_dashed_line,
 )
 from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC
-from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL, NATIVE_WIDTH
+from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL, FONT_SIZE_PANEL, NATIVE_WIDTH
 from utils.helpers import resource_path
 
 
@@ -130,6 +130,14 @@ class GridCanvas:
                 (int(x * scale), int(y * scale)) for x, y in raw
             ]
 
+        # Bus → connected line labels (for load-state colouring of substation symbols)
+        self._bus_lines: dict[str, list[str]] = {b.label: [] for b in self._buses}
+        for line in self._lines:
+            if line.from_bus in self._bus_lines:
+                self._bus_lines[line.from_bus].append(line.label)
+            if line.to_bus in self._bus_lines:
+                self._bus_lines[line.to_bus].append(line.label)
+
         # Hydraulic connectors: only those where both buses are active this shift
         self._hydraulic: list[tuple[Bus, Bus]] = []
         for from_lbl, to_lbl in _HYDRAULIC_CONNECTORS:
@@ -195,6 +203,16 @@ class GridCanvas:
                     dash=td, gap=tg, width=dash_w,
                 )
             self._tripped_line_surfs[line.label] = (surf, ox, oy)
+
+    def _bus_max_loading(self, bus_label: str, state) -> float:
+        """Return max loading_pct of connected in-service lines, or 0 if none."""
+        if state is None:
+            return 0.0
+        best = 0.0
+        for lbl in self._bus_lines.get(bus_label, []):
+            if state.line_status.get(lbl) == 'IN_SERVICE':
+                best = max(best, state.line_loading_pct.get(lbl, 0.0))
+        return best
 
     def rebuild(self, shift: int | None = None) -> None:
         """Re-run __init__ pre-computation after layout overrides change."""
@@ -358,13 +376,15 @@ class GridCanvas:
             bx, by   = self._bus_pos[bus.label]
             blacked  = bus_blacked.get(bus.label, False)
             selected = (selected_label == bus.label)
+            loading  = self._bus_max_loading(bus.label, state)
             if bus.bus_type == 'LOAD':
                 draw_load_substation(target, bx, by,
+                                     loading_pct=loading,
                                      blacked=blacked, selected=selected,
                                      scale=self._scale)
             else:
                 draw_substation(target, bx, by,
-                                voltage_kv=bus.voltage_kv,
+                                loading_pct=loading,
                                 blacked=blacked, selected=selected,
                                 scale=self._scale)
 
@@ -378,9 +398,13 @@ class GridCanvas:
 
             bus_cx, bus_cy = self._bus_pos[bus_lbl]
 
+            station_outputs = [unit_outputs.get(u.label, 0.0) for u in units]
+            station_loading = (sum(station_outputs) / len(station_outputs) * 100.0
+                               if station_outputs else 0.0)
             draw_station_collector(
                 target, positions, bus_cx, bus_cy,
                 voltage_kv=bus.voltage_kv,
+                loading_pct=station_loading,
                 scale=self._scale,
             )
 
@@ -413,7 +437,7 @@ class GridCanvas:
     def _draw_labels(self, surf: pygame.Surface, font_scale: float = 1.0) -> None:
         """Draw bus and station labels at positions offset from symbols."""
         font   = self._font
-        sl     = int(FONT_SIZE_LABEL * font_scale)
+        sl     = int(FONT_SIZE_PANEL * font_scale)
         sc     = self._scale
         loff_x = int(14 * sc)
         loff_y = int(5  * sc)
@@ -424,7 +448,7 @@ class GridCanvas:
             bx, by = self._bus_pos[bus.label]
             lx = bx + loff_x
             ly = by - loff_y
-            font.render_to(surf, (lx, ly), bus.label, COL_TEXT_SECONDARY, size=sl)
+            font.render_to(surf, (lx, ly), bus.label, COL_TEXT_PRIMARY, size=sl)
 
         # Station labels below unit row
         for station_lbl, positions in self._station_pos.items():
@@ -432,4 +456,4 @@ class GridCanvas:
                 continue
             cx = sum(p[0] for p in positions) // len(positions)
             cy = max(p[1] for p in positions) + soff_y
-            font.render_to(surf, (cx - soff_x, cy), station_lbl, COL_TEXT_DIM, size=sl)
+            font.render_to(surf, (cx - soff_x, cy), station_lbl, COL_TEXT_PRIMARY, size=sl)

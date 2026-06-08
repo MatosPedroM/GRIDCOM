@@ -121,7 +121,7 @@ class Renderer:
             pygame.Rect(0, scaled_canvas_h, scaled_w, scaled_strip_h)
         )
 
-        font_path = resource_path('assets/fonts/IBMPlexMono-Regular.ttf')
+        font_path = resource_path('assets/fonts/TerminusTTF-4.49.3.ttf')
         if font_path.exists():
             self._font = pygame.freetype.Font(str(font_path), 11)
         else:

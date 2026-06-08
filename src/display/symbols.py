@@ -17,6 +17,7 @@ from simulation.constants import FONT_SIZE_OVERLAY
 from display.palette import (
     COL_BUS_400KV, COL_BUS_220KV, COL_BUS_150KV, COL_BUS_60KV,
     COL_BUS_BLACKED, COL_BUS_SELECTED,
+    COL_LINE_ENERGISED, COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_HYDRO_PUMP, COL_UNIT_WIND, COL_UNIT_SOLAR,
     COL_UNIT_ONLINE, COL_UNIT_OFFLINE, COL_UNIT_STARTING,
@@ -139,7 +140,7 @@ def draw_substation(
     surf: pygame.Surface,
     cx: int,
     cy: int,
-    voltage_kv: float,
+    loading_pct: float = 0.0,
     blacked: bool = False,
     selected: bool = False,
     scale: float = 1.0,
@@ -148,14 +149,23 @@ def draw_substation(
     Draw a transmission substation symbol: plain square with filled interior.
 
     Args:
-        surf:       Target surface (canvas).
-        cx, cy:     Centre position of the symbol (already scaled).
-        voltage_kv: Nominal voltage — determines colour.
-        blacked:    True if bus is in a blackout zone.
-        selected:   True if this element is selected.
-        scale:      Display scale factor (applied to symbol sizes).
+        surf:        Target surface (canvas).
+        cx, cy:      Centre position of the symbol (already scaled).
+        loading_pct: Max loading % of connected lines — determines colour.
+        blacked:     True if bus is in a blackout zone.
+        selected:    True if this element is selected.
+        scale:       Display scale factor (applied to symbol sizes).
     """
-    col = COL_BUS_BLACKED if blacked else _VOLTAGE_COLOUR.get(voltage_kv, COL_BUS_220KV)
+    if blacked:
+        col = COL_BUS_BLACKED
+    elif loading_pct >= 95.0:
+        col = COL_LOAD_CRIT
+    elif loading_pct >= 80.0:
+        col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
+    elif loading_pct >= 60.0:
+        col = _blend(COL_LINE_ENERGISED, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
+    else:
+        col = COL_LINE_ENERGISED
     border_col = COL_SELECTION if selected else col
 
     sz     = max(4, int(BUS_SIZE * scale))
@@ -177,15 +187,25 @@ def draw_load_substation(
     surf: pygame.Surface,
     cx: int,
     cy: int,
+    loading_pct: float = 0.0,
     blacked: bool = False,
     selected: bool = False,
     scale: float = 1.0,
 ) -> None:
     """
     Draw a load substation symbol: square with downward triangle inside.
-    Always uses 60kV colour.
+    Coloured by load state of connected feeder lines.
     """
-    col = COL_BUS_BLACKED if blacked else COL_BUS_60KV
+    if blacked:
+        col = COL_BUS_BLACKED
+    elif loading_pct >= 95.0:
+        col = COL_LOAD_CRIT
+    elif loading_pct >= 80.0:
+        col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
+    elif loading_pct >= 60.0:
+        col = _blend(COL_LINE_ENERGISED, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
+    else:
+        col = COL_LINE_ENERGISED
     border_col = COL_SELECTION if selected else col
 
     sz   = max(4, int(BUS_SIZE * scale))
@@ -249,15 +269,15 @@ def draw_unit_square(
                                      _dim(type_col, 0.18))
     if unit_state == 'ONLINE':
         border_col = COL_UNIT_ONLINE
-    elif unit_state == 'STARTING':
+    elif unit_state in ('STARTING', 'SHUTDOWN'):
         border_col = COL_UNIT_STARTING if blink_on else COL_UNIT_OFFLINE
-    elif unit_state == 'SHUTDOWN':
-        border_col = COL_UNIT_SHUTDOWN
+    elif unit_state == 'TRIPPED':
+        border_col = COL_UNIT_TRIPPED
     else:
         border_col = COL_UNIT_BORDER
 
     pygame.draw.rect(surf, fill_col, (x, y, sz, sz))
-    border_w = max(1, int(2 * scale)) if selected else 1
+    border_w = max(2, int(4 * scale)) if selected else 2
     border_c = COL_SELECTION if selected else border_col
     pygame.draw.rect(surf, border_c, (x, y, sz, sz), border_w)
 
@@ -276,6 +296,7 @@ def draw_station_collector(
     bus_cx: int,
     bus_cy: int,
     voltage_kv: float,
+    loading_pct: float = 0.0,
     scale: float = 1.0,
 ) -> None:
     """
@@ -288,11 +309,29 @@ def draw_station_collector(
     Args:
         unit_positions:  List of (cx, cy) for each unit square (already scaled).
         bus_cx, bus_cy:  Centre of the host substation bus symbol (already scaled).
-        voltage_kv:      Determines line colour.
+        voltage_kv:      Determines line thickness (same tiers as transmission lines).
+        loading_pct:     Station output as % of rated — determines colour.
         scale:           Display scale factor.
     """
-    col      = _dim(_VOLTAGE_COLOUR.get(voltage_kv, COL_BUS_220KV), 0.6)
-    half_u   = max(2, int(HALF_UNIT * scale))
+    if loading_pct >= 95.0:
+        col = COL_LOAD_CRIT
+    elif loading_pct >= 80.0:
+        col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
+    elif loading_pct >= 60.0:
+        col = _blend(COL_LINE_ENERGISED, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
+    else:
+        col = COL_LINE_ENERGISED
+
+    if voltage_kv == 400.0:
+        w = max(1, int(4 * scale))
+    elif voltage_kv == 220.0:
+        w = max(1, int(3 * scale))
+    elif voltage_kv == 150.0:
+        w = max(1, int(2 * scale))
+    else:
+        w = 1
+
+    half_u = max(2, int(HALF_UNIT * scale))
 
     if not unit_positions:
         return
@@ -307,19 +346,19 @@ def draw_station_collector(
     if len(exits) == 1:
         ex, ey = exits[0]
         if ey != bus_cy:
-            pygame.draw.line(surf, col, (ex, ey), (ex, bus_cy), 1)
+            pygame.draw.line(surf, col, (ex, ey), (ex, bus_cy), w)
         if ex != bus_cx:
-            pygame.draw.line(surf, col, (ex, bus_cy), (bus_cx, bus_cy), 1)
+            pygame.draw.line(surf, col, (ex, bus_cy), (bus_cx, bus_cy), w)
     else:
         leftmost  = min(ex for ex, _ in exits)
         rightmost = max(ex for ex, _ in exits)
         coll_y    = exits[0][1]
-        pygame.draw.line(surf, col, (leftmost, coll_y), (rightmost, coll_y), 1)
+        pygame.draw.line(surf, col, (leftmost, coll_y), (rightmost, coll_y), w)
         mid_x = (leftmost + rightmost) // 2
         if coll_y != bus_cy:
-            pygame.draw.line(surf, col, (mid_x, coll_y), (mid_x, bus_cy), 1)
+            pygame.draw.line(surf, col, (mid_x, coll_y), (mid_x, bus_cy), w)
         if mid_x != bus_cx:
-            pygame.draw.line(surf, col, (mid_x, bus_cy), (bus_cx, bus_cy), 1)
+            pygame.draw.line(surf, col, (mid_x, bus_cy), (bus_cx, bus_cy), w)
 
 
 # ─────── INTERCONNECTOR MARKER ───────────────────────────────────────────────

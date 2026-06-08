@@ -21,17 +21,19 @@ _LAYOUT_PATH: Path = resource_path('assets/layout.json')
 
 _bus_overrides:     dict[str, tuple[int, int]] = {}
 _station_overrides: dict[str, tuple[int, int]] = {}
+_label_anchors:     dict[str, str]             = {}   # label → 'top'|'right'|'bottom'|'left'
 
 
 def load_layout() -> None:
     """Load layout.json if it exists. Safe to call at startup."""
-    global _bus_overrides, _station_overrides
+    global _bus_overrides, _station_overrides, _label_anchors
     if not _LAYOUT_PATH.exists():
         return
     try:
         data = json.loads(_LAYOUT_PATH.read_text(encoding='utf-8'))
         _bus_overrides     = {k: (int(v[0]), int(v[1])) for k, v in data.get('buses', {}).items()}
         _station_overrides = {k: (int(v[0]), int(v[1])) for k, v in data.get('stations', {}).items()}
+        _label_anchors     = {k: str(v) for k, v in data.get('label_anchors', {}).items()}
     except Exception:
         pass
 
@@ -56,11 +58,22 @@ def set_station_pos(label: str, x: int, y: int) -> None:
     _station_overrides[label] = (x, y)
 
 
+def get_label_anchor(label: str) -> str:
+    """Return label anchor for element, defaulting to 'right'."""
+    return _label_anchors.get(label, 'right')
+
+
+def set_label_anchor(label: str, anchor: str) -> None:
+    """Update in-memory label anchor for a bus or station."""
+    _label_anchors[label] = anchor
+
+
 def save_layout() -> None:
     """Write current overrides to layout.json."""
     data = {
-        'buses':    {k: list(v) for k, v in _bus_overrides.items()},
-        'stations': {k: list(v) for k, v in _station_overrides.items()},
+        'buses':         {k: list(v) for k, v in _bus_overrides.items()},
+        'stations':      {k: list(v) for k, v in _station_overrides.items()},
+        'label_anchors': dict(_label_anchors),
     }
     _LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     _LAYOUT_PATH.write_text(json.dumps(data, indent=2), encoding='utf-8')

@@ -44,6 +44,7 @@ from display.symbols import (
     _draw_dashed_line,
 )
 from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC
+from data.layout_override import get_label_anchor
 from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL, FONT_SIZE_PANEL, NATIVE_WIDTH
 from utils.helpers import resource_path
 
@@ -371,7 +372,25 @@ class GridCanvas:
         # ── Layer 5: Hydraulic connectors (pre-baked, blit once) ──────────────
         target.blit(self._hydraulic_surf, (0, 0))
 
-        # ── Layer 6: Substation symbols ────────────────────────────────────────
+        # ── Layer 6: Station collector lines ──────────────────────────────────
+        for sl, units in self._station_units.items():
+            positions = self._station_pos[sl]
+            bus_lbl   = units[0].bus_label
+            bus       = self._bus_map.get(bus_lbl)
+            if bus is None:
+                continue
+            bus_cx, bus_cy = self._bus_pos[bus_lbl]
+            station_outputs = [unit_outputs.get(u.label, 0.0) for u in units]
+            station_loading = (sum(station_outputs) / len(station_outputs) * 100.0
+                               if station_outputs else 0.0)
+            draw_station_collector(
+                target, positions, bus_cx, bus_cy,
+                voltage_kv=bus.voltage_kv,
+                loading_pct=station_loading,
+                scale=self._scale,
+            )
+
+        # ── Layer 7: Substation symbols ────────────────────────────────────────
         for bus in self._buses:
             bx, by   = self._bus_pos[bus.label]
             blacked  = bus_blacked.get(bus.label, False)
@@ -388,26 +407,9 @@ class GridCanvas:
                                 blacked=blacked, selected=selected,
                                 scale=self._scale)
 
-        # ── Layer 7: Generation unit squares + collectors ──────────────────────
+        # ── Layer 8: Generation unit squares ──────────────────────────────────
         for sl, units in self._station_units.items():
             positions = self._station_pos[sl]
-            bus_lbl   = units[0].bus_label
-            bus       = self._bus_map.get(bus_lbl)
-            if bus is None:
-                continue
-
-            bus_cx, bus_cy = self._bus_pos[bus_lbl]
-
-            station_outputs = [unit_outputs.get(u.label, 0.0) for u in units]
-            station_loading = (sum(station_outputs) / len(station_outputs) * 100.0
-                               if station_outputs else 0.0)
-            draw_station_collector(
-                target, positions, bus_cx, bus_cy,
-                voltage_kv=bus.voltage_kv,
-                loading_pct=station_loading,
-                scale=self._scale,
-            )
-
             for unit, (ux, uy) in zip(units, positions):
                 u_state  = unit_states.get(unit.label, 'OFFLINE')
                 u_frac   = unit_outputs.get(unit.label, 0.0)
@@ -435,25 +437,47 @@ class GridCanvas:
     # ─── Label drawing ────────────────────────────────────────────────────────
 
     def _draw_labels(self, surf: pygame.Surface, font_scale: float = 1.0) -> None:
-        """Draw bus and station labels at positions offset from symbols."""
-        font   = self._font
-        sl     = int(FONT_SIZE_PANEL * font_scale)
-        sc     = self._scale
-        loff_x = int(14 * sc)
-        loff_y = int(5  * sc)
-        soff_y = int(16 * sc)
-        soff_x = int(12 * sc)
+        """Draw bus and station labels at anchor-relative positions."""
+        font = self._font
+        sl   = int(FONT_SIZE_PANEL * font_scale)
+        sc   = self._scale
+        off  = int(16 * sc)   # distance from symbol centre to text edge
 
         for bus in self._buses:
             bx, by = self._bus_pos[bus.label]
-            lx = bx + loff_x
-            ly = by - loff_y
-            font.render_to(surf, (lx, ly), bus.label, COL_TEXT_PRIMARY, size=sl)
+            self._render_anchored(surf, font, bus.label, bx, by, sl, off)
 
-        # Station labels below unit row
         for station_lbl, positions in self._station_pos.items():
             if not positions:
                 continue
             cx = sum(p[0] for p in positions) // len(positions)
-            cy = max(p[1] for p in positions) + soff_y
-            font.render_to(surf, (cx - soff_x, cy), station_lbl, COL_TEXT_PRIMARY, size=sl)
+            cy = sum(p[1] for p in positions) // len(positions)
+            self._render_anchored(surf, font, station_lbl, cx, cy, sl, off)
+
+    def _render_anchored(
+        self,
+        surf: pygame.Surface,
+        font,
+        label: str,
+        cx: int,
+        cy: int,
+        size: int,
+        off: int,
+    ) -> None:
+        """Render a 4-char label at the anchor position relative to (cx, cy)."""
+        anchor = get_label_anchor(label)
+        rect   = font.get_rect(label, size=size)
+        w, h   = rect.width, rect.height
+        if anchor == 'top':
+            lx = cx - w // 2
+            ly = cy - off - h
+        elif anchor == 'bottom':
+            lx = cx - w // 2
+            ly = cy + off
+        elif anchor == 'left':
+            lx = cx - off - w
+            ly = cy - h // 2
+        else:  # right (default)
+            lx = cx + off
+            ly = cy - h // 2
+        font.render_to(surf, (lx, ly), label, COL_TEXT_PRIMARY, size=size)

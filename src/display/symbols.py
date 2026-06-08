@@ -15,6 +15,7 @@ import pygame
 
 from simulation.constants import FONT_SIZE_OVERLAY
 from display.palette import (
+    COL_BACKGROUND,
     COL_BUS_400KV, COL_BUS_220KV, COL_BUS_150KV, COL_BUS_60KV,
     COL_BUS_BLACKED, COL_BUS_SELECTED,
     COL_LINE_ENERGISED, COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
@@ -170,16 +171,11 @@ def draw_substation(
 
     sz     = max(4, int(BUS_SIZE * scale))
     half   = sz // 2
-    inset  = max(1, int(4 * scale))
     border = max(1, int(2 * scale))
     x = cx - half
     y = cy - half
 
-    if not blacked:
-        fill_col = _dim(col, 0.20)
-        pygame.draw.rect(surf, fill_col,
-                         (x + inset, y + inset, sz - inset * 2, sz - inset * 2))
-
+    pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
     pygame.draw.rect(surf, border_col, (x, y, sz, sz), border)
 
 
@@ -213,6 +209,7 @@ def draw_load_substation(
     x = cx - half
     y = cy - half
 
+    pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
     pygame.draw.rect(surf, border_col, (x, y, sz, sz), 1)
 
     if not blacked:
@@ -221,13 +218,12 @@ def draw_load_substation(
         ty = y + inset
         tw = sz - inset * 2
         th = sz - inset * 2
-        dim_col = _dim(COL_LOAD_SUB, 0.70)
         pts = [
             (tx,           ty),
             (tx + tw,      ty),
             (tx + tw // 2, ty + th),
         ]
-        pygame.draw.polygon(surf, dim_col, pts)
+        pygame.draw.polygon(surf, COL_LOAD_SUB, pts)
 
 
 # ─────── GENERATION UNIT SQUARE ──────────────────────────────────────────────
@@ -263,10 +259,6 @@ def draw_unit_square(
     x = cx - half
     y = cy - half
 
-    # Fill colour from pre-computed cache; border determined by state
-    state_key = unit_state if unit_state in ('ONLINE', 'STARTING', 'SHUTDOWN') else 'OFFLINE'
-    fill_col  = _UNIT_FILL_CACHE.get((unit_type, state_key),
-                                     _dim(type_col, 0.18))
     if unit_state == 'ONLINE':
         border_col = COL_UNIT_ONLINE
     elif unit_state in ('STARTING', 'SHUTDOWN'):
@@ -276,7 +268,7 @@ def draw_unit_square(
     else:
         border_col = COL_UNIT_BORDER
 
-    pygame.draw.rect(surf, fill_col, (x, y, sz, sz))
+    pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
     border_w = max(2, int(4 * scale)) if selected else 2
     border_c = COL_SELECTION if selected else border_col
     pygame.draw.rect(surf, border_c, (x, y, sz, sz), border_w)

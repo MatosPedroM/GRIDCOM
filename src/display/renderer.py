@@ -820,6 +820,10 @@ class Renderer:
         """Save current layout overrides to layout.json."""
         self._editor.save()
 
+    def editor_key_r(self) -> None:
+        """Rotate label anchor for the hovered element in edit mode."""
+        self._editor.on_key_r()
+
     def rebuild_canvas(self) -> None:
         """Reconstruct GridCanvas after layout changes."""
         self._canvas.rebuild()

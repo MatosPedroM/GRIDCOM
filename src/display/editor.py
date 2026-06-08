@@ -23,6 +23,7 @@ from data.layout_override import (
     get_bus_pos, get_station_pos,
     set_bus_pos, set_station_pos,
     save_layout,
+    get_label_anchor, set_label_anchor,
 )
 from display.palette import (
     COL_TEXT_PRIMARY, COL_EDITOR_LABEL, COL_EDITOR_DIRTY, COL_EDITOR_CLEAN,
@@ -31,6 +32,7 @@ from display.palette import (
 from simulation.constants import FONT_SIZE_OVERLAY, CANVAS_HEIGHT
 
 _HIT_RADIUS: int = 14   # px — hit-test radius in physical pixel space
+_ANCHOR_CYCLE: tuple[str, ...] = ('top', 'right', 'bottom', 'left')
 
 
 class GridEditor:
@@ -115,6 +117,17 @@ class GridEditor:
         self._dragging = None
         self._canvas.rebuild()
 
+    def on_key_r(self) -> None:
+        """Rotate label anchor clockwise for the hovered (or dragged) element."""
+        label = self._hover_label or self._dragging
+        if label is None:
+            return
+        current = get_label_anchor(label)
+        idx = _ANCHOR_CYCLE.index(current) if current in _ANCHOR_CYCLE else 1
+        set_label_anchor(label, _ANCHOR_CYCLE[(idx + 1) % 4])
+        self._dirty = True
+        self._canvas.rebuild()
+
     def save(self) -> None:
         save_layout()
         self._dirty = False
@@ -140,7 +153,8 @@ class GridEditor:
             pygame.draw.circle(surf, COL_EDITOR_HIGHLIGHT, (dx, dy), _HIT_RADIUS, 2)
             lx = int(dx / self._scale)
             ly = int(dy / self._scale)
-            info = f'{self._dragging}  {lx},{ly}'
+            anchor = get_label_anchor(self._dragging)
+            info = f'{self._dragging}  {lx},{ly}  [{anchor}]'
             font.render_to(surf, (4, 18), info, COL_EDITOR_LABEL, size=FONT_SIZE_OVERLAY)
 
     # ─── Internals ────────────────────────────────────────────────────────────

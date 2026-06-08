@@ -538,6 +538,9 @@ def main() -> None:
                     elif event.key == pygame.K_s and _const.EDITOR_MODE:
                         renderer.save_layout()
 
+                    elif event.key == pygame.K_r and _const.EDITOR_MODE:
+                        renderer.editor_key_r()
+
                     elif (event.key == pygame.K_s and not _const.EDITOR_MODE
                           and not renderer._input_active):
                         renderer.on_start_unit(sim)

@@ -206,6 +206,7 @@ class GridSimulation:
         difficulty: str,
         initial_schedule: dict | None = None,
         maintenance_units: set | None = None,
+        maintenance_lines: set | None = None,
         substation_load_mw: dict | None = None,
     ) -> None:
         self._grid         = grid
@@ -239,6 +240,14 @@ class GridSimulation:
         self._line_in_service: dict = {
             l.label: True for l in grid.get_active_lines()
         }
+        self._maintenance_lines: frozenset = frozenset(maintenance_lines or set())
+        for _label in self._maintenance_lines:
+            if _label in self._line_in_service:
+                self._line_in_service[_label] = False
+        if self._maintenance_lines:
+            _in_service = self._get_in_service_lines()
+            self._loadflow.rebuild(_in_service)
+            self._voltage.rebuild(_in_service)
 
         # Overload timer state (owned here, passed to CascadeModel each tick)
         self._overload_timers: dict = {}

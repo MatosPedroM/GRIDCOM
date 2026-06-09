@@ -44,8 +44,8 @@ SHIFT_SPECS: dict[int, ShiftSpec] = {
 
     1:  ShiftSpec(shift_number=1,  start_hour=4.0,  duration_hours=3.0,  grid_size=3,  has_phase1=False, peak_demand_mw=55.0),
     2:  ShiftSpec(shift_number=2,  start_hour=10.0, duration_hours=4.0,  grid_size=3,  has_phase1=False, peak_demand_mw=315.0),
-    3:  ShiftSpec(shift_number=3,  start_hour=14.0, duration_hours=6.0,  grid_size=20, has_phase1=False, peak_demand_mw=3800.0),
-    4:  ShiftSpec(shift_number=4,  start_hour=20.0, duration_hours=8.0,  grid_size=20, has_phase1=False, peak_demand_mw=3200.0),
+    3:  ShiftSpec(shift_number=3,  start_hour=14.0, duration_hours=6.0,  grid_size=10, has_phase1=False, peak_demand_mw=1930.0),
+    4:  ShiftSpec(shift_number=4,  start_hour=20.0, duration_hours=8.0,  grid_size=28, has_phase1=False, peak_demand_mw=3200.0),
     5:  ShiftSpec(shift_number=5,  start_hour=6.0,  duration_hours=8.0,  grid_size=32, has_phase1=True,  peak_demand_mw=5800.0),
     6:  ShiftSpec(shift_number=6,  start_hour=12.0, duration_hours=8.0,  grid_size=32, has_phase1=True,  peak_demand_mw=6200.0),
     7:  ShiftSpec(shift_number=7,  start_hour=6.0,  duration_hours=10.0, grid_size=32, has_phase1=True,  peak_demand_mw=7200.0),

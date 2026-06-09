@@ -20,6 +20,7 @@ def load_shift_config(shift_number: int) -> dict:
         handover_notes      tuple[str, ...]           — bulletin lines shown at shift start
         initial_schedule    dict[str, float]          — unit label -> MW at handover
         maintenance_units   set[str]                  — units locked on planned maintenance
+        maintenance_lines   set[str]                  — lines that start the shift electrically open
         agc_enabled         bool                      — whether AGC is active at shift start
         substation_load_mw  dict[str, dict[float, float]] — per-bus hourly load table (MW)
     """
@@ -30,6 +31,7 @@ def load_shift_config(shift_number: int) -> dict:
         'handover_notes':     getattr(mod, 'HANDOVER_NOTES',     ()),
         'initial_schedule':   getattr(mod, 'INITIAL_SCHEDULE',   {}),
         'maintenance_units':  getattr(mod, 'MAINTENANCE_UNITS',  set()),
+        'maintenance_lines':  getattr(mod, 'MAINTENANCE_LINES',  set()),
         'agc_enabled':        getattr(mod, 'AGC_ENABLED',        False),
         'substation_load_mw': getattr(mod, 'SUBSTATION_LOAD_MW', {}),
     }

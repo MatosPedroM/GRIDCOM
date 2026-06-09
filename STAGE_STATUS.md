@@ -14,6 +14,33 @@
 
 ## Session Log
 
+### Session 27 (Shift 3 Design — N-1 Redundancy)
+- Designed Shift 3 as a 10-bus intermediate grid teaching N-1 security (L09 planned maintenance at 16:00)
+- Edited: `src/data/topology.py` — deferred EAST, WEST, RDST, COAL, DUNM, KELM, BARR, BARD, KELD, WNCN, ASHG, BRCK, BR01-BR03, LD06 from Shift 3→4; deferred associated lines (L07, L11, L14-L18, L21, L22, L25, L28, L30, L31, L37, L42-L45) from Shift 3→4; fixed L23 (FLDN→STAN) from Shift 3→5 (FLDN is Shift 5); upgraded L38 (STAN→LD02) from 400→1200 MW; removed `active_until_shift=2` from L46, L47, L48 (now permanent); updated docstring, bus section comments
+- Edited: `src/data/fleet.py` — ASHG-1, ASHG-2: `bus_label` 'ASHG'→'ASHF' (ASHG bus deferred to Shift 4; units connect at ASHF 220kV bus in Shift 3)
+- Edited: `src/data/profiles.py` — ShiftSpec[3]: grid_size 20→10, peak_demand_mw 3800→1480; ShiftSpec[4]: grid_size 20→28
+- Written: `src/gameplay/shifts/shift_03.py` — full scenario: HART-1 680 MW baseload, L09 opens 16:00 (MAINTENANCE_LINES action), WRNG-1 key redispatch tool, SLST-1 declining solar; MAINTENANCE_LINES = {'L48'} (L48 must be opened at shift init to prevent DUND→LD02 shortcut); scripted events T+0/+60/+90/+120/+300; SCORING_HOOKS for N-1 bonus and ring congestion penalty
+
+Shift 3 active set (10 buses, 10 lines):
+  Buses: MDBY, CNTR, STHW (400kV) | ASHF, FAIR, WRNT, SLST, WRNG (220kV) | STAN, LD02 (150kV)
+  Lines: L01, L06, L08, L09, L12, L13, L19, L20, L29, L38 (+ L46/L47 visible, L48 open)
+
+MAINTENANCE_LINES implementation complete (Session 28):
+  L48 is opened before the first load-flow solve in Shift 3 via the new MAINTENANCE_LINES mechanism.
+
+### Session 28 (MAINTENANCE_LINES implementation)
+- Edited: `src/gameplay/shifts/loader.py` — added `'maintenance_lines': getattr(mod, 'MAINTENANCE_LINES', set())` to `load_shift_config()` return dict
+- Edited: `src/main.py` — added `maintenance_lines=cfg['maintenance_lines']` to `GridSimulation()` call in `_make_sim_and_renderer()`
+- Edited: `src/simulation/simulation.py` — added `maintenance_lines: set | None = None` parameter to `GridSimulation.__init__`; after `_line_in_service` is built, stores as `_maintenance_lines` frozenset, applies to `_line_in_service`, and calls `_loadflow.rebuild()` + `_voltage.rebuild()` before `_solve_and_snapshot()`; rebuild is guarded by `if self._maintenance_lines:` to skip on shifts with no maintenance lines
+- Validated: 9/9 tests pass
+
+### Session 29 (Shift 3 — four playtesting corrections)
+- Edited: `src/data/topology.py` — L29 (SLST→STAN) rating_mw 500→700 (was overloaded by SLST-1's 576 MW solar output at 14:00); L47 (DUND→LD01) rating_mw 200→500 (LD01 now carries 350–450 MW in Shift 3)
+- Edited: `src/data/profiles.py` — ShiftSpec[3]: peak_demand_mw 1480→1930 (combined LD01+LD02 peak)
+- Rewritten: `src/gameplay/shifts/shift_03.py` — INITIAL_SCHEDULE: added DUND-1 (30 MW), DUNH-1 (80 MW), reduced RVSD-2 90→50 MW; AGC_ENABLED: False→True; SUBSTATION_LOAD_MW: added LD01 profile (350 MW at 14:00, peaking 450 MW at 18:00); HANDOVER_NOTES updated to reflect actual SLST-1 output (~576 MW), new hydro units, LD01 load, AGC active
+- Root cause of "L40 trips": L40 (STAN→LD04, active_from_shift=5) is inactive in Shift 3. Actual culprit was L29 overloaded by solar. Fixed by L29 rating upgrade and LD01 load addition.
+- Validated: 9/9 tests pass
+
 ### Session 26 (Shift 1-2 Tutorial Grid Topology Redesign)
 - Edited: `src/data/topology.py` — L46 rating 300→500 MW (400kV standard); L47 changed from 150kV/350MW/0.120pu to 220kV/200MW/0.080pu; new L48 added (DUND→LD02, 220kV, 200MW, 0.080pu, active_until_shift=2); LD02 active_from_shift 3→1; module docstring and section comments updated
 - Edited: `src/data/profiles.py` — Shift 2 demand split 55%/45% between LD01 (peak 173MW) and LD02 (peak 142MW); total unchanged at 315MW peak
@@ -228,7 +255,8 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
   Grid sizes by shift:
     Shift 1:  4 buses,  3 lines,  6 active units (tutorial)
     Shift 2:  4 buses,  3 lines, 11 units
-    Shift 3: 28 buses, 29 lines, 29 units
+    Shift 3: 10 buses, 10 lines,  7 active units (N-1 lesson)
+    Shift 4: 28 buses, 29 lines, 29 units
     Shift 5: 40 buses, 45 lines, 47 units
 
 STAGE 2 — DC LOAD FLOW SOLVER (complete, validated)
@@ -411,7 +439,20 @@ None at this stage. All architectural decisions are locked in the reference docu
 
 ## Known Issues
 
-None.
+**Pre-existing test regressions (3/9 failing before this session, unchanged):**
+- `test_grid_loads` (demand query) and `test_demand_model`: `grid.py:175` calls
+  `get_substation_demand_specs(self._shift_number)` with an int, but the function
+  expects a dict. Root cause: a prior commit moved `SUBSTATION_LOAD_MW` from
+  `profiles.py` to individual shift files without updating `grid.py`. Requires
+  `grid.py.get_load_at_bus()` to import and query the correct shift module.
+- `test_cascade_model` (split network): pre-existing topology issue unrelated to Shift 3.
+
+**MAINTENANCE_LINES not yet implemented in campaign code.**
+shift_03.py defines `MAINTENANCE_LINES = {'L48'}`. The campaign initialisation (campaign.py or
+GridSimulation.__init__) must read this field and open those lines before the first load-flow
+solve. Without it, L48 (DUND→LD02, reactance 0.105 pu) forms a shortcut that routes ~80% of
+LD02 demand directly from MDBY via DUND, bypassing L09 and making the N-1 scenario unplayable.
+This must be resolved before Shift 3 is tested.
 
 ---
 

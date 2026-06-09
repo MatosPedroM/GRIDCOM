@@ -194,7 +194,8 @@ def _make_sim_and_renderer(
     grid     = Grid(shift)
     sim      = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
                               initial_schedule=cfg['initial_schedule'],
-                              maintenance_units=cfg['maintenance_units'])
+                              maintenance_units=cfg['maintenance_units'],
+                              maintenance_lines=cfg['maintenance_lines'])
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
     renderer.set_grid(grid)

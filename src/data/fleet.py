@@ -125,8 +125,10 @@ UNITS: list[GenerationUnit] = [
         description='Hartwell Nuclear Unit 2 — 700MW, 400kV. Baseload, always online.'),
 
     # ── ASHFORD CCGT — ASHG (2×400MW, 220kV, bus ASHG) ───────────────────
+    # bus_label='ASHF' in Shifts 3 (ASHG bus deferred to Shift 4; units connect
+    # at the ASHF 220kV bus directly until the dedicated ASHG bus is commissioned).
     GenerationUnit(
-        label='ASHG-1', station_label='ASHG', bus_label='ASHG',
+        label='ASHG-1', station_label='ASHG', bus_label='ASHF',
         unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
         ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
         q_max_mvar=180.0, q_min_mvar=-100.0,
@@ -134,7 +136,7 @@ UNITS: list[GenerationUnit] = [
         description='Ashford CCGT Unit 1 — 400MW, 220kV. Medium ramp.'),
 
     GenerationUnit(
-        label='ASHG-2', station_label='ASHG', bus_label='ASHG',
+        label='ASHG-2', station_label='ASHG', bus_label='ASHF',
         unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
         ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
         q_max_mvar=180.0, q_min_mvar=-100.0,

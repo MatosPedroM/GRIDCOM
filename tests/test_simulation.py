@@ -281,8 +281,9 @@ def test_loadflow_solves() -> bool:
         #   P_AC = (theta_A - theta_C)/X_AC = (0-(-0.01))/0.1 = 0.1 pu = 100 MW
 
         try:
-            # Use tutorial Grid(1): MDBY→DUND (L46), DUND→LD01 (L47), DUND→LD02 (L48).
-            g1 = Grid(1)
+            # Use Grid(2): L48 activates from Shift 2 (same shift as LD02).
+            # Grid(2) has MDBY→DUND (L46), DUND→LD01 (L47), DUND→LD02 (L48).
+            g1 = Grid(2)
             lf = DCLoadFlow(g1)
 
             # Generation at MDBY (slack), load split across LD01 and LD02.

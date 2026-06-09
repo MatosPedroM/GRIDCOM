@@ -135,6 +135,7 @@ class SimulationState:
     unit_q_injections_mvar:  dict
     unit_start_progress:     dict
     unit_bus_types:          dict
+    unit_maintenance:        frozenset   # labels of units on planned maintenance
     reservoir_levels:        dict
     pumped_storage_modes:    dict
 
@@ -203,6 +204,7 @@ class GridSimulation:
         shift_number: int,
         difficulty: str,
         initial_schedule: dict | None = None,
+        maintenance_units: set | None = None,
     ) -> None:
         self._grid         = grid
         self._shift_number = shift_number
@@ -216,7 +218,7 @@ class GridSimulation:
         self._loadflow   = DCLoadFlow(grid)
         self._voltage    = VoltageModel(grid)
         self._frequency  = FrequencyModel()
-        self._fleet      = FleetModel(grid, initial_schedule or {})
+        self._fleet      = FleetModel(grid, initial_schedule or {}, maintenance_units)
         self._demand     = DemandModel(spec)
         self._renewables = RenewablesModel(grid)
         self._cascade    = CascadeModel()
@@ -1153,6 +1155,7 @@ class GridSimulation:
             unit_q_injections_mvar=snap['q_injections_mvar'],
             unit_start_progress=snap['start_progress'],
             unit_bus_types=snap['bus_types'],
+            unit_maintenance=self._fleet.get_maintenance_units(),
             reservoir_levels={},
             pumped_storage_modes={},
 

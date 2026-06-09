@@ -13,9 +13,15 @@ Narrative:
 from __future__ import annotations
 
 
+SHIFT_DATE: str = 'MON 07 NOV 1994'
+
+MAINTENANCE_UNITS: set[str] = {'RVSD-2', 'RVSD-3', 'DUND-2'}
+
+AGC_ENABLED: bool = True
+
 # Starting dispatch — units absent from this dict start OFFLINE.
 INITIAL_SCHEDULE: dict[str, float] = {
-    'RVSD-1': 90.0,   # Riverside Coal 1 — technical minimum (90 MW)
+    'RVSD-1': 200.0,   # Riverside Coal 1 — 200 MW at handover
     'DUND-1': 40.0,   # Dunmore Lower 1  — AGC, regulating
     # RVSD-3 absent → OFFLINE (relay maintenance, carried over from Shift 1)
     # DUND-2 absent → OFFLINE (planned maintenance outage)

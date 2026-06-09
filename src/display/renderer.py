@@ -262,7 +262,10 @@ class Renderer:
             return
         if sim.get_state() is None:
             return
-        if sim.get_state().unit_states.get(unit.label) != 'OFFLINE':
+        state = sim.get_state()
+        if state.unit_states.get(unit.label) != 'OFFLINE':
+            return
+        if unit.label in state.unit_maintenance:
             return
         sim.start_unit(unit.label)
         self._cmd_active = False
@@ -734,6 +737,7 @@ class Renderer:
                 blink_on=self._blink_on,
                 cmd_active=self._cmd_active,
                 font_scale=_fs,
+                is_maintenance=selected_unit.label in state.unit_maintenance,
             )
             native_changed = True
         elif self._selected_label is not None:

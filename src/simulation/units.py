@@ -109,6 +109,7 @@ class UnitModel:
 
         self._start_timer_min: float = 0.0   # simulated minutes elapsed since STARTING
         self._q_injection_mvar: float = 0.0
+        self._maintenance: bool = False
 
     # ─────── READ-ONLY PROPERTIES ─────────────────────────────────────────
 
@@ -144,6 +145,13 @@ class UnitModel:
         return self._is_renewable
 
     @property
+    def is_maintenance(self) -> bool:
+        return self._maintenance
+
+    def set_maintenance(self, flag: bool) -> None:
+        self._maintenance = flag
+
+    @property
     def inertia_contribution(self) -> tuple[str, float]:
         """Returns (unit_type, current_mw) for FrequencyModel inertia calculation.
         Returns (unit_type, 0.0) when not ONLINE — no inertia contribution."""
@@ -162,6 +170,8 @@ class UnitModel:
             False if unit is not OFFLINE (already running or starting).
         """
         if self._is_renewable:
+            return False
+        if self._maintenance:
             return False
         if self._state != 'OFFLINE':
             return False
@@ -350,23 +360,29 @@ class FleetModel:
         self,
         grid,
         initial_schedule: dict[str, float] | None = None,
+        maintenance_units: set[str] | None = None,
     ) -> None:
         """
         Build unit models from the grid's active fleet.
 
         Args:
-            grid:             Grid object for the active shift.
-            initial_schedule: {unit_label: initial_mw} starting dispatch.
-                              Units in the schedule start ONLINE at the given MW.
-                              Units not in the schedule start OFFLINE
-                              (except renewables, which always start ONLINE).
+            grid:              Grid object for the active shift.
+            initial_schedule:  {unit_label: initial_mw} starting dispatch.
+                               Units in the schedule start ONLINE at the given MW.
+                               Units not in the schedule start OFFLINE
+                               (except renewables, which always start ONLINE).
+            maintenance_units: Set of unit labels that are on planned maintenance
+                               and cannot be started by the player this shift.
         """
-        initial_schedule = initial_schedule or {}
+        initial_schedule  = initial_schedule  or {}
+        maintenance_units = maintenance_units or set()
         self._units: dict[str, UnitModel] = {}
 
         for spec in grid.get_active_units():
             initial_mw = initial_schedule.get(spec.label)
             model = UnitModel(spec, initial_mw=initial_mw)
+            if spec.label in maintenance_units:
+                model.set_maintenance(True)
             self._units[spec.label] = model
 
     # ─────── TICK ─────────────────────────────────────────────────────────
@@ -603,3 +619,7 @@ class FleetModel:
                 'bus_type': 'PV',  # PQ conversion is set by voltage model
             }
         return snapshot
+
+    def get_maintenance_units(self) -> frozenset[str]:
+        """Return frozenset of unit labels currently flagged as on maintenance."""
+        return frozenset(lbl for lbl, m in self._units.items() if m.is_maintenance)

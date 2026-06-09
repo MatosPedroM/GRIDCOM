@@ -19,7 +19,7 @@ from display.palette import (
     COL_TEXT_PRIMARY, COL_TEXT_VALUE, COL_TEXT_DIM, COL_TEXT_HEADING,
     COL_UNIT_ONLINE, COL_UNIT_STARTING, COL_UNIT_SHUTDOWN, COL_UNIT_OFFLINE,
     COL_CONTEXT_FIELD_BG, COL_CONTEXT_FIELD_ACTIVE, COL_CONTEXT_CURSOR,
-    COL_ALARM_CRIT,
+    COL_ALARM_CRIT, COL_ALARM_WARN,
     COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT, COL_LINE_TRIPPED,
 )
 from simulation.constants import (
@@ -38,17 +38,18 @@ _STATE_COL: dict[str, tuple] = {
 
 
 def draw_unit_context(
-    surf:         pygame.Surface,
-    font:         pygame.freetype.Font,
+    surf:           pygame.Surface,
+    font:           pygame.freetype.Font,
     unit,
-    unit_state:   str,
-    output_mw:    float,
-    target_mw:    float,
-    input_buffer: str,
-    input_active: bool,
-    blink_on:     bool,
-    cmd_active:   bool  = False,
-    font_scale:   float = 1.0,
+    unit_state:     str,
+    output_mw:      float,
+    target_mw:      float,
+    input_buffer:   str,
+    input_active:   bool,
+    blink_on:       bool,
+    cmd_active:     bool  = False,
+    font_scale:     float = 1.0,
+    is_maintenance: bool  = False,
 ) -> None:
     """
     Draw the unit context panel at the top-left of the canvas surface.
@@ -78,13 +79,14 @@ def draw_unit_context(
     is_dispatchable = unit_state in ('ONLINE', 'STARTING', 'SHUTDOWN')
     is_renewable    = unit.unit_type in ('WIND', 'SOLAR')
 
-    show_start      = unit_state == 'OFFLINE' and not is_renewable
+    show_start      = unit_state == 'OFFLINE' and not is_renewable and not is_maintenance
     show_stop       = unit_state == 'ONLINE'  and not is_renewable
     show_transition = unit_state in ('STARTING', 'SHUTDOWN') and not is_renewable
+    show_maintenance = is_maintenance and unit_state == 'OFFLINE'
 
     if is_dispatchable:
         n_rows = 4
-    elif show_start or show_transition:
+    elif show_start or show_transition or show_maintenance:
         n_rows = 3
     else:
         n_rows = 2
@@ -165,7 +167,10 @@ def draw_unit_context(
         font.render_to(surf, (x + pad, _ry(1)),
                        '(unit not dispatchable)', COL_TEXT_DIM, size=sz)
 
-        if show_start:
+        if show_maintenance:
+            font.render_to(surf, (x + pad, _ry(2)),
+                           'PLANNED MAINTENANCE', COL_ALARM_WARN, size=sz)
+        elif show_start:
             _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(2),
                           show_start=True, show_stop=False,
                           show_transition=False,

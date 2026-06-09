@@ -50,6 +50,7 @@ from display.menus import (
 )
 from data.layout_override import load_layout
 from data.profiles import SHIFT_SPECS
+from gameplay.shifts.loader import load_shift_config
 from simulation.grid import Grid
 from simulation.simulation import GridSimulation
 from simulation.constants import (
@@ -79,21 +80,6 @@ class GameState(Enum):
     CAMPAIGN_END      = 'campaign_end'
 
 
-# ─── Fictional shift dates ────────────────────────────────────────────────────
-
-_SHIFT_DATES: dict[int, str] = {
-    1:  'MON 07 NOV 1994',
-    2:  'MON 07 NOV 1994',
-    3:  'MON 07 NOV 1994',
-    4:  'MON 07 NOV 1994',
-    5:  'TUE 08 NOV 1994',
-    6:  'TUE 08 NOV 1994',
-    7:  'WED 09 NOV 1994',
-    8:  'WED 09 NOV 1994',
-    9:  'THU 10 NOV 1994',
-    10: 'THU 10 NOV 1994',
-}
-
 _SEP = '═' * 64
 
 
@@ -115,7 +101,7 @@ def build_briefing_lines(spec) -> list:
     """Return list of (text, colour) pairs for the pre-shift briefing screen."""
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
-    date_str = _SHIFT_DATES.get(spec.shift_number, 'MON 07 NOV 1994')
+    date_str = load_shift_config(spec.shift_number).get('shift_date', 'MON 07 NOV 1994')
     lines = [
         (_SEP, H),
         (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', H),
@@ -143,7 +129,7 @@ def build_debrief_lines(spec, state) -> list:
     """Return list of (text, colour) pairs for the end-of-shift report screen."""
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
-    date_str = _SHIFT_DATES.get(spec.shift_number, 'MON 07 NOV 1994')
+    date_str = load_shift_config(spec.shift_number).get('shift_date', 'MON 07 NOV 1994')
     dur_h = int(spec.duration_hours)
     dur_m = int((spec.duration_hours % 1) * 60)
     trips  = sum(1 for s in state.unit_states.values() if s == 'TRIPPED')
@@ -196,40 +182,20 @@ def _to_native(
     )
 
 
-# Handover schedules: unit outputs (MW) at the start of each shift.
-# Units absent from the dict start OFFLINE.
-_SHIFT_SCHEDULES: dict[int, dict] = {
-    1: {
-        'DUND-1': 16.0,    # Dunmore lower hydro — sole generator (tutorial)
-    },
-    2: {
-        'RVSD-1': 90.0,    # Riverside Coal 1 — technical minimum (90 MW)
-        'RVSD-3': 90.0,    # Riverside Coal 3 — technical minimum (90 MW)
-        'DUND-1': 40.0,    # Dunmore Lower 1  — AGC, regulating
-    },
-    3: {},   # TODO: tune when shift 3 is tested
-    5: {},   # TODO: tune when shift 5 is tested
-}
-
-# AGC enabled state per shift (False = player must enable manually).
-_SHIFT_AGC_ENABLED: dict[int, bool] = {
-    1: False,
-    2: True,
-}
-
-
 def _make_sim_and_renderer(
     display_surf: pygame.Surface,
     shift: int,
     difficulty: str = 'standard',
 ) -> tuple[GridSimulation, Grid, Renderer]:
+    cfg      = load_shift_config(shift)
     grid     = Grid(shift)
     sim      = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
-                              initial_schedule=_SHIFT_SCHEDULES.get(shift, {}))
+                              initial_schedule=cfg['initial_schedule'],
+                              maintenance_units=cfg['maintenance_units'])
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
     renderer.set_grid(grid)
-    _const.AGC_ENABLED = _SHIFT_AGC_ENABLED.get(shift, False)
+    _const.AGC_ENABLED = cfg['agc_enabled']
     return sim, grid, renderer
 
 

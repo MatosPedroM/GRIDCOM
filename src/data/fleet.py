@@ -257,7 +257,7 @@ UNITS: list[GenerationUnit] = [
         unit_type='HYDRO', rated_mw=65.0, min_mw=0.0,
         ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=28.0, q_min_mvar=-15.0,
-        can_pump=False, active_from_shift=2,
+        can_pump=False, active_from_shift=1,
         description='Dunmore Hydro Lower Unit 2 — 65MW downstream, 220kV.'),
 
     # ── RIVER ARDEN CASCADE — AR01-AR04 (2×units each, 220kV, run-of-river) ─

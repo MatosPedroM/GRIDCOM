@@ -15,9 +15,40 @@ from __future__ import annotations
 
 SHIFT_DATE: str = 'MON 07 NOV 1994'
 
+DIFFICULTY_LABEL: str = 'Tutorial'
+
+HANDOVER_NOTES: tuple[str, ...] = (
+    'Mid-morning handover.',
+    'RVSD-1 on-line at 200 MW. RVSD-2 and RVSD-3 on planned maintenance.',
+    'DUND-1 on-line at 40 MW. DUND-2 on planned maintenance outage.',
+    'Demand rising. DUND-1 is the sole AGC unit — headroom is limited.',
+    'AGC active — ramp RVSD-1 as load grows to keep DUND-1 in its band.',
+)
+
 MAINTENANCE_UNITS: set[str] = {'RVSD-2', 'RVSD-3', 'DUND-2'}
 
 AGC_ENABLED: bool = True
+
+# Per-bus hourly load table (MW). Shift 2: LD01 + LD02, peak 315 MW.
+# RVSD-1 at 200 MW coal, DUND-1 at 40 MW = 240 MW initial.
+# Load rises above 265 MW (200 MW coal + 65 MW DUND-1 max) to force RVSD ramping.
+# LD01 (55%): peak ≈ 173 MW. LD02 (45%): peak ≈ 142 MW.
+SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
+    'LD01': {
+         0.0:  55,  1.0:  52,  2.0:  50,  3.0:  48,  4.0:  50,
+         5.0:  54,  6.0:  66,  7.0:  85,  8.0: 102,  9.0: 116,
+        10.0: 118, 11.0: 135, 12.0: 147, 13.0: 161, 14.0: 173,
+        15.0: 172, 16.0: 168, 17.0: 164, 18.0: 160, 19.0: 153,
+        20.0: 144, 21.0: 131, 22.0: 114, 23.0:  91, 24.0:  67,
+    },
+    'LD02': {
+         0.0:  45,  1.0:  43,  2.0:  40,  3.0:  40,  4.0:  40,
+         5.0:  44,  6.0:  54,  7.0:  70,  8.0:  83,  9.0:  94,
+        10.0:  97, 11.0: 110, 12.0: 121, 13.0: 131, 14.0: 142,
+        15.0: 140, 16.0: 137, 17.0: 134, 18.0: 130, 19.0: 125,
+        20.0: 118, 21.0: 107, 22.0:  94, 23.0:  74, 24.0:  55,
+    },
+}
 
 # Starting dispatch — units absent from this dict start OFFLINE.
 INITIAL_SCHEDULE: dict[str, float] = {

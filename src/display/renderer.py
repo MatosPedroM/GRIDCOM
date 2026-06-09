@@ -54,7 +54,7 @@ from simulation.constants import (
     MENU_FONT_SIZE, MENU_ROW_H, MENU_TOP_MARGIN,
 )
 from utils.helpers import resource_path
-from data.profiles import SHIFT_SPECS
+from gameplay.shifts.loader import load_shift_config
 
 
 _BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
@@ -130,10 +130,10 @@ class Renderer:
 
         self._canvas = GridCanvas(shift=shift, font=self._font, scale=self._scale)
         self._editor = GridEditor(self._canvas, scale=self._scale)
-        _spec = SHIFT_SPECS.get(shift)
+        _difficulty_label = load_shift_config(shift).get('difficulty_label', '')
         self._shift_title: str = (
-            f'SHIFT {shift}  —  {_spec.difficulty_label.upper()}'
-            if _spec else f'SHIFT {shift}'
+            f'SHIFT {shift}  —  {_difficulty_label.upper()}'
+            if _difficulty_label else f'SHIFT {shift}'
         )
         self._flow   = FlowAnimator()
 

@@ -101,7 +101,10 @@ def build_briefing_lines(spec) -> list:
     """Return list of (text, colour) pairs for the pre-shift briefing screen."""
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
-    date_str = load_shift_config(spec.shift_number).get('shift_date', 'MON 07 NOV 1994')
+    cfg = load_shift_config(spec.shift_number)
+    date_str        = cfg.get('shift_date',       'MON 07 NOV 1994')
+    difficulty_label = cfg.get('difficulty_label', '')
+    handover_notes   = cfg.get('handover_notes',   ())
     lines = [
         (_SEP, H),
         (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', H),
@@ -109,12 +112,12 @@ def build_briefing_lines(spec) -> list:
         (_SEP, H),
         (f' DATE: {date_str}    TIME: {_hm(spec.start_hour)}    SHIFT: {spec.shift_number} OF 10', B),
         (' OUTGOING: R. FERRIS, DISPATCHER GRADE 2', B),
-        (f' DIFFICULTY: {spec.difficulty_label.upper()}', B),
+        (f' DIFFICULTY: {difficulty_label.upper()}', B),
         (_SEP, H),
         (' HANDOVER NOTES:', H),
         ('', B),
     ]
-    for note in spec.handover_notes:
+    for note in handover_notes:
         lines.append((f'   {note}', B))
     lines += [
         ('', B),

@@ -51,7 +51,8 @@ from simulation.units import FleetModel
 from simulation.demand import DemandModel
 from simulation.renewables import RenewablesModel
 from simulation.cascade import CascadeModel
-from data.profiles import SHIFT_SPECS
+from data.profiles import SHIFT_SPECS, get_substation_demand_specs
+from gameplay.shifts.loader import load_shift_config
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -205,6 +206,7 @@ class GridSimulation:
         difficulty: str,
         initial_schedule: dict | None = None,
         maintenance_units: set | None = None,
+        substation_load_mw: dict | None = None,
     ) -> None:
         self._grid         = grid
         self._shift_number = shift_number
@@ -214,12 +216,17 @@ class GridSimulation:
         self._start_hour        = spec.start_hour
         self._duration_minutes  = spec.duration_hours * 60.0
 
+        # Resolve substation load table: prefer explicit arg, fall back to shift file.
+        if substation_load_mw is None:
+            substation_load_mw = load_shift_config(shift_number).get('substation_load_mw', {})
+        substation_specs = get_substation_demand_specs(substation_load_mw)
+
         # Physics sub-models
         self._loadflow   = DCLoadFlow(grid)
         self._voltage    = VoltageModel(grid)
         self._frequency  = FrequencyModel()
         self._fleet      = FleetModel(grid, initial_schedule or {}, maintenance_units)
-        self._demand     = DemandModel(spec)
+        self._demand     = DemandModel(spec, substation_specs)
         self._renewables = RenewablesModel(grid)
         self._cascade    = CascadeModel()
 

@@ -40,8 +40,6 @@ def make_debug_sim(scenario: DebugScenario) -> tuple[GridSimulation, Grid]:
         grid_size=base_spec.grid_size,
         has_phase1=base_spec.has_phase1,
         peak_demand_mw=scenario.peak_demand_mw,
-        difficulty_label=base_spec.difficulty_label,
-        handover_notes=(f'[DEBUG] {scenario.description}',),
     )
 
     # Temporarily replace SHIFT_SPECS entry so GridSimulation.__init__ sees the overrides.

@@ -20,7 +20,6 @@ from simulation.constants import (
 from data.profiles import (
     get_demand_mw,
     get_profile_value,
-    get_substation_demand_specs,
     SubstationDemandSpec,
     ShiftSpec,
 )
@@ -75,17 +74,19 @@ class DemandModel:
         p_load = dm.p_load_injections()   # {bus_label: -load_mw}  (negative)
     """
 
-    def __init__(self, spec: ShiftSpec) -> None:
+    def __init__(self, spec: ShiftSpec, substation_specs: dict | None = None) -> None:
         """
         Initialise demand model for a shift.
 
         Args:
-            spec: ShiftSpec for this shift — provides peak_demand_mw.
+            spec:              ShiftSpec for this shift — provides peak_demand_mw.
+            substation_specs:  Pre-built {bus_label: SubstationDemandSpec} mapping.
+                               If None, an empty dict is used (no load buses active).
         """
         self._spec = spec
 
         self._substation_specs: dict[BusLabel, SubstationDemandSpec] = (
-            get_substation_demand_specs(spec.shift_number)
+            substation_specs if substation_specs is not None else {}
         )
 
         # Per-bus shed fraction: 0.0 = no shedding, 1.0 = full shed.

@@ -362,11 +362,11 @@ def _draw_cmd_row(
 ) -> None:
     """Draw the START/STOP button or transition status line at row_y."""
     if show_start:
-        label      = '[ START ]'
+        label      = '[ START  S ]'
         border_col = COL_UNIT_ONLINE if cmd_active else COL_PANEL_BORDER
         text_col   = COL_UNIT_ONLINE
     elif show_stop:
-        label      = '[ STOP ]'
+        label      = '[ STOP  X ]'
         border_col = COL_ALARM_CRIT if cmd_active else COL_PANEL_BORDER
         text_col   = COL_ALARM_CRIT
     elif show_transition:

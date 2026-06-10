@@ -30,7 +30,7 @@ from data.topology import (
     get_buses_by_shift, get_lines_by_shift,
     Bus, Line,
 )
-from data.fleet import UNITS, STATION_POSITIONS, get_units_at_bus, get_unit, get_station_position
+from data.fleet import UNITS, STATION_POSITIONS, get_units_at_bus, get_station_position
 from display.palette import (
     COL_BACKGROUND,
     COL_TEXT_PRIMARY,
@@ -131,6 +131,13 @@ class GridCanvas:
                 (int(x * scale), int(y * scale)) for x, y in raw
             ]
 
+        # Fast rated_mw lookup by unit label (avoids fleet.get_unit() in hot path)
+        self._unit_rated_mw: dict[str, float] = {
+            u.label: u.rated_mw
+            for units in self._station_units.values()
+            for u in units
+        }
+
         # Bus → connected line labels (for load-state colouring of substation symbols)
         self._bus_lines: dict[str, list[str]] = {b.label: [] for b in self._buses}
         for line in self._lines:
@@ -214,6 +221,113 @@ class GridCanvas:
             if state.line_status.get(lbl) == 'IN_SERVICE':
                 best = max(best, state.line_loading_pct.get(lbl, 0.0))
         return best
+
+    def load_designer_topology(
+        self,
+        buses:  list,
+        lines:  list,
+        units:  list,
+    ) -> None:
+        """
+        Replace the canvas topology with designer-supplied Bus/Line/Unit lists.
+
+        Bypasses get_buses_by_shift(), UNITS, and get_station_position() so the
+        canvas draws the designer grid instead of the campaign shift topology.
+        Station position is taken from the unit's bus position (designer units
+        live at their bus node).
+        """
+        scale = self._scale
+
+        self._buses    = buses
+        self._lines    = lines
+        self._bus_pos  = {b.label: (int(b.canvas_x * scale), int(b.canvas_y * scale))
+                          for b in buses}
+        self._bus_map  = {b.label: b for b in buses}
+
+        # Unit layout — group by station_label, position at bus node
+        active_bus_labels = {b.label for b in buses}
+        self._station_units = {}
+        for unit in units:
+            if unit.bus_label not in active_bus_labels:
+                continue
+            sl = unit.station_label
+            self._station_units.setdefault(sl, []).append(unit)
+
+        # Station screen position = bus canvas position scaled
+        self._station_pos = {}
+        for sl, sunits in self._station_units.items():
+            bus_lbl = sunits[0].bus_label
+            if bus_lbl in self._bus_pos:
+                bx, by = self._bus_pos[bus_lbl]
+                n = len(sunits)
+                total_w = n * int(UNIT_SIZE * scale) + (n - 1) * max(1, int(UNIT_GAP * scale))
+                start_x = bx - total_w // 2 + int(UNIT_SIZE * scale) // 2
+                gap = int(UNIT_SIZE * scale) + max(1, int(UNIT_GAP * scale))
+                self._station_pos[sl] = [
+                    (start_x + i * gap, by) for i in range(n)
+                ]
+
+        # Bus → connected line labels
+        self._bus_lines = {b.label: [] for b in buses}
+        for line in lines:
+            if line.from_bus in self._bus_lines:
+                self._bus_lines[line.from_bus].append(line.label)
+            if line.to_bus in self._bus_lines:
+                self._bus_lines[line.to_bus].append(line.label)
+
+        # No hydraulic connectors in designer topology
+        self._hydraulic = []
+        scaled_w  = int(NATIVE_WIDTH  * scale)
+        scaled_ch = int(CANVAS_HEIGHT * scale)
+        self._hydraulic_surf = pygame.Surface(
+            (scaled_w, scaled_ch), pygame.SRCALPHA
+        ).convert_alpha()
+        self._hydraulic_surf.fill((0, 0, 0, 0))
+
+        # Pre-bake tripped-line surfaces for the designer lines
+        pad   = max(2, int(3 * scale))
+        dash_w = max(1, round(scale))
+        self._tripped_line_surfs = {}
+        for line in lines:
+            if line.from_bus not in self._bus_pos or line.to_bus not in self._bus_pos:
+                continue
+            x1, y1 = self._bus_pos[line.from_bus]
+            x2, y2 = self._bus_pos[line.to_bus]
+            bx2, by2 = x1, y2
+            min_x = min(x1, x2) - pad
+            min_y = min(y1, y2) - pad
+            max_x = max(x1, x2) + pad
+            max_y = max(y1, y2) + pad
+            w = max(1, max_x - min_x)
+            h = max(1, max_y - min_y)
+            surf = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
+            surf.fill((0, 0, 0, 0))
+            ox, oy = min_x, min_y
+            td = max(1, int(6 * scale))
+            tg = max(1, int(4 * scale))
+            if y1 != y2:
+                _draw_dashed_line(
+                    surf, COL_LINE_TRIPPED,
+                    (x1 - ox, y1 - oy), (bx2 - ox, by2 - oy),
+                    dash=td, gap=tg, width=dash_w,
+                )
+            if x1 != x2:
+                _draw_dashed_line(
+                    surf, COL_LINE_TRIPPED,
+                    (bx2 - ox, by2 - oy), (x2 - ox, y2 - oy),
+                    dash=td, gap=tg, width=dash_w,
+                )
+            self._tripped_line_surfs[line.label] = (surf, ox, oy)
+
+        # Fast rated_mw lookup by unit label
+        self._unit_rated_mw = {
+            u.label: u.rated_mw
+            for sunits in self._station_units.values()
+            for u in sunits
+        }
+
+        # Force full redraw next frame
+        self._canvas_key = object()
 
     def rebuild(self, shift: int | None = None) -> None:
         """Re-run __init__ pre-computation after layout overrides change."""
@@ -331,11 +445,8 @@ class GridCanvas:
                 bus_blacked[b.label] = (b.label in blacked)
             unit_states  = state.unit_states
             for lbl, mw in state.unit_outputs_mw.items():
-                try:
-                    unit_obj = get_unit(lbl)
-                    unit_outputs[lbl] = mw / unit_obj.rated_mw if unit_obj.rated_mw > 0 else 0.0
-                except KeyError:
-                    unit_outputs[lbl] = 0.0
+                rated = self._unit_rated_mw.get(lbl, 0.0)
+                unit_outputs[lbl] = mw / rated if rated > 0 else 0.0
             if hasattr(state, 'interconnector_flows'):
                 intc_flows = state.interconnector_flows
 

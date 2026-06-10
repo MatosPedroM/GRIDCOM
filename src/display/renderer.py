@@ -121,7 +121,7 @@ class Renderer:
             pygame.Rect(0, scaled_canvas_h, scaled_w, scaled_strip_h)
         )
 
-        font_path = resource_path('assets/fonts/TerminusTTF-4.49.3.ttf')
+        font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
         if font_path.exists():
             self._font = pygame.freetype.Font(str(font_path), 11)
         else:
@@ -191,6 +191,15 @@ class Renderer:
     def set_grid(self, grid) -> None:
         """Store the Grid reference used by the dispatch panel."""
         self._grid = grid
+
+    def set_designer_grid(self, grid) -> None:
+        """Load a DesignerGrid into both the dispatch panel and the canvas topology."""
+        self._grid = grid
+        self._canvas.load_designer_topology(
+            buses=grid.get_active_buses(),
+            lines=grid.get_active_lines(),
+            units=grid.get_active_units(),
+        )
 
     def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:
         """Route mouse wheel to dispatch or alarm panel based on native-space position."""

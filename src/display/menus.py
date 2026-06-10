@@ -86,10 +86,19 @@ def build_shift_select_items(completed_grades: dict) -> list:
 def build_main_menu_items() -> list:
     """Returns list of (label, enabled) for the main menu."""
     return [
-        ('NEW GAME', True),
-        ('CONTINUE',  False),   # disabled — no save system yet
-        ('QUIT',      True),
+        ('NEW GAME',      True),
+        ('CONTINUE',      False),   # disabled — no save system yet
+        ('GRID DESIGNER', True),
+        ('TEST GRID',     True),
+        ('QUIT',          True),
     ]
+
+
+def build_grid_test_select_items(grid_names: list[str]) -> list:
+    """Returns list of (label, enabled) for the designer grid test selector."""
+    if not grid_names:
+        return [('NO SAVED GRIDS', False)]
+    return [(name, True) for name in grid_names]
 
 
 def build_mode_select_items() -> list:

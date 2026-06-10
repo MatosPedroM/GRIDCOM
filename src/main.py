@@ -78,6 +78,9 @@ class GameState(Enum):
     DEBRIEF           = 'debrief'
     SHIFT_SELECT      = 'shift_select'
     CAMPAIGN_END      = 'campaign_end'
+    DESIGNER          = 'designer'
+    DESIGNER_TEST     = 'designer_test'
+    GRID_TEST_SELECT  = 'grid_test_select'
 
 
 _SEP = '═' * 64
@@ -203,6 +206,43 @@ def _make_sim_and_renderer(
     return sim, grid, renderer
 
 
+def _make_designer_test(
+    display_surf: pygame.Surface,
+    grid_name: str,
+):
+    """Build sim + renderer for a designer-grid test session."""
+    from data.designer_io import load_designer_grid_named
+    from simulation.designer_grid import DesignerGrid
+
+    buses, lines, units = load_designer_grid_named(grid_name)
+    designer_grid = DesignerGrid(buses, lines, units)
+
+    # Build flat hourly load table at 50% of each LOAD bus's peak_load_mw.
+    substation_load_mw = {
+        b.label: {float(h): b.peak_load_mw * 0.5 for h in range(25)}
+        for b in buses
+        if b.bus_type == 'LOAD' and b.peak_load_mw > 0
+    }
+
+    initial_schedule = {u.label: u.rated_mw * 0.5 for u in units}
+    sim = GridSimulation(
+        grid=designer_grid,
+        shift_number=0,
+        difficulty='standard',
+        initial_schedule=initial_schedule,
+        maintenance_units=set(),
+        maintenance_lines=set(),
+        substation_load_mw=substation_load_mw,
+    )
+    # Renderer uses shift=1 as a safe sentinel — the canvas will show shift-1
+    # topology but the simulation state (frequency, dispatch, alarms) is live.
+    renderer = Renderer(display_surf, shift=1,
+                        display_size=display_surf.get_size())
+    renderer.set_designer_grid(designer_grid)
+    _const.AGC_ENABLED = True
+    return sim, designer_grid, renderer
+
+
 def _total_chars(lines: list) -> int:
     return sum(len(text) for text, _ in lines)
 
@@ -262,15 +302,26 @@ def main() -> None:
 
     # ── Menu state ───────────────────────────────────────────────────────────
     menu_selected = 0
-    _raw = build_main_menu_items()   # [NEW GAME, CONTINUE, QUIT]
+    _raw = build_main_menu_items()   # [NEW GAME, CONTINUE, GRID DESIGNER, TEST GRID, QUIT]
     main_menu_items = [
         _raw[0],
         ('', None),
         _raw[1],
         ('', None),
-        ('', None),
         _raw[2],
+        ('', None),
+        _raw[3],
+        ('', None),
+        _raw[4],
     ]
+    _designer = None   # GridDesigner instance, created on entry to DESIGNER state
+
+    # ── Designer test state ──────────────────────────────────────────────────
+    _designer_test_sim:      object    = None
+    _designer_test_grid:     object    = None
+    _designer_test_renderer: object    = None
+    _designer_test_origin:   GameState = GameState.DESIGNER
+    _grid_test_items:        list      = []
     mode_select_items   = build_mode_select_items()
     difficulty_items    = build_difficulty_items()
     menu_title          = _menu_title_lines()
@@ -339,7 +390,17 @@ def main() -> None:
                             menu_selected = 0
                         elif idx == 2: # CONTINUE — disabled
                             pass
-                        elif idx == 5: # QUIT
+                        elif idx == 4: # GRID DESIGNER
+                            from display.designer import GridDesigner
+                            _designer  = GridDesigner(display_surf)
+                            game_state = GameState.DESIGNER
+                        elif idx == 6: # TEST GRID
+                            from data.designer_io import list_designer_grids
+                            from display.menus import build_grid_test_select_items
+                            _grid_test_items = build_grid_test_select_items(list_designer_grids())
+                            menu_selected    = 0
+                            game_state       = GameState.GRID_TEST_SELECT
+                        elif idx == 8: # QUIT
                             running = False
                     elif event.key == pygame.K_ESCAPE:
                         pass   # already at top level
@@ -350,6 +411,39 @@ def main() -> None:
                 items=main_menu_items,
                 selected_idx=menu_selected,
                 footer_hint='[UP / DOWN]  Navigate    [ENTER]  Select',
+            )
+
+        # ── GRID TEST SELECT ─────────────────────────────────────────────────
+        elif game_state == GameState.GRID_TEST_SELECT:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        menu_selected = _next_enabled(_grid_test_items, menu_selected, -1)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        menu_selected = _next_enabled(_grid_test_items, menu_selected, +1)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        if _grid_test_items and _grid_test_items[menu_selected][1]:
+                            grid_name = _grid_test_items[menu_selected][0]
+                            try:
+                                _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
+                                    _make_designer_test(display_surf, grid_name)
+                                sim_accum             = 0.0
+                                _designer_test_origin = GameState.GRID_TEST_SELECT
+                                game_state            = GameState.DESIGNER_TEST
+                            except Exception:
+                                pass   # stay on list
+                    elif event.key == pygame.K_ESCAPE:
+                        game_state    = GameState.MAIN_MENU
+                        menu_selected = 0
+
+            renderer.tick_menu_screen(
+                dt,
+                title_lines=menu_title,
+                items=_grid_test_items,
+                selected_idx=menu_selected,
+                footer_hint='[UP / DOWN]  Select    [ENTER]  Test    [ESC]  Back',
             )
 
         # ── MODE SELECT ──────────────────────────────────────────────────────
@@ -707,6 +801,154 @@ def main() -> None:
             campaign_end_chars = min(campaign_end_chars + TYPEWRITER_CHARS_PER_SEC * dt,
                                      float(total) + 1)
             renderer.tick_text_screen(dt, campaign_end_lines, int(campaign_end_chars))
+
+        # ── DESIGNER ──────────────────────────────────────────────────────────
+        elif game_state == GameState.DESIGNER:
+            if _designer is None:
+                from display.designer import GridDesigner
+                _designer = GridDesigner(display_surf)
+
+                def _on_test_request(grid_name: str) -> None:
+                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin
+                    try:
+                        _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
+                            _make_designer_test(display_surf, grid_name)
+                        sim_accum             = 0.0
+                        _designer_test_origin = GameState.DESIGNER
+                        game_state            = GameState.DESIGNER_TEST
+                    except Exception as e:
+                        _designer._set_status(f'Test failed: {e}',
+                                              (255, 100, 0))
+
+                _designer.on_test_request = _on_test_request
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if not _designer.on_key(event):
+                            # Exit designer — optionally warn about unsaved changes
+                            game_state    = GameState.MAIN_MENU
+                            menu_selected = 0
+                    else:
+                        _designer.on_key(event)
+
+                elif event.type == pygame.MOUSEMOTION:
+                    _designer.on_mouse_move(
+                        _designer.to_native(event.pos))
+
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        native = _designer.to_native(event.pos)
+                        _designer.on_mouse_down(native)
+                        _designer.on_click(native)
+
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        _designer.on_mouse_up(
+                            _designer.to_native(event.pos))
+
+            _designer.tick(dt, display_surf)
+
+        # ── DESIGNER TEST ─────────────────────────────────────────────────────
+        elif game_state == GameState.DESIGNER_TEST:
+            _sim   = _designer_test_sim
+            _rend  = _designer_test_renderer
+            state  = _sim.get_state()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                elif event.type == pygame.KEYDOWN:
+                    mods       = pygame.key.get_mods()
+                    ctrl       = bool(mods & pygame.KMOD_CTRL)
+                    shift_held = bool(mods & pygame.KMOD_SHIFT)
+
+                    if event.key == pygame.K_ESCAPE:
+                        dest = _designer_test_origin
+                        _designer_test_sim      = None
+                        _designer_test_grid     = None
+                        _designer_test_renderer = None
+                        _designer_test_origin   = GameState.DESIGNER
+                        if dest == GameState.GRID_TEST_SELECT:
+                            from data.designer_io import list_designer_grids
+                            from display.menus import build_grid_test_select_items
+                            _grid_test_items = build_grid_test_select_items(list_designer_grids())
+                            menu_selected    = 0
+                            game_state       = GameState.GRID_TEST_SELECT
+                        else:
+                            game_state = GameState.DESIGNER
+
+                    elif (event.key in (pygame.K_p, pygame.K_SPACE)
+                          and not _rend._input_active):
+                        if speed > 0.0:
+                            speed = SPEED_PAUSE
+                            sim_accum = 0.0
+                        else:
+                            speed = SPEED_NORMAL
+
+                    elif event.key == pygame.K_1:
+                        speed = SPEED_SLOW
+                    elif event.key == pygame.K_2:
+                        speed = SPEED_NORMAL
+                    elif event.key == pygame.K_3:
+                        speed = SPEED_FAST
+                    elif event.key == pygame.K_4:
+                        speed = SPEED_VERY_FAST
+
+                    elif ctrl and not shift_held and event.key == pygame.K_a:
+                        _const.AGC_ENABLED = not _const.AGC_ENABLED
+
+                    elif (event.key == pygame.K_s and not _rend._input_active):
+                        _rend.on_start_unit(_sim)
+                    elif (event.key == pygame.K_x and not _rend._input_active):
+                        _rend.on_stop_unit(_sim)
+                    elif (event.key == pygame.K_t and not _rend._input_active):
+                        _rend.on_trip_line(_sim)
+                    elif (event.key == pygame.K_c and not _rend._input_active):
+                        _rend.on_close_line(_sim)
+                    elif (event.key == pygame.K_a and not _rend._input_active and not ctrl):
+                        if shift_held:
+                            _rend.on_ack_all_alarms(_sim)
+                        else:
+                            _rend.on_ack_alarm(_sim)
+                    elif event.key == pygame.K_TAB and not _rend._input_active:
+                        _rend.on_tab()
+                    elif event.key == pygame.K_BACKSPACE:
+                        _rend.on_backspace()
+                    elif event.key == pygame.K_RETURN:
+                        _rend.on_enter(_sim)
+                    elif (not ctrl and not shift_held
+                          and event.key in (
+                              pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3,
+                              pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7,
+                              pygame.K_8, pygame.K_9,
+                          )
+                          and (_rend._input_active or _rend._get_selected_unit() is not None)):
+                        _rend.on_key_digit(pygame.key.name(event.key))
+
+                elif event.type == pygame.MOUSEMOTION:
+                    _rend.on_mouse_move(_to_native(event.pos, _rend._letterbox_rect, _rend._scale))
+
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        _rend.on_click(_to_native(event.pos, _rend._letterbox_rect, _rend._scale))
+
+                elif event.type == pygame.MOUSEWHEEL:
+                    _rend.on_scroll(event.y, _to_native(pygame.mouse.get_pos(), _rend._letterbox_rect, _rend._scale))
+
+            if game_state == GameState.DESIGNER_TEST and speed > 0.0:
+                sim_accum += dt
+                if sim_accum >= SIM_TICK_INTERVAL_S:
+                    _sim.tick(sim_accum * TIME_COMPRESSION * speed)
+                    state = _sim.get_state()
+                    sim_accum = 0.0
+
+            if game_state == GameState.DESIGNER_TEST:
+                _rend.tick(dt, state=state, speed_mult=speed)
 
         pygame.display.flip()
 

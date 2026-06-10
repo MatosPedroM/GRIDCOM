@@ -199,3 +199,18 @@ COL_FORECAST_NETDEMAND: Colour = (255,  0,   0)  # Net demand line — bright re
 COL_CONTEXT_FIELD_BG:     Colour = (0,    0,   0)   # Input field background — black
 COL_CONTEXT_FIELD_ACTIVE: Colour = (0,  170,   0)   # Active input border — green
 COL_CONTEXT_CURSOR:       Colour = (0,  255,   0)   # Text cursor — bright green
+
+# ─────────────────────────────────────────────
+# GRID DESIGNER
+# ─────────────────────────────────────────────
+COL_DESIGNER_SIDEBAR_BG:  Colour = (0,    0,   0)   # Sidebar background — black
+COL_DESIGNER_SIDEBAR_SEP: Colour = (85,  85,  85)   # Sidebar section separator — dark grey
+COL_DESIGNER_PALETTE_SEL: Colour = (0,  255,   0)   # Selected palette button — bright green
+COL_DESIGNER_PALETTE_BTN: Colour = (85,  85,  85)   # Unselected palette button — dark grey
+COL_DESIGNER_LINE_DRAW:   Colour = (255,255,   0)   # Line-draw mode ghost line — bright yellow
+COL_DESIGNER_STATUS_OK:   Colour = (0,  255,   0)   # Status message — success (bright green)
+COL_DESIGNER_STATUS_INFO: Colour = (255,255, 255)   # Status message — info (bright white)
+COL_DESIGNER_SURPLUS_POS: Colour = (0,  255,   0)   # Power surplus positive — bright green
+COL_DESIGNER_SURPLUS_NEG: Colour = (255,  0,   0)   # Power surplus negative — bright red
+COL_DESIGNER_FIELD_ACTIVE:Colour = (0,  170,   0)   # Active property field border — green
+COL_DESIGNER_DELETE_CURSOR:Colour= (255,  0,   0)   # Delete mode cursor — bright red

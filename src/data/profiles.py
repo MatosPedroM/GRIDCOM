@@ -42,6 +42,9 @@ class ShiftSpec:
 
 SHIFT_SPECS: dict[int, ShiftSpec] = {
 
+    # Shift 0 is a sentinel used only by the Grid Designer test session.
+    0:  ShiftSpec(shift_number=0,  start_hour=0.0,  duration_hours=999.0, grid_size=0, has_phase1=False, peak_demand_mw=0.0),
+
     1:  ShiftSpec(shift_number=1,  start_hour=4.0,  duration_hours=3.0,  grid_size=3,  has_phase1=False, peak_demand_mw=55.0),
     2:  ShiftSpec(shift_number=2,  start_hour=10.0, duration_hours=4.0,  grid_size=3,  has_phase1=False, peak_demand_mw=315.0),
     3:  ShiftSpec(shift_number=3,  start_hour=14.0, duration_hours=6.0,  grid_size=10, has_phase1=False, peak_demand_mw=1930.0),

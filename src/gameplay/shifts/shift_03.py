@@ -80,13 +80,15 @@ SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
 # DUND-1 and DUNH-1 are dispatched below rated capacity to provide regulation
 # headroom (±35 MW and ±120 MW respectively).
 INITIAL_SCHEDULE: dict[str, float] = {
-    'HART-1':  680.0,   # Hartwell Nuclear 1 — baseload, primary L09 source
-    'RVSD-1':  200.0,   # Riverside Coal 1   — carry-forward from Shift 2
-    'RVSD-2':   50.0,   # Riverside Coal 2   — reduced; solar covers more at start
+    #'HART-1':  680.0,   # Hartwell Nuclear 1 — baseload, primary L09 source
+    'RVSD-1':   150.0,   # Riverside Coal 1   — carry-forward from Shift 2
+    'RVSD-2':   150.0,   # Riverside Coal 2   — reduced; solar covers more at start
     'ASHG-1':   80.0,   # Ashford CCGT 1     — spinning reserve at ASHF
     'WRNG-1':   80.0,   # Wrentham CCGT 1    — key redispatch tool at WRNT
     'DUND-1':   30.0,   # Dunmore Lower Hydro 1 — fast regulation, headroom ±35 MW
+    'DUND-2':   30.0,   # Dunmore Lower Hydro 1 — fast regulation, headroom ±35 MW
     'DUNH-1':   80.0,   # Dunmore Upper Hydro 1 — fast regulation, headroom ±120 MW
+    'DUNH-2':   80.0,   # Dunmore Upper Hydro 1 — fast regulation, headroom ±120 MW
 }
 
 

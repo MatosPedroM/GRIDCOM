@@ -24,6 +24,7 @@ See DOMAIN_GLOSSARY.md for bus type definitions.
 
 import dataclasses
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass(frozen=True)

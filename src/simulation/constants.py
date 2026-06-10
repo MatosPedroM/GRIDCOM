@@ -256,3 +256,28 @@ FLOW_SPEED_MAX:        float = 120.0        # px/s at 100%+ loading
 # ─────────────────────────────────────────────
 DEBUG_GRID_SPACING:    int = 30            # px — coordinate grid spacing
 DEBUG_CLICK_DISPLAY_S: float = 3.0         # seconds to display clicked coordinates
+
+# ─────────────────────────────────────────────
+# GRID DESIGNER MODE
+# ─────────────────────────────────────────────
+DESIGNER_SIDEBAR_W:          int   = 320    # px — sidebar panel width
+DESIGNER_CANVAS_W:           int   = 1600   # px — canvas area width (NATIVE_WIDTH - DESIGNER_SIDEBAR_W)
+DESIGNER_X_SCALE:            float = 0.05   # reactance pu per 1920px of Euclidean distance
+DESIGNER_TARGET_LOADING_PCT: float = 70.0   # auto-route: add parallel line when loading exceeds this
+DESIGNER_N1_OVERLOAD_PCT:    float = 90.0   # auto-route: N-1 contingency overload threshold
+DESIGNER_STATUS_DISPLAY_S:   float = 3.0    # seconds to show auto-route completion message
+DESIGNER_HIT_RADIUS:         int   = 14     # px — hit-test radius for buses in designer
+DESIGNER_LINE_HIT_PX:        int   = 8      # px — perpendicular distance threshold for line hit
+DESIGNER_FONT_SIZE:          int   = 14     # px — designer sidebar and overlay font size
+DESIGNER_FONT_SIZE_LARGE:    int   = 24     # px — status messages on canvas
+DESIGNER_UNDO_MAX:           int   = 50     # maximum undo stack depth
+DESIGNER_DEFAULT_RATING: dict = {           # MW rating defaults by voltage tier
+    400.0: 1200.0,
+    220.0:  600.0,
+    150.0:  300.0,
+     60.0:  100.0,
+}
+DESIGNER_LINE_RATING_PRESETS: tuple = (     # selectable MW ratings for manual line placement
+    100.0, 150.0, 200.0, 250.0, 300.0, 400.0, 500.0,
+    600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0,
+)

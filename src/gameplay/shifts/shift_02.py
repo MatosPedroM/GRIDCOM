@@ -4,10 +4,14 @@ src/gameplay/shifts/shift_02.py
 Shift 2 scenario definition — AGC regulation band tutorial.
 
 Narrative:
-  RVSD-1 is online at technical minimum (90 MW). RVSD-3 remains offline (relay maintenance).
+  Riverside Coal is commissioned onto the Midbury busbar this shift.
+  RVSD-1 is online; RVSD-2 is out of service (planned relay maintenance —
+  the COALCOM easter egg) and RVSD-3 remains available for cold start.
   DUND-1 is the sole AGC unit (max 65 MW); DUND-2 is on planned maintenance.
   Demand rises through the shift, pushing DUND-1 toward saturation.
   The player must ramp RVSD-1 to relieve DUND-1 and maintain regulation headroom.
+
+Grid: MDBY ──L11──► DUND ──L49──► LD01, ──L50──► LD02   (4 buses, 3 lines)
 """
 
 from __future__ import annotations
@@ -19,13 +23,15 @@ DIFFICULTY_LABEL: str = 'Tutorial'
 
 HANDOVER_NOTES: tuple[str, ...] = (
     'Mid-morning handover.',
-    'RVSD-1 on-line at 200 MW. RVSD-2 and RVSD-3 on planned maintenance.',
+    'Riverside Coal commissioned at Midbury this shift.',
+    'RVSD-1 on-line at 200 MW. RVSD-2 out of service — planned relay maintenance.',
+    'RVSD-3 available, cold start 240 min.',
     'DUND-1 on-line at 40 MW. DUND-2 on planned maintenance outage.',
     'Demand rising. DUND-1 is the sole AGC unit — headroom is limited.',
     'AGC active — ramp RVSD-1 as load grows to keep DUND-1 in its band.',
 )
 
-MAINTENANCE_UNITS: set[str] = {'RVSD-2', 'RVSD-3', 'DUND-2'}
+MAINTENANCE_UNITS: set[str] = {'RVSD-2', 'DUND-2'}
 
 AGC_ENABLED: bool = True
 
@@ -53,8 +59,9 @@ SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
 # Starting dispatch — units absent from this dict start OFFLINE.
 INITIAL_SCHEDULE: dict[str, float] = {
     'RVSD-1': 200.0,   # Riverside Coal 1 — 200 MW at handover
-    'DUND-1': 40.0,   # Dunmore Lower 1  — AGC, regulating
-    # RVSD-3 absent → OFFLINE (relay maintenance, carried over from Shift 1)
+    'DUND-1': 40.0,    # Dunmore Lower 1  — AGC, regulating
+    # RVSD-2 absent → OFFLINE (relay maintenance — COALCOM easter egg)
+    # RVSD-3 absent → OFFLINE (available, cold start)
     # DUND-2 absent → OFFLINE (planned maintenance outage)
 }
 
@@ -79,12 +86,12 @@ SCRIPTED_EVENTS: list[dict] = [
     {
         'trigger_min': 0.0,
         'priority':    'INFO',
-        'message':     'DUND-2 on planned outage. AGC active on DUND-1 only.',
-        'detail':      ('DUND-2 is unavailable for this shift (planned maintenance '
-                        '09:00-17:00). DUND-1 is the sole AGC unit with a maximum '
+        'message':     'RVSD-2 on relay maintenance. AGC active on DUND-1 only.',
+        'detail':      ('RVSD-2 is unavailable for this shift (planned relay '
+                        'maintenance). DUND-1 is the sole AGC unit with a maximum '
                         'of 65 MW. Monitor the REG BAND panel — as demand rises, '
                         'DUND-1 will need headroom to respond.'),
-        'element':     'DUND-2',
+        'element':     'RVSD-2',
         'condition':   None,
     },
     {
@@ -92,8 +99,9 @@ SCRIPTED_EVENTS: list[dict] = [
         'priority':    'INFO',
         'message':     'Demand rising. Ramp RVSD before DUND-1 saturates.',
         'detail':      ('Load is climbing toward the DUND-1 ceiling. Increase '
-                        'RVSD-1 or RVSD-3 output target so DUND-1 can settle '
-                        'lower in its band and retain upward headroom for AGC.'),
+                        'RVSD-1 output target (or cold-start RVSD-3) so DUND-1 '
+                        'can settle lower in its band and retain upward headroom '
+                        'for AGC.'),
         'element':     None,
         'condition':   None,
     },

@@ -6,13 +6,30 @@
 
 ## Current Stage
 
-**STAGE 22 — Load-State Line Colouring**
+**STAGE 23 — Full Grid Topology Redesign**
 
 ## Current Status
 
-**COMPLETE** — Line colour now encodes load state only (not voltage tier); thickness still encodes voltage. Energised lines are dim green; load escalation: green → yellow → orange → red → blinking-red; tripped lines are dark grey. 9/9 tests pass.
+**PARTIAL** — Topology, fleet, and profiles fully redesigned (36 buses, 50 lines, 47 units, Portuguese-grid-inspired structure, full size at Shift 8). Shifts 1-3 scenario files re-tuned and playable. **Shifts 4-10 scenario files are stale** — they were written for the old topology (e.g. shift_04/05/06.py reference LD06 before it exists in the new grid, and per-bus peak MW values don't match the new `peak_demand_mw` targets). They must be rewritten before those shifts are playable. 9/9 automated tests pass.
 
 ## Session Log
+
+### Session 30 (Stage 23 — Full Grid Topology Redesign)
+- Full clean-sheet redesign of the campaign grid and fleet, inspired by the structure of a small European transmission system (400/220/150kV ladder, hydro-heavy west, thermal/nuclear spine, wind+solar east) while keeping the existing fictional world and station names.
+- Rewritten: `src/data/topology.py` — 36 buses (30 transmission + 6 load), 50 lines. 400kV spine (WEST-MDBY-STHW-CNTR-NRTH-EAST) with double circuits on the two middle segments (`Line.parallel` field, new) and a Shift-8 southern sag (STHW-EAST). Three 220kV pockets (capital ring, west hydro, east). Two meshed 150kV rings whose members include the load substations (LD01-06), so a feeder trip reroutes instead of instant-blackout. Grid completes at Shift 8 (was Shift 5); slack bus remains MDBY, active from Shift 1 as required.
+- Rewritten: `src/data/fleet.py` — all 47 units re-sited proportionally to the new regions (HART moved CNTR→STHW, BARR moved EAST→NRTH, DUNH moved STHW→MDBY, WNCN split 1×500→2×250 so wind trips are partial, CO03 gained a 2nd unit for cascade symmetry); `STATION_POSITIONS` rewritten to match.
+- Edited: `src/data/profiles.py` — `SHIFT_SPECS` grid_size/peak_demand_mw re-staged for all 10 shifts (55MW → 8,000MW), matching the new unlock table.
+- Rewritten: `src/gameplay/shifts/shift_01.py`, `shift_02.py`, `shift_03.py` — re-tuned on the new topology (new line labels L11/L49/L50 replacing old L46/L47/L48; Shift 3's N-1 lesson rebuilt around L09 STHW↔ASHF and the capital ring instead of the old L09 CNTR↔WRNT).
+- Edited: `src/data/topology.py` `Line` dataclass — added `parallel: int = 0` field (display-only, no electrical meaning) marking which side of a double-circuit pair a line is drawn on.
+- Edited: `src/display/symbols.py` — added `PARALLEL_LINE_OFFSET_PX = 10` constant.
+- Edited: `src/display/canvas.py` — added `_parallel_offset_endpoints()` helper (perpendicular pixel offset based on `Line.parallel`); applied at both the pre-baked tripped-line surface and the live transmission-line draw call. Fixed `_HYDRAULIC_CONNECTORS` (stale from old topology: was STHW↔DUND/WEST↔KELD/EAST↔BARD; corrected to MDBY↔DUND/WEST↔KELD/NRTH↔BARD to match the new upper/lower pumped-storage station siting).
+- Edited: `src/display/renderer.py` — line hit-testing (`on_click`) now applies the same parallel offset so clicks land on the visually-offset circuit.
+- Edited: `src/display/animation.py` — `FlowAnimator.draw()` applies the same offset to flow-marker paths so markers track the offset line instead of the raw bus-to-bus segment.
+- Fixed: `src/simulation/grid.py` — `get_load_at_bus()` was calling `get_substation_demand_specs(self._shift_number)` (an int) when the function expects a `{bus_label: {hour: mw}}` table; this is the pre-existing regression noted in Known Issues. Fixed by loading `SUBSTATION_LOAD_MW` via `load_shift_config()` once in `__init__` and caching the built specs.
+- Reset: `src/assets/layout.json` — cleared (backed up to `layout.json.pre-redesign-backup`); all manual position overrides were keyed to the old bus layout and would have mis-placed or silently no-op'd against the new one.
+- Edited: `tests/test_simulation.py` — updated all hardcoded bus/line labels and shift numbers to match the new topology (L46/L47/L48→L11/L49/L50; CNTR→STHW for HART; Shift-5-is-full-grid→Shift-7-is-full-grid; WNCN-1 rated_mw 500→250; cascade-model transformer cut set L08-L11→L09/L10/L11/L12/L13/L14). Also fixed the same `get_substation_demand_specs()` signature bug directly in `test_demand_model`. All 9 tests now pass (previously 3/9 pre-existing failures, per Known Issues below — those are now resolved as a side effect).
+- Verified: per-shift adequacy (firm capacity vs peak demand) matches the design table for Shifts 1-8; N-1 spot checks confirm Shift 8 double-circuit reroute (16%→28% on remaining circuit) and Shift 3 ring reroute (5%→24% on L15/L16) behave as designed; offscreen render check (pygame dummy driver) confirms Shifts 1, 3, 4, 7, 8 draw without error and double circuits are visually distinct.
+- Validated: 9/9 tests pass.
 
 ### Session 27 (Shift 3 Design — N-1 Redundancy)
 - Designed Shift 3 as a 10-bus intermediate grid teaching N-1 security (L09 planned maintenance at 16:00)
@@ -246,18 +263,21 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
   ✓ src/utils/helpers.py       — resource_path()
   ✓ src/simulation/constants.py — all constants (debug, physics, display, timing)
   ✓ src/display/palette.py     — all colour constants
-  ✓ src/data/topology.py       — Bus + Line dataclasses, 40 buses, 45 lines
+  ✓ src/data/topology.py       — Bus + Line dataclasses (Line.parallel added Stage 23), 36 buses, 50 lines
   ✓ src/data/fleet.py          — GenerationUnit dataclass, 47 units
   ✓ src/data/profiles.py       — demand/wind/solar profiles, 10 ShiftSpecs
   ✓ src/simulation/grid.py     — Grid class (full public interface per API contract)
   ✓ tests/test_simulation.py   — test_grid_loads() — PASS
 
-  Grid sizes by shift:
-    Shift 1:  4 buses,  3 lines,  6 active units (tutorial)
-    Shift 2:  4 buses,  3 lines, 11 units
-    Shift 3: 10 buses, 10 lines,  7 active units (N-1 lesson)
-    Shift 4: 28 buses, 29 lines, 29 units
-    Shift 5: 40 buses, 45 lines, 47 units
+  Grid sizes by shift (redesigned Stage 23 — Portuguese-grid-inspired structure):
+    Shift 1:  3 buses,  2 lines,  2 active units (tutorial)
+    Shift 2:  4 buses,  3 lines,  5 units
+    Shift 3: 10 buses, 11 lines, 13 units (N-1 lesson, capital ring)
+    Shift 4: 16 buses, 21 lines, 20 units (south 150kV mesh)
+    Shift 5: 23 buses, 30 lines, 30 units (west hydro pocket)
+    Shift 6: 27 buses, 34 lines, 39 units (north spine, INTC-N)
+    Shift 7: 36 buses, 47 lines, 47 units (full grid — east pocket, INTC-S)
+    Shift 8-10: 36 buses, 50 lines, 47 units (second circuits + southern sag)
 
 STAGE 2 — DC LOAD FLOW SOLVER (complete, validated)
   ✓ src/simulation/loadflow.py — DCLoadFlow class + LoadFlowResult
@@ -402,13 +422,16 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 22 complete.
+Nothing. Stage 23 topology/fleet/profiles/display work is complete and validated. Shifts 4-10
+scenario content is the open follow-up (see Next Session Objective).
 
 ---
 
 ## What Is NOT Yet Built
 
-**Gameplay stages have empty placeholder files only.**
+**Gameplay stages have empty placeholder files only** (except shift_01-03, which are complete
+and re-tuned for the new topology; shift_04-10 exist as placeholder files but their content is
+now STALE against the redesigned grid — see Known Issues).
 **Stage 7 (events.py) is deliberately deferred until after rendering is complete.**
 
 Do not reference any display or gameplay module as if it
@@ -422,12 +445,19 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 23 — TBD**
+**Stage 24 — Rewrite Shift 4-10 scenario files for the redesigned grid**
 
-Line colours now encode load state. Suggested candidates:
-- Crisis auto-forcing (speed forced to SLOW when a CRITICAL alarm fires)
-- Interconnector flow display (expose live MW flows to canvas labels)
-- Flow marker colour update (match load-state line colour scheme)
+Shifts 1-3 are complete on the new topology. shift_04.py through shift_10.py exist but were
+written for the old grid and are now stale (see Known Issues) — they need full rewrites:
+- New `SUBSTATION_LOAD_MW` tables matching each shift's actual active load buses
+  (check `get_buses_by_shift(n)` for what's really on) and the new `peak_demand_mw` targets
+  in `data/profiles.py`.
+- New `INITIAL_SCHEDULE` / `MAINTENANCE_UNITS` reflecting the re-sited fleet (e.g. HART is now
+  at STHW not CNTR, BARR is at NRTH not EAST).
+- `MAINTENANCE_LINES` per the tutorial-feeder retirement plan: L49 (DUND↔LD01) should open at
+  Shift 4 once the south 150kV mesh takes over LD01.
+- New scripted events / scoring hooks per shift (wind variability at Shift 6, solar + second
+  interconnector at Shift 7, parallel-path flow lesson at Shift 8, mastery scenarios at 9-10).
 
 ---
 
@@ -439,20 +469,15 @@ None at this stage. All architectural decisions are locked in the reference docu
 
 ## Known Issues
 
-**Pre-existing test regressions (3/9 failing before this session, unchanged):**
-- `test_grid_loads` (demand query) and `test_demand_model`: `grid.py:175` calls
-  `get_substation_demand_specs(self._shift_number)` with an int, but the function
-  expects a dict. Root cause: a prior commit moved `SUBSTATION_LOAD_MW` from
-  `profiles.py` to individual shift files without updating `grid.py`. Requires
-  `grid.py.get_load_at_bus()` to import and query the correct shift module.
-- `test_cascade_model` (split network): pre-existing topology issue unrelated to Shift 3.
-
-**MAINTENANCE_LINES not yet implemented in campaign code.**
-shift_03.py defines `MAINTENANCE_LINES = {'L48'}`. The campaign initialisation (campaign.py or
-GridSimulation.__init__) must read this field and open those lines before the first load-flow
-solve. Without it, L48 (DUND→LD02, reactance 0.105 pu) forms a shortcut that routes ~80% of
-LD02 demand directly from MDBY via DUND, bypassing L09 and making the N-1 scenario unplayable.
-This must be resolved before Shift 3 is tested.
+**Shift 4-10 scenario files are stale against the Stage 23 topology redesign.**
+`shift_04.py` through `shift_10.py` were written for the old 40-bus grid (full size at Shift 5).
+Example: `shift_04.py`'s `SUBSTATION_LOAD_MW` includes `LD06`, which in the new grid is not
+active until Shift 7; `shift_05.py`/`shift_06.py` reference all six load substations (LD01-06)
+even though the new grid only activates them progressively through Shift 7. Per-bus peak MW
+values were tuned to the old `peak_demand_mw` figures and no longer match the new targets in
+`data/profiles.py`. These shifts will produce an unbalanced/overloaded grid until rewritten
+(tracked as Stage 24 above). Shifts 1-3 do not have this problem — they were rewritten this
+session.
 
 ---
 
@@ -481,6 +506,7 @@ This must be resolved before Shift 3 is tested.
 | 19 | AGC debug indicator; digit input fix; demand noise smoothed; P=pause toggle; 9/9 pass | PASS | 2026-05-27 |
 | 20 | GEN MIX strip panel; FORECAST LOAD canvas overlay; 9/9 pass | PASS | 2026-05-28 |
 | 21 | Line trip (T) and close (C) commands; TRIP/CLOSE button in context panel; 9/9 pass | PASS | 2026-05-29 |
+| 23 | Full grid/fleet redesign (36 buses, 50 lines, 47 units); Shifts 1-3 re-tuned; N-1 spot checks + offscreen render check; 9/9 pass | PASS | 2026-07-03 |
 
 ---
 

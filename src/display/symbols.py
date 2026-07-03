@@ -30,11 +30,16 @@ from display.palette import (
 )
 
 # Symbol size constants
-BUS_SIZE:   int = 24   # substation square side length (px)
-UNIT_SIZE:  int = 24   # generation unit square side length (px)
-UNIT_GAP:   int = 2    # gap between unit squares in a multi-unit station
+BUS_SIZE:   int = 12   # substation square side length (px)
+UNIT_SIZE:  int = 12   # generation unit square side length (px)
+UNIT_GAP:   int = 1    # gap between unit squares in a multi-unit station
 HALF_BUS:   int = BUS_SIZE // 2
 HALF_UNIT:  int = UNIT_SIZE // 2
+
+# Perpendicular offset applied to each circuit of a double-circuit line pair
+# (Line.parallel = +1 / -1), so both circuits are visible and separately
+# clickable instead of overdrawing each other.
+PARALLEL_LINE_OFFSET_PX: int = 10
 
 
 # ─────── PRIVATE COLOUR HELPERS (needed at module load for cache dicts) ──────
@@ -171,7 +176,7 @@ def draw_substation(
 
     sz     = max(4, int(BUS_SIZE * scale))
     half   = sz // 2
-    border = max(1, int(2 * scale))
+    border = max(1, int(1 * scale))
     x = cx - half
     y = cy - half
 
@@ -213,7 +218,7 @@ def draw_load_substation(
     pygame.draw.rect(surf, border_col, (x, y, sz, sz), 1)
 
     if not blacked:
-        inset  = max(1, int(4 * scale))
+        inset  = max(1, int(2 * scale))
         tx = x + inset
         ty = y + inset
         tw = sz - inset * 2
@@ -269,7 +274,7 @@ def draw_unit_square(
         border_col = COL_UNIT_BORDER
 
     pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
-    border_w = max(2, int(4 * scale)) if selected else 2
+    border_w = max(2, int(2 * scale)) if selected else 1
     border_c = COL_SELECTION if selected else border_col
     pygame.draw.rect(surf, border_c, (x, y, sz, sz), border_w)
 
@@ -315,11 +320,11 @@ def draw_station_collector(
         col = COL_LINE_ENERGISED
 
     if voltage_kv == 400.0:
-        w = max(1, int(4 * scale))
-    elif voltage_kv == 220.0:
-        w = max(1, int(3 * scale))
-    elif voltage_kv == 150.0:
         w = max(1, int(2 * scale))
+    elif voltage_kv == 220.0:
+        w = max(1, int(2 * scale))
+    elif voltage_kv == 150.0:
+        w = max(1, int(1 * scale))
     else:
         w = 1
 
@@ -383,12 +388,12 @@ def draw_interconnector(
     else:
         col = COL_INTC_IDLE
 
-    line_len = max(4, int(40 * scale))
-    chev_w   = max(2, int(8  * scale))
-    chev_h   = max(2, int(6  * scale))
-    lw       = max(1, int(2  * scale))
-    off_up   = max(2, int(14 * scale))
-    off_dn   = max(1, int(4  * scale))
+    line_len = max(4, int(20 * scale))
+    chev_w   = max(2, int(4  * scale))
+    chev_h   = max(2, int(3  * scale))
+    lw       = max(1, int(1  * scale))
+    off_up   = max(2, int(7  * scale))
+    off_dn   = max(1, int(2  * scale))
 
     pygame.draw.line(surf, col, (cx - line_len, cy), (cx, cy), lw)
 
@@ -419,7 +424,7 @@ def draw_hydraulic_connector(
     Not an electrical connection — display only.
     """
     _draw_dashed_line(surf, COL_LINE_HYDRAULIC, (x1, y1), (x2, y2),
-                      dash=5, gap=4, width=1)
+                      dash=3, gap=2, width=1)
 
 
 # ─────── TRANSMISSION LINE ───────────────────────────────────────────────────
@@ -454,8 +459,8 @@ def draw_transmission_line(
 
     if tripped:
         bx, by = x1, y2
-        td = max(1, int(6 * scale))
-        tg = max(1, int(4 * scale))
+        td = max(1, int(3 * scale))
+        tg = max(1, int(2 * scale))
         if y1 != y2:
             _draw_dashed_line(surf, COL_LINE_TRIPPED, (x1, y1), (bx, by),
                               dash=td, gap=tg, width=1)
@@ -494,13 +499,13 @@ def _draw_line_segment(
 ) -> None:
     """Draw one styled orthogonal segment. No routing logic here."""
     if voltage_kv == 400.0:
-        pygame.draw.line(surf, col, (x1, y1), (x2, y2), max(1, int(4 * scale)))
-    elif voltage_kv == 220.0:
-        pygame.draw.line(surf, col, (x1, y1), (x2, y2), max(1, int(3 * scale)))
-    elif voltage_kv == 150.0:
         pygame.draw.line(surf, col, (x1, y1), (x2, y2), max(1, int(2 * scale)))
+    elif voltage_kv == 220.0:
+        pygame.draw.line(surf, col, (x1, y1), (x2, y2), max(1, int(2 * scale)))
+    elif voltage_kv == 150.0:
+        pygame.draw.line(surf, col, (x1, y1), (x2, y2), max(1, int(1 * scale)))
     else:  # 60kV
-        d = max(1, int(3 * scale))
+        d = max(1, int(2 * scale))
         _draw_dashed_line(surf, col, (x1, y1), (x2, y2), dash=d, gap=d, width=1)
 
 

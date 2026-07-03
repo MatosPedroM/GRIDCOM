@@ -27,6 +27,7 @@ from data.fleet import (
     STATION_POSITIONS,
 )
 from data.profiles import get_profile_value, get_substation_demand_specs
+from gameplay.shifts.loader import load_shift_config
 
 
 class Grid:
@@ -72,6 +73,11 @@ class Grid:
         self._bus_list: list[Bus] = buses
         self._line_list: list[Line] = lines
         self._unit_list: list[GenerationUnit] = units
+
+        # Per-substation demand specs for this shift (built once, reused by
+        # get_load_at_bus()).
+        substation_load_mw = load_shift_config(shift_number).get('substation_load_mw', {})
+        self._substation_specs = get_substation_demand_specs(substation_load_mw)
 
         # Pre-build bus → unit index for fast lookup
         self._units_at_bus: dict[str, list[GenerationUnit]] = {}
@@ -172,8 +178,7 @@ class Grid:
         bus = self._buses.get(bus_label)
         if bus is None:
             return 0.0
-        specs = get_substation_demand_specs(self._shift_number)
-        sub_spec = specs.get(bus_label)
+        sub_spec = self._substation_specs.get(bus_label)
         if sub_spec is None:
             return 0.0
         return get_profile_value(sub_spec.profile, sim_hour) * sub_spec.peak_mw

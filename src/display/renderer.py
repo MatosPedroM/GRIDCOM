@@ -24,7 +24,7 @@ from __future__ import annotations
 import pygame
 import pygame.freetype
 
-from display.canvas import GridCanvas
+from display.canvas import GridCanvas, _parallel_offset_endpoints
 from display.context import draw_unit_context, draw_bus_context, draw_line_context
 from display.editor import GridEditor
 from display.animation import FlowAnimator
@@ -876,6 +876,8 @@ class Renderer:
                     continue
                 fx, fy = bus_pos[line.from_bus]
                 tx, ty = bus_pos[line.to_bus]
+                fx, fy, tx, ty = _parallel_offset_endpoints(
+                    fx, fy, tx, ty, line.parallel, self._canvas._scale)
                 bend_x, bend_y = fx, ty  # vertical-first routing
                 d1 = _point_segment_dist(nx, ny, fx, fy, bend_x, bend_y)
                 d2 = _point_segment_dist(nx, ny, bend_x, bend_y, tx, ty)

@@ -40,7 +40,7 @@ from display.symbols import (
     draw_unit_square, draw_station_collector,
     draw_transmission_line, draw_hydraulic_connector,
     draw_interconnector,
-    UNIT_SIZE, UNIT_GAP,
+    UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX,
     _draw_dashed_line,
 )
 from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC
@@ -52,13 +52,37 @@ from utils.helpers import resource_path
 # ─── Hydraulic penstock connections (visual only, not electrical) ─────────────
 # Each entry: (from_bus_label, to_bus_label)  — drawn as dashed connectors.
 _HYDRAULIC_CONNECTORS: list[tuple[str, str]] = [
-    ('STHW', 'DUND'),    # Dunmore upper reservoir → lower tailwater
-    ('WEST', 'KELD'),    # Kelmore upper reservoir → lower tailwater
-    ('EAST', 'BARD'),    # Barrow upper reservoir  → lower tailwater
+    ('MDBY', 'DUND'),    # Dunmore upper (DUNH) reservoir → lower tailwater
+    ('WEST', 'KELD'),    # Kelmore upper (KELM) reservoir → lower tailwater
+    ('NRTH', 'BARD'),    # Barrow upper (BARR)  reservoir → lower tailwater
 ]
 
 
 # ─── Unit square layout helpers ───────────────────────────────────────────────
+
+def _parallel_offset_endpoints(
+    x1: int, y1: int, x2: int, y2: int,
+    parallel: int, scale: float,
+) -> tuple[int, int, int, int]:
+    """
+    Offset a line's endpoints perpendicular to its direction for double-circuit
+    display. parallel=0 returns the endpoints unchanged.
+
+    Display-only — has no electrical meaning. Both circuits of a pair (e.g.
+    parallel=+1 and parallel=-1) are offset in opposite directions so they
+    render as two visually distinct, separately clickable parallel lines.
+    """
+    if parallel == 0:
+        return x1, y1, x2, y2
+    dx = x2 - x1
+    dy = y2 - y1
+    length = max(1.0, (dx * dx + dy * dy) ** 0.5)
+    # Perpendicular unit vector, scaled by the display offset constant.
+    off = PARALLEL_LINE_OFFSET_PX * scale * parallel
+    ox = int(-dy / length * off)
+    oy = int(dx / length * off)
+    return x1 + ox, y1 + oy, x2 + ox, y2 + oy
+
 
 def _unit_positions(station_label: str, n_units: int) -> list[tuple[int, int]]:
     """
@@ -173,19 +197,20 @@ class GridCanvas:
             _draw_dashed_line(
                 self._hydraulic_surf, COL_LINE_HYDRAULIC,
                 (fx, fy), (tx, ty),
-                dash=max(1, int(5 * scale)), gap=max(1, int(4 * scale)), width=dash_w,
+                dash=max(1, int(3 * scale)), gap=max(1, int(2 * scale)), width=dash_w,
             )
 
         # Pre-baked tripped-line surfaces: one per line, drawn once at init.
         # Each surface covers only the line's bounding box (offset stored alongside).
         self._tripped_line_surfs: dict[str, tuple[pygame.Surface, int, int]] = {}
-        pad = max(2, int(3 * scale))
+        pad = max(2, int(2 * scale))
         for line in self._lines:
             if line.from_bus not in self._bus_pos or line.to_bus not in self._bus_pos:
                 continue
             # Tripped lines route vertical-first: bend at (x1, y2)
             x1, y1 = self._bus_pos[line.from_bus]
             x2, y2 = self._bus_pos[line.to_bus]
+            x1, y1, x2, y2 = _parallel_offset_endpoints(x1, y1, x2, y2, line.parallel, self._scale)
             bx, by = x1, y2
             min_x = min(x1, x2) - pad
             min_y = min(y1, y2) - pad
@@ -196,8 +221,8 @@ class GridCanvas:
             surf = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
             surf.fill((0, 0, 0, 0))
             ox, oy = min_x, min_y
-            td = max(1, int(6 * scale))
-            tg = max(1, int(4 * scale))
+            td = max(1, int(3 * scale))
+            tg = max(1, int(2 * scale))
             if y1 != y2:
                 _draw_dashed_line(
                     surf, COL_LINE_TRIPPED,
@@ -285,7 +310,7 @@ class GridCanvas:
         self._hydraulic_surf.fill((0, 0, 0, 0))
 
         # Pre-bake tripped-line surfaces for the designer lines
-        pad   = max(2, int(3 * scale))
+        pad   = max(2, int(2 * scale))
         dash_w = max(1, round(scale))
         self._tripped_line_surfs = {}
         for line in lines:
@@ -303,8 +328,8 @@ class GridCanvas:
             surf = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
             surf.fill((0, 0, 0, 0))
             ox, oy = min_x, min_y
-            td = max(1, int(6 * scale))
-            tg = max(1, int(4 * scale))
+            td = max(1, int(3 * scale))
+            tg = max(1, int(2 * scale))
             if y1 != y2:
                 _draw_dashed_line(
                     surf, COL_LINE_TRIPPED,
@@ -470,6 +495,8 @@ class GridCanvas:
                     loading = line_loading.get(line.label, 0.0)
                     fx, fy = self._bus_pos[line.from_bus]
                     tx, ty = self._bus_pos[line.to_bus]
+                    fx, fy, tx, ty = _parallel_offset_endpoints(
+                        fx, fy, tx, ty, line.parallel, self._scale)
                     draw_transmission_line(
                         target,
                         fx, fy, tx, ty,
@@ -552,7 +579,7 @@ class GridCanvas:
         font = self._font
         sl   = int(FONT_SIZE_PANEL * font_scale)
         sc   = self._scale
-        off  = int(16 * sc)   # distance from symbol centre to text edge
+        off  = int(8 * sc)   # distance from symbol centre to text edge
 
         for bus in self._buses:
             bx, by = self._bus_pos[bus.label]

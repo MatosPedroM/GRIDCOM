@@ -4,9 +4,12 @@ src/gameplay/shifts/shift_01.py
 Shift 1 scenario definition — single-unit dispatch tutorial.
 
 Narrative:
-  DUND-1 (Dunmore Lower 1, 65 MW hydro) is the sole online unit.
-  All Riverside Coal units and DUND-2 are on planned maintenance.
-  The player observes basic frequency and load behaviour with no dispatch decisions.
+  DUND-1 (Dunmore Lower 1, 65 MW hydro) is the sole online unit, fed from
+  the Midbury 400kV substation via the L11 transformer link. DUND-2 is on
+  planned maintenance. The player observes basic frequency and load
+  behaviour with no dispatch decisions.
+
+Grid: MDBY ──L11──► DUND ──L49──► LD01   (3 buses, 2 lines)
 """
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ INITIAL_SCHEDULE: dict[str, float] = {
 }
 
 # Units on planned maintenance — visible on canvas but cannot be started.
-MAINTENANCE_UNITS: set[str] = {'RVSD-1', 'RVSD-2', 'RVSD-3', 'DUND-2'}
+MAINTENANCE_UNITS: set[str] = {'DUND-2'}
 
 AGC_ENABLED: bool = False
 

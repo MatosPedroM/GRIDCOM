@@ -23,6 +23,7 @@ from simulation.constants import (
     FLOW_MARKER_SIZE, FLOW_MARKER_SPACING,
     FLOW_SPEED_BASE, FLOW_SPEED_MAX,
 )
+from display.canvas import _parallel_offset_endpoints
 
 
 _FLOW_THRESHOLD_PCT: float = 5.0    # minimum |loading %| to draw markers
@@ -108,6 +109,7 @@ class FlowAnimator:
 
             x1, y1 = fb.canvas_x, fb.canvas_y
             x2, y2 = tb.canvas_x, tb.canvas_y
+            x1, y1, x2, y2 = _parallel_offset_endpoints(x1, y1, x2, y2, line.parallel, 1.0)
 
             dx = x2 - x1
             dy = y2 - y1

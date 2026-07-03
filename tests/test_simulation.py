@@ -93,34 +93,34 @@ def test_grid_loads() -> bool:
             print(f"  Grid(3): FAIL — {e}")
             all_passed = False
 
-        # ── Shift 5: full grid (32 transmission buses) ────────────────────
+        # ── Shift 7: full grid (36 transmission + load buses) ─────────────
         try:
-            g5 = Grid(5)
-            buses5 = g5.get_active_buses()
-            lines5 = g5.get_active_lines()
-            units5 = g5.get_active_units()
+            g7 = Grid(7)
+            buses7 = g7.get_active_buses()
+            lines7 = g7.get_active_lines()
+            units7 = g7.get_active_units()
 
-            expected_buses_5 = sum(1 for b in BUSES if b.active_from_shift <= 5)
-            expected_lines_5 = sum(1 for l in LINES if l.active_from_shift <= 5 <= l.active_until_shift)
-            expected_units_5 = sum(1 for u in UNITS if u.active_from_shift <= 5)
+            expected_buses_7 = sum(1 for b in BUSES if b.active_from_shift <= 7)
+            expected_lines_7 = sum(1 for l in LINES if l.active_from_shift <= 7 <= l.active_until_shift)
+            expected_units_7 = sum(1 for u in UNITS if u.active_from_shift <= 7)
 
-            assert len(buses5) == expected_buses_5, \
-                f"Shift 5 buses: expected {expected_buses_5}, got {len(buses5)}"
-            assert len(lines5) == expected_lines_5, \
-                f"Shift 5 lines: expected {expected_lines_5}, got {len(lines5)}"
-            assert len(units5) == expected_units_5, \
-                f"Shift 5 units: expected {expected_units_5}, got {len(units5)}"
+            assert len(buses7) == expected_buses_7, \
+                f"Shift 7 buses: expected {expected_buses_7}, got {len(buses7)}"
+            assert len(lines7) == expected_lines_7, \
+                f"Shift 7 lines: expected {expected_lines_7}, got {len(lines7)}"
+            assert len(units7) == expected_units_7, \
+                f"Shift 7 units: expected {expected_units_7}, got {len(units7)}"
 
-            assert len(buses5) > len(buses3), \
-                "Shift 5 should have more buses than shift 3"
-            assert len(units5) == 47, \
-                f"Full fleet should be 47 units, got {len(units5)}"
+            assert len(buses7) > len(buses3), \
+                "Shift 7 should have more buses than shift 3"
+            assert len(units7) == 47, \
+                f"Full fleet should be 47 units, got {len(units7)}"
 
-            print(f"  Grid(5): {len(buses5)} buses, {len(lines5)} lines, "
-                  f"{len(units5)} units — PASS")
+            print(f"  Grid(7): {len(buses7)} buses, {len(lines7)} lines, "
+                  f"{len(units7)} units — PASS")
 
         except AssertionError as e:
-            print(f"  Grid(5): FAIL — {e}")
+            print(f"  Grid(7): FAIL — {e}")
             all_passed = False
 
         # ── All 47 units load without error ───────────────────────────────
@@ -281,8 +281,8 @@ def test_loadflow_solves() -> bool:
         #   P_AC = (theta_A - theta_C)/X_AC = (0-(-0.01))/0.1 = 0.1 pu = 100 MW
 
         try:
-            # Use Grid(2): L48 activates from Shift 2 (same shift as LD02).
-            # Grid(2) has MDBY→DUND (L46), DUND→LD01 (L47), DUND→LD02 (L48).
+            # Use Grid(2): L50 activates from Shift 2 (same shift as LD02).
+            # Grid(2) has MDBY→DUND (L11), DUND→LD01 (L49), DUND→LD02 (L50).
             g1 = Grid(2)
             lf = DCLoadFlow(g1)
 
@@ -313,16 +313,16 @@ def test_loadflow_solves() -> bool:
                     f"Line {l.label} loading should be >= 0"
 
             # Both feeders from DUND should carry non-zero flow
-            assert abs(result.line_flows_mw['L47']) > 1.0, \
-                f"L47 (DUND-LD01) should carry flow, got {result.line_flows_mw['L47']:.2f} MW"
-            assert abs(result.line_flows_mw['L48']) > 1.0, \
-                f"L48 (DUND-LD02) should carry flow, got {result.line_flows_mw['L48']:.2f} MW"
+            assert abs(result.line_flows_mw['L49']) > 1.0, \
+                f"L49 (DUND-LD01) should carry flow, got {result.line_flows_mw['L49']:.2f} MW"
+            assert abs(result.line_flows_mw['L50']) > 1.0, \
+                f"L50 (DUND-LD02) should carry flow, got {result.line_flows_mw['L50']:.2f} MW"
 
             print(f"  Grid(1) solve: slack angle=0, all angles/flows present — PASS")
-            print(f"    L47 flow={result.line_flows_mw['L47']:.1f} MW  "
-                  f"loading={result.line_loading_pct['L47']:.1f}%")
-            print(f"    L48 flow={result.line_flows_mw['L48']:.1f} MW  "
-                  f"loading={result.line_loading_pct['L48']:.1f}%")
+            print(f"    L49 flow={result.line_flows_mw['L49']:.1f} MW  "
+                  f"loading={result.line_loading_pct['L49']:.1f}%")
+            print(f"    L50 flow={result.line_flows_mw['L50']:.1f} MW  "
+                  f"loading={result.line_loading_pct['L50']:.1f}%")
 
         except AssertionError as e:
             print(f"  Grid(1) solve: FAIL — {e}")
@@ -330,7 +330,7 @@ def test_loadflow_solves() -> bool:
 
         # ── Flow direction consistency ─────────────────────────────────────
         # Generation at MDBY (slack), load at LD01. Power must flow
-        # MDBY→DUND (L46, positive) then DUND→LD01 (L47, positive).
+        # MDBY→DUND (L11, positive) then DUND→LD01 (L49, positive).
         try:
             g1 = Grid(1)
             lf = DCLoadFlow(g1)
@@ -341,13 +341,13 @@ def test_loadflow_solves() -> bool:
             result = lf.solve(buses)
 
             # Power flows toward load: MDBY→DUND positive, DUND→LD01 positive
-            assert result.line_flows_mw['L46'] > 0.0, \
-                f"L46 should flow MDBY→DUND (positive), got {result.line_flows_mw['L46']:.2f}"
-            assert result.line_flows_mw['L47'] > 0.0, \
-                f"L47 should flow DUND→LD01 (positive), got {result.line_flows_mw['L47']:.2f}"
+            assert result.line_flows_mw['L11'] > 0.0, \
+                f"L11 should flow MDBY→DUND (positive), got {result.line_flows_mw['L11']:.2f}"
+            assert result.line_flows_mw['L49'] > 0.0, \
+                f"L49 should flow DUND→LD01 (positive), got {result.line_flows_mw['L49']:.2f}"
 
-            print(f"  Flow direction correct: L46={result.line_flows_mw['L46']:.1f} MW "
-                  f"L47={result.line_flows_mw['L47']:.1f} MW -- PASS")
+            print(f"  Flow direction correct: L11={result.line_flows_mw['L11']:.1f} MW "
+                  f"L49={result.line_flows_mw['L49']:.1f} MW -- PASS")
 
         except AssertionError as e:
             print(f"  Flow direction: FAIL — {e}")
@@ -398,34 +398,34 @@ def test_loadflow_solves() -> bool:
             print(f"  Singular fallback: FAIL — {e}")
             all_passed = False
 
-        # ── Full grid Shift 5: all lines get flows ────────────────────────
+        # ── Full grid Shift 7: all lines get flows ────────────────────────
         try:
-            g5 = Grid(5)
-            lf5 = DCLoadFlow(g5)
+            g7 = Grid(7)
+            lf7 = DCLoadFlow(g7)
 
-            buses = {b.label: 0.0 for b in g5.get_active_buses()}
+            buses = {b.label: 0.0 for b in g7.get_active_buses()}
             # Spread load across load substations
-            for label in g5.get_load_bus_labels():
+            for label in g7.get_load_bus_labels():
                 buses[label] = -500.0
             # Generation at major buses
             buses['MDBY'] = 0.0   # slack — absorbs remainder
-            buses['CNTR'] = 1400.0
+            buses['STHW'] = 1400.0
             buses['NRTH'] = 600.0
             buses['WEST'] = 400.0
 
-            result = lf5.solve(buses)
+            result = lf7.solve(buses)
 
-            expected_lines = len(g5.get_active_lines())
+            expected_lines = len(g7.get_active_lines())
             assert len(result.line_flows_mw) == expected_lines, \
                 f"Expected {expected_lines} line flows, got {len(result.line_flows_mw)}"
-            assert len(result.bus_angles) == len(g5.get_active_buses()), \
+            assert len(result.bus_angles) == len(g7.get_active_buses()), \
                 "Missing bus angles in full grid solve"
 
             non_zero = sum(1 for f in result.line_flows_mw.values() if abs(f) > 0.1)
             assert non_zero > 10, \
                 f"Expected at least 10 lines to carry flow, only {non_zero}/{expected_lines} non-zero"
 
-            print(f"  Full grid (shift 5): {expected_lines} lines solved, "
+            print(f"  Full grid (shift 7): {expected_lines} lines solved, "
                   f"{non_zero} carrying flow — PASS")
 
         except AssertionError as e:
@@ -623,9 +623,9 @@ def test_unit_model() -> bool:
                 f"Wind unit should start ONLINE, got {um.state!r}"
             assert not um.start(), "start() should return False for renewable"
             assert not um.stop(), "stop() should return False for renewable"
-            um.set_renewable_output(350.0)
-            assert abs(um.current_mw - 350.0) < 0.01, \
-                f"set_renewable_output should set output: expected 350, " \
+            um.set_renewable_output(180.0)
+            assert abs(um.current_mw - 180.0) < 0.01, \
+                f"set_renewable_output should set output: expected 180, " \
                 f"got {um.current_mw}"
             print(f"  Renewable always ONLINE, output overridable -- PASS")
         except AssertionError as e:
@@ -633,7 +633,7 @@ def test_unit_model() -> bool:
             all_passed = False
 
         # ── FleetModel aggregates ─────────────────────────────────────────
-        # Grid(3) used: HART-1/2 are at CNTR which is only active from Shift 3.
+        # Grid(3) used: HART-1/2 are at STHW which is only active from Shift 3.
         try:
             g3 = Grid(3)
             schedule = {
@@ -656,8 +656,8 @@ def test_unit_model() -> bool:
             assert 'MDBY' in p_inj, "RVSD units at MDBY should appear in p_injections"
             assert abs(p_inj['MDBY'] - 280.0) < 0.1, \
                 f"MDBY P injection: expected 280, got {p_inj['MDBY']:.1f}"
-            assert abs(p_inj['CNTR'] - 1300.0) < 0.1, \
-                f"CNTR P injection: expected 1300, got {p_inj.get('CNTR', 0):.1f}"
+            assert abs(p_inj['STHW'] - 1300.0) < 0.1, \
+                f"STHW P injection: expected 1300, got {p_inj.get('STHW', 0):.1f}"
 
             oit = fleet.online_unit_types()
             assert len(oit) > 0, "online_unit_types should return non-empty list"
@@ -957,12 +957,15 @@ def test_demand_model() -> bool:
     try:
         from simulation.demand import DemandModel
         from data.profiles import SHIFT_SPECS, get_substation_demand_specs
+        from gameplay.shifts.loader import load_shift_config
 
-        spec = SHIFT_SPECS[5]   # shift 5 uses LD01-LD06 load substations
+        spec = SHIFT_SPECS[7]   # shift 7 uses the full LD01-LD06 load substations
+        substation_specs = get_substation_demand_specs(
+            load_shift_config(7)['substation_load_mw'])
 
         # ── Deterministic forecast matches profile ─────────────────────────
         try:
-            dm = DemandModel(spec)
+            dm = DemandModel(spec, substation_specs)
             dm.update(9.0, total_generation_mw=2000.0)
             forecast = dm.get_forecast_mw(9.0)
             assert abs(dm.total_demand_mw - forecast) < 0.01, \
@@ -970,7 +973,7 @@ def test_demand_model() -> bool:
                 f"got {dm.total_demand_mw:.2f} vs {forecast:.2f}"
 
             # Bus demands should sum to total
-            load_buses = list(get_substation_demand_specs(spec.shift_number).keys())
+            load_buses = list(substation_specs.keys())
             bus_sum = sum(dm.get_bus_demand_mw(b) for b in load_buses)
             assert abs(bus_sum - dm.total_demand_mw) < 0.01, \
                 f"Bus demands {bus_sum:.2f} don't sum to total {dm.total_demand_mw:.2f}"
@@ -983,7 +986,7 @@ def test_demand_model() -> bool:
 
         # ── Morning > night (profile shape) ───────────────────────────────
         try:
-            dm = DemandModel(spec)
+            dm = DemandModel(spec, substation_specs)
             dm.update(9.0, total_generation_mw=2000.0)
             morning = dm.total_demand_mw
             dm.update(3.0, total_generation_mw=1000.0)
@@ -997,7 +1000,7 @@ def test_demand_model() -> bool:
 
         # ── Load shed reduces effective demand ─────────────────────────────
         try:
-            dm = DemandModel(spec)
+            dm = DemandModel(spec, substation_specs)
             dm.update(9.0, total_generation_mw=2000.0)
             before_shed = dm.total_demand_mw
             ld01_before = dm.get_bus_demand_mw('LD01')
@@ -1026,7 +1029,7 @@ def test_demand_model() -> bool:
         # ── Losses scale with generation ───────────────────────────────────
         try:
             from simulation.constants import LOSSES_FRACTION
-            dm = DemandModel(spec)
+            dm = DemandModel(spec, substation_specs)
             gen_mw = 2000.0
             dm.update(9.0, total_generation_mw=gen_mw)
             expected_losses = gen_mw * LOSSES_FRACTION
@@ -1060,14 +1063,14 @@ def test_renewables_model() -> bool:
         from simulation.grid import Grid
         from data.fleet import UNITS
 
-        # Use Shift 3 which has WNCN (wind) and SLST (solar) active.
-        g3 = Grid(3)
+        # Use Shift 7 which has WNCN (wind) and SLST/SLFD (solar) active.
+        g7 = Grid(7)
 
         # ── All outputs bounded [0, rated_mw] ─────────────────────────────
         try:
             rng = np.random.default_rng(seed=0)
-            rm = RenewablesModel(g3, rng=rng)
-            rated = {u.label: u.rated_mw for u in g3.get_active_units()
+            rm = RenewablesModel(g7, rng=rng)
+            rated = {u.label: u.rated_mw for u in g7.get_active_units()
                      if u.unit_type in ('WIND', 'SOLAR')}
 
             for hour in [0.0, 6.0, 9.0, 13.0, 18.0, 22.0]:
@@ -1084,10 +1087,10 @@ def test_renewables_model() -> bool:
 
         # ── Solar is zero at night ─────────────────────────────────────────
         try:
-            rm = RenewablesModel(g3)
-            solar_units = [u.label for u in g3.get_active_units()
+            rm = RenewablesModel(g7)
+            solar_units = [u.label for u in g7.get_active_units()
                            if u.unit_type == 'SOLAR']
-            assert solar_units, "Shift 3 should have solar units"
+            assert solar_units, "Shift 7 should have solar units"
 
             # Hour 2:00 — deep night, solar profile = 0.0
             outputs_night = rm.update(2.0, deterministic=False)
@@ -1109,10 +1112,10 @@ def test_renewables_model() -> bool:
         # ── Deterministic mode matches forecast ────────────────────────────
         try:
             from data.profiles import get_wind_mw, get_solar_mw
-            rm = RenewablesModel(g3)
+            rm = RenewablesModel(g7)
             outputs = rm.update(10.0, deterministic=True)
 
-            for unit in g3.get_active_units():
+            for unit in g7.get_active_units():
                 if unit.unit_type == 'WIND':
                     expected = get_wind_mw(10.0, unit.rated_mw)
                     assert abs(outputs[unit.label] - expected) < 0.01, \
@@ -1131,9 +1134,9 @@ def test_renewables_model() -> bool:
 
         # ── forecast_by_hour covers the requested window ───────────────────
         try:
-            rm = RenewablesModel(g3)
+            rm = RenewablesModel(g7)
             forecasts = rm.forecast_by_hour(6.0, 18.0, step=1.0)
-            wind_units = [u.label for u in g3.get_active_units()
+            wind_units = [u.label for u in g7.get_active_units()
                           if u.unit_type == 'WIND']
             for label in wind_units:
                 assert label in forecasts, \
@@ -1184,72 +1187,73 @@ def test_cascade_model() -> bool:
         # topology (radial cascade stations and generation buses are naturally
         # isolated when their single feed line is the only connection).
         try:
-            g5 = Grid(5)
-            lines5 = g5.get_active_lines()
-            buses5 = g5.get_active_buses()
-            islands5 = cm.find_islands(buses5, lines5)
+            g7 = Grid(7)
+            lines7 = g7.get_active_lines()
+            buses7 = g7.get_active_buses()
+            islands7 = cm.find_islands(buses7, lines7)
 
-            all_labels5 = {b.label for b in buses5}
+            all_labels7 = {b.label for b in buses7}
             covered: set = set()
-            for island in islands5:
+            for island in islands7:
                 overlap = covered & island
                 assert not overlap, \
                     f"Bus(es) {overlap} appear in multiple islands"
                 covered.update(island)
-            assert covered == all_labels5, \
-                f"Not all buses covered: missing {all_labels5 - covered}"
+            assert covered == all_labels7, \
+                f"Not all buses covered: missing {all_labels7 - covered}"
 
-            # The main grid backbone (MDBY, CNTR, NRTH, EAST, WEST, STHW)
+            # The main grid backbone (WEST, MDBY, STHW, CNTR, NRTH, EAST)
             # must all be in the same island — they are directly interconnected
             # by the active 400kV lines.
-            backbone = {'MDBY', 'CNTR', 'NRTH', 'EAST', 'WEST', 'STHW'}
+            backbone = {'WEST', 'MDBY', 'STHW', 'CNTR', 'NRTH', 'EAST'}
             backbone_island = next(
-                (i for i in islands5 if backbone <= i), None
+                (i for i in islands7 if backbone <= i), None
             )
             assert backbone_island is not None, \
                 f"400kV backbone buses should all be in one island"
 
             # Load substations each connect to a 150kV feeder — verify they're
             # reachable from the backbone (same island), not isolated.
-            load_labels5 = {b.label for b in buses5 if b.bus_type == 'LOAD'}
-            for lb in load_labels5:
-                lb_island = next(i for i in islands5 if lb in i)
+            load_labels7 = {b.label for b in buses7 if b.bus_type == 'LOAD'}
+            for lb in load_labels7:
+                lb_island = next(i for i in islands7 if lb in i)
                 assert len(lb_island) > 1, \
                     f"Load sub {lb} should be connected (not isolated), " \
                     f"got isolated 1-bus island"
 
-            print(f"  Grid(5) partition: {len(islands5)} islands, all "
-                  f"{len(all_labels5)} buses covered, backbone connected — PASS")
+            print(f"  Grid(7) partition: {len(islands7)} islands, all "
+                  f"{len(all_labels7)} buses covered, backbone connected — PASS")
 
         except AssertionError as e:
             print(f"  Single island: FAIL — {e}")
             all_passed = False
 
         # ── Tripped line splits transmission network into two islands ─────────
-        # Use Grid(5) where L08 (STHW-ASHF) and L09 (CNTR-WRNT) are the
-        # only connections from the 400kV backbone into the 220kV south sub-grid.
-        # Removing all four transformer lines (L08-L11) isolates the south
-        # 220kV buses from the 400kV backbone.
+        # Use Grid(7) where L09 (STHW-ASHF), L10 (CNTR-WRNT), L11 (MDBY-DUND),
+        # L12 (WEST-RDST), L13 (NRTH-COAL), and L14 (EAST-SLST) are the only
+        # connections from the 400kV backbone into the 220kV regional pockets.
+        # Removing all six transformer lines isolates the 220kV pockets
+        # (and everything meshed onto them) from the spine.
         try:
-            g5 = Grid(5)
-            buses5 = g5.get_active_buses()
-            all_lines5 = g5.get_active_lines()
+            g7 = Grid(7)
+            buses7 = g7.get_active_buses()
+            all_lines7 = g7.get_active_lines()
 
-            cut_labels = {'L08', 'L09', 'L10', 'L11'}
-            reduced_lines = [l for l in all_lines5 if l.label not in cut_labels]
+            cut_labels = {'L09', 'L10', 'L11', 'L12', 'L13', 'L14'}
+            reduced_lines = [l for l in all_lines7 if l.label not in cut_labels]
 
-            islands = cm.find_islands(buses5, reduced_lines)
+            islands = cm.find_islands(buses7, reduced_lines)
 
             # Every bus must still appear in exactly one island.
             total_in_islands = sum(len(i) for i in islands)
-            assert total_in_islands == len(buses5), \
+            assert total_in_islands == len(buses7), \
                 f"All buses must appear in exactly one island: " \
-                f"{total_in_islands} != {len(buses5)}"
+                f"{total_in_islands} != {len(buses7)}"
 
             # The cut creates at least 2 transmission islands
-            # (400kV backbone group + 220kV south group).
-            tx_labels5 = {b.label for b in buses5 if b.bus_type == 'TRANSMISSION'}
-            tx_islands = [i for i in islands if i & tx_labels5]
+            # (400kV backbone group + 220kV pocket group(s)).
+            tx_labels7 = {b.label for b in buses7 if b.bus_type == 'TRANSMISSION'}
+            tx_islands = [i for i in islands if i & tx_labels7]
             assert len(tx_islands) >= 2, \
                 f"Cutting transformer lines should create >= 2 tx islands, " \
                 f"got {len(tx_islands)}"

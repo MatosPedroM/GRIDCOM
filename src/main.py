@@ -288,7 +288,7 @@ def main() -> None:
         briefing_lines = build_briefing_lines(_spec) if _spec else []
         briefing_chars = 0.0
     else:
-        shift      = 1
+        shift      = 10
         difficulty = 'standard'
         sim, grid, renderer = _make_sim_and_renderer(display_surf, shift, difficulty)
         game_state = GameState.BRIEFING if _const.DEV_SKIP_INTRO else GameState.SPLASH

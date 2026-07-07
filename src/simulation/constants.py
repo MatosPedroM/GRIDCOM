@@ -160,6 +160,15 @@ INTC_N_CAPACITY_MW: float = 800.0       # INTC-N max import/export
 INTC_S_CAPACITY_MW: float = 600.0       # INTC-S max import/export
 
 # ─────────────────────────────────────────────
+# LINE RATINGS
+# ─────────────────────────────────────────────
+LINE_RATING_MW_BY_VOLTAGE: dict = {     # Flat MW rating per nominal line voltage tier
+    400.0: 2250.0,
+    220.0:  400.0,
+    150.0:  175.0,
+}
+
+# ─────────────────────────────────────────────
 # SIMULATION TIMING
 # ─────────────────────────────────────────────
 SIM_TICKS_PER_SECOND: int   = 10        # Simulation ticks per real second
@@ -177,20 +186,20 @@ SIM_TICK_INTERVAL_S:  float = 0.1    # Simulation advances at 10 Hz regardless o
 LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
 
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
-FONT_SIZE_LABEL:          int = 16      # bus/station labels on canvas
-FONT_SIZE_OVERLAY:        int = 17      # interconnector labels, debug overlay
-FONT_SIZE_PANEL:          int = 15      # standard instrument strip text
-FONT_SIZE_PANEL_LARGE:    int = 32      # frequency Hz readout
-FONT_SIZE_CONTEXT:        int = 15      # unit context overlay text
+FONT_SIZE_LABEL:          int = 14      # bus/station labels on canvas
+FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
+FONT_SIZE_PANEL:          int = 13      # standard instrument strip text
+FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
+FONT_SIZE_CONTEXT:        int = 13      # unit context overlay text
 
 TYPEWRITER_CHARS_PER_SEC: int   = 400  # Characters revealed per real second on text screens
-TEXT_SCREEN_FONT_SIZE:    int   = 19   # px — font size for briefing/debrief screens
+TEXT_SCREEN_FONT_SIZE:    int   = 17   # px — font size for briefing/debrief screens
 TEXT_SCREEN_LEFT_MARGIN:  int   = 120  # px — left margin at native 1920×1080
 TEXT_SCREEN_TOP_MARGIN:   int   = 80   # px — top margin at native 1920×1080
 TEXT_SCREEN_ROW_H:        int   = 22   # px — row height at native 1920×1080
 
 SPLASH_DURATION_S:  float = 4.0   # seconds before splash auto-advances to main menu
-MENU_FONT_SIZE:     int   = 22    # px — menu item font size
+MENU_FONT_SIZE:     int   = 20    # px — menu item font size
 MENU_ROW_H:         int   = 30    # px — row height for menu items
 MENU_LEFT_MARGIN:   int   = 120   # px — left margin for menus (matches text screen)
 MENU_TOP_MARGIN:    int   = 440   # px — top margin for menu item list (below art title block)
@@ -268,8 +277,8 @@ DESIGNER_N1_OVERLOAD_PCT:    float = 90.0   # auto-route: N-1 contingency overlo
 DESIGNER_STATUS_DISPLAY_S:   float = 3.0    # seconds to show auto-route completion message
 DESIGNER_HIT_RADIUS:         int   = 14     # px — hit-test radius for buses in designer
 DESIGNER_LINE_HIT_PX:        int   = 8      # px — perpendicular distance threshold for line hit
-DESIGNER_FONT_SIZE:          int   = 14     # px — designer sidebar and overlay font size
-DESIGNER_FONT_SIZE_LARGE:    int   = 24     # px — status messages on canvas
+DESIGNER_FONT_SIZE:          int   = 12     # px — designer sidebar and overlay font size
+DESIGNER_FONT_SIZE_LARGE:    int   = 22     # px — status messages on canvas
 DESIGNER_UNDO_MAX:           int   = 50     # maximum undo stack depth
 DESIGNER_DEFAULT_RATING: dict = {           # MW rating defaults by voltage tier
     400.0: 1200.0,

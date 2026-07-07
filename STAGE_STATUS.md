@@ -6,13 +6,30 @@
 
 ## Current Stage
 
-**STAGE 23 — Full Grid Topology Redesign**
+**STAGE 24 — Shift 10 Capacity Expansion + Finale Rewrite**
 
 ## Current Status
 
-**PARTIAL** — Topology, fleet, and profiles fully redesigned (36 buses, 50 lines, 47 units, Portuguese-grid-inspired structure, full size at Shift 8). Shifts 1-3 scenario files re-tuned and playable. **Shifts 4-10 scenario files are stale** — they were written for the old topology (e.g. shift_04/05/06.py reference LD06 before it exists in the new grid, and per-bus peak MW values don't match the new `peak_demand_mw` targets). They must be rewritten before those shifts are playable. 9/9 automated tests pass.
+**PARTIAL** — Topology, fleet, and profiles fully redesigned (36 buses, 50 lines, 47 units, Portuguese-grid-inspired structure, full size at Shift 8). Shifts 1-3 scenario files re-tuned and playable. Shift 10 has now been fully rewritten as the campaign finale on a capacity-expanded grid (see Session 31): 23 new 150kV load substations, 2 new 220kV ring parallel circuits, and a flat per-voltage-tier line rating scheme (`LINE_RATING_MW_BY_VOLTAGE` in `constants.py`) replacing the old per-line/per-role ratings. **Shifts 4-9 scenario files remain stale** — same issue as before (written for the old topology, per-bus peak MW values don't match `peak_demand_mw` targets) — and now also inherit the flat-rating change from Session 31, which was NOT re-tuned for them. **Shift 3's N-1 lesson is confirmed at risk of regression** — see Known Issues. 9/9 automated tests pass.
 
 ## Session Log
+
+### Session 31 (Stage 24 — Shift 10 Capacity Expansion + Finale Rewrite)
+
+- **Problem found**: while writing Shift 10's dispatch/demand tables, an offscreen `GridSimulation` smoke test showed the existing topology could not deliver the campaign's own 8,000 MW Shift-10 peak — all demand terminates at 6 load buses (LD01-LD06) fed through only 5 transformer links (combined ~3,600 MW safe capacity). Individual buses like LD01 (peak 2,106 MW) and LD03 (peak 1,466 MW) vastly exceeded their single feed line's rating. Confirmed the true simultaneous system peak (all 6 buses at hour 16:00) is exactly 8,000 MW — this is the shift's designed climax, not an edge case.
+- User directed a full fix rather than a workaround: (1) redesign the 150kV load layer with more substations, (2) normalize every line's rating to one flat value per voltage tier (not per-role as before), using new values **400kV=2250 MW, 220kV=400 MW, 150kV=175 MW**.
+- Added: `src/simulation/constants.py` — `LINE_RATING_MW_BY_VOLTAGE: dict = {400.0: 2250.0, 220.0: 400.0, 150.0: 175.0}`.
+- Edited: `src/data/topology.py` — every one of the 50 existing `Line` entries now sources `rating_mw` from `LINE_RATING_MW_BY_VOLTAGE[voltage_kv]` instead of a per-line literal (imported as `_R400`/`_R220`/`_R150` module constants). Added 23 new `Bus` entries (LD07-LD29, `bus_type='LOAD'`, `active_from_shift=10`) with hand-placed non-colliding canvas positions across previously-open map regions. Added 23 new `Line` entries (L93-L115, one dedicated 220kV feed per new substation, cycling through 14 existing 220kV source buses). Added 2 new parallel-circuit `Line` entries (L91 second ASHF↔FAIR circuit, L92 second RDST↔DUNM circuit) — both `active_from_shift=10` — after an automated convergence search (see below) found these two pre-existing 220kV ring lines remain the binding constraint even after the load layer is redistributed.
+- **Methodology**: hand-guessing the new substation count repeatedly failed (5 → 12 → 19 new links, each round revealing a new bottleneck one layer up: 150kV feed → 220kV ring → 400kV spine). Converged instead with a scratch automated search script (not part of the codebase, run from the session scratchpad) that built candidate topologies, ran the real `GridSimulation` against Shift 10's actual 8,000 MW peak-hour demand with the fleet dispatched near rated capacity, found the worst-loaded line each round, and either added more load-feed links or a parallel circuit to the specific bottleneck line. Converged in 4 rounds to 23 new links + 2 ring reinforcements, max line loading 82.6% at the true peak hour.
+- Rewritten: `src/gameplay/shifts/shift_10.py` — full finale scenario. `INITIAL_SCHEDULE` dispatches ~3,230 MW at 06:00 across nuclear/coal/CCGT/hydro tiers (THNF-3 on planned maintenance) with deliberate reserve headroom for the day's ramp. `SUBSTATION_LOAD_MW` now covers all 29 load buses — LD01-LD06 keep a small ~5% residual of their old standalone curves, the remaining ~95% is redistributed (with slight per-bus variance, not a flat split) across the 23 new substations, preserving the exact 8,000 MW system peak at hour 16:00. `SCRIPTED_EVENTS`: shift-start briefing, a wind-lull/solar-ramp warning with a reserve-margin-conditional follow-up (`_reserve_below_600mw`/`_reserve_at_or_above_600mw` helpers using `fleet.spinning_reserve_mw()`), an L03 (MDBY-STHW second circuit) scheduled-maintenance N-1 test window, and an evening-peak CCGT-staging warning (`_ccgt_below_1000mw` helper using `fleet.get_unit(label).current_mw` — the correct, existing `FleetModel` API, not the broken pattern in shift_03.py, see Known Issues). `SCORING_HOOKS`: bonus/penalty tied to L02 loading during the L03 outage window, mirroring the shift_03.py pattern.
+- Verified: offscreen load-flow check at 06:00 (max loading 89.7%, freq stable 50 Hz) and a 600-simulated-minute gradual-tick run to the 16:00 peak under several different naive auto-balancing strategies — **line loading stayed under ~97% throughout every test**, confirming the topology fix works. Frequency instability/cascade events seen in these naive tests were confirmed to be a **pre-existing simulation characteristic, not a regression** — the same immediate frequency saturation (df/dt runaway to the 45/55 Hz hard clamp within 1-2 minutes) reproduces identically on unmodified Shift 8 with its own existing dispatch, whenever generation and load aren't kept in close proportional balance every tick. This is expected given `AGC_ENABLED=False` (the deliberate "manual dispatch finale" design) — a human player continuously trims output; a naive scripted balancer does not. Not something this session's topology change caused or could fix.
+- Verified: offscreen render (pygame dummy driver) — all 59 buses / 75 lines draw without error or exceptions; screenshot-checked the 06:00 layout for gross collisions (minor crowding near HART/ASHG and DUND, no unreadable overlaps).
+- Validated: 9/9 tests pass (no simulation-code changes, only data/constants — `tests/test_simulation.py` untouched and unaffected).
+
+## Known Issues (new/updated this session)
+
+- **Shift 3's N-1 lesson is confirmed at risk of regression** from the Session 31 rating normalization. L15/L16 (the capital ring lines Shift 3's `_l15_high_load`/`bonus_n1_secure`/`penalty_ring_congestion` are tuned around) drop from 800 MW to 400 MW; L09 (the STHW↔ASHF tap that carries ~90% of flow before the outage) rises from 1200 MW to 2250 MW. Both changes shift the MW flow needed to cross the existing 80%/85%/90% percentage thresholds substantially, in opposite directions from each other. **Attempted to verify directly and could not**: `shift_03.py`'s own condition helpers (`_ashg1_below_250mw`, `_l15_high_load`) call `fleet.get_output_mw(...)` and expect a `grid` object — neither matches the real `FleetModel`/`GridSimulation._process_scripted_events()` API (which only ever calls `cond(self._fleet)`, and `FleetModel` has no `get_output_mw` method, only `get_unit(label).current_mw`). This is a **pre-existing bug**, not introduced this session — it crashes Shift 3 with an `AttributeError` as soon as sim time reaches the T+90 event (confirmed via direct reproduction). Shift 3 has therefore likely been unplayable past minute 90 since it was written, independent of this session's changes. Spot-checked L15/L16 loading up to that point (~3.3%, far below the ~90% the tutorial expects) but the result is inconclusive because frequency had already run away for unrelated reasons (see above) by the time of measurement. **Follow-up required**: fix the `shift_03.py` condition-helper API mismatch first, then re-verify/re-tune the N-1 lesson's thresholds against the new L09/L15/L16 ratings.
+- Shifts 4-9 scenario files remain stale (pre-existing, unchanged this session) and now additionally inherit the flat per-voltage-tier line ratings from Session 31, which were not re-tuned for them specifically — tracked as part of the existing Stage-24-adjacent follow-up (rewrite Shifts 4-9), now with the added note that their line-rating assumptions (if any were hand-tuned per-role) need re-checking too.
 
 ### Session 30 (Stage 23 — Full Grid Topology Redesign)
 - Full clean-sheet redesign of the campaign grid and fleet, inspired by the structure of a small European transmission system (400/220/150kV ladder, hydro-heavy west, thermal/nuclear spine, wind+solar east) while keeping the existing fictional world and station names.
@@ -269,7 +286,8 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
   ✓ src/simulation/grid.py     — Grid class (full public interface per API contract)
   ✓ tests/test_simulation.py   — test_grid_loads() — PASS
 
-  Grid sizes by shift (redesigned Stage 23 — Portuguese-grid-inspired structure):
+  Grid sizes by shift (redesigned Stage 23 — Portuguese-grid-inspired structure;
+  Stage 24 added a Shift-10-only capacity expansion, see below):
     Shift 1:  3 buses,  2 lines,  2 active units (tutorial)
     Shift 2:  4 buses,  3 lines,  5 units
     Shift 3: 10 buses, 11 lines, 13 units (N-1 lesson, capital ring)
@@ -277,7 +295,9 @@ STAGE 1 — NETWORK DATA MODEL (complete, validated)
     Shift 5: 23 buses, 30 lines, 30 units (west hydro pocket)
     Shift 6: 27 buses, 34 lines, 39 units (north spine, INTC-N)
     Shift 7: 36 buses, 47 lines, 47 units (full grid — east pocket, INTC-S)
-    Shift 8-10: 36 buses, 50 lines, 47 units (second circuits + southern sag)
+    Shift 8-9: 36 buses, 50 lines, 47 units (second circuits + southern sag)
+    Shift 10: 59 buses, 75 lines, 47 units (Stage 24: +23 load substations,
+              +2 ring parallel circuits, full 8,000 MW peak deliverable)
 
 STAGE 2 — DC LOAD FLOW SOLVER (complete, validated)
   ✓ src/simulation/loadflow.py — DCLoadFlow class + LoadFlowResult
@@ -422,16 +442,18 @@ SOURCE FILES (empty placeholders — no working code)
 
 ## What Is In Progress
 
-Nothing. Stage 23 topology/fleet/profiles/display work is complete and validated. Shifts 4-10
-scenario content is the open follow-up (see Next Session Objective).
+Nothing. Stage 23 topology/fleet/profiles/display work is complete and validated. Stage 24
+(Shift 10 capacity expansion + finale rewrite) is complete and validated this session. Shifts
+4-9 scenario content is the remaining open follow-up (see Next Session Objective), plus the
+Shift 3 N-1 lesson regression flagged in Known Issues.
 
 ---
 
 ## What Is NOT Yet Built
 
-**Gameplay stages have empty placeholder files only** (except shift_01-03, which are complete
-and re-tuned for the new topology; shift_04-10 exist as placeholder files but their content is
-now STALE against the redesigned grid — see Known Issues).
+**Gameplay stages have empty placeholder files only** (except shift_01-03 and shift_10, which
+are complete and tuned for the current topology; shift_04-09 exist as placeholder files but
+their content is STALE against the redesigned grid — see Known Issues).
 **Stage 7 (events.py) is deliberately deferred until after rendering is complete.**
 
 Do not reference any display or gameplay module as if it
@@ -445,10 +467,11 @@ Specifically — these classes and functions DO NOT EXIST YET:
 
 ## Next Session Objective
 
-**Stage 24 — Rewrite Shift 4-10 scenario files for the redesigned grid**
+**Rewrite Shift 4-9 scenario files for the redesigned grid**
 
-Shifts 1-3 are complete on the new topology. shift_04.py through shift_10.py exist but were
-written for the old grid and are now stale (see Known Issues) — they need full rewrites:
+Shifts 1-3 and 10 are complete on the current topology. shift_04.py through shift_09.py exist
+but were written for the old grid and are now stale (see Known Issues) — they need full
+rewrites:
 - New `SUBSTATION_LOAD_MW` tables matching each shift's actual active load buses
   (check `get_buses_by_shift(n)` for what's really on) and the new `peak_demand_mw` targets
   in `data/profiles.py`.
@@ -457,7 +480,15 @@ written for the old grid and are now stale (see Known Issues) — they need full
 - `MAINTENANCE_LINES` per the tutorial-feeder retirement plan: L49 (DUND↔LD01) should open at
   Shift 4 once the south 150kV mesh takes over LD01.
 - New scripted events / scoring hooks per shift (wind variability at Shift 6, solar + second
-  interconnector at Shift 7, parallel-path flow lesson at Shift 8, mastery scenarios at 9-10).
+  interconnector at Shift 7, parallel-path flow lesson at Shift 8, mastery scenario at 9).
+- Also re-check each shift's line-loading assumptions against the Session-31 flat
+  `LINE_RATING_MW_BY_VOLTAGE` ratings (400/220/150 kV = 2250/400/175 MW), which replaced the
+  old per-line/per-role ratings these shifts may have been informally tuned around.
+
+**Also required**: fix the pre-existing `shift_03.py` condition-helper bug (`_ashg1_below_250mw`
+and `_l15_high_load` call a `fleet.get_output_mw(...)` method that does not exist, and
+`_l15_high_load` expects a `grid` argument the engine never passes — see Known Issues), then
+re-verify/re-tune Shift 3's N-1 lesson thresholds against the new L09/L15/L16 ratings.
 
 ---
 
@@ -469,15 +500,27 @@ None at this stage. All architectural decisions are locked in the reference docu
 
 ## Known Issues
 
-**Shift 4-10 scenario files are stale against the Stage 23 topology redesign.**
-`shift_04.py` through `shift_10.py` were written for the old 40-bus grid (full size at Shift 5).
+**Shift 3's N-1 lesson is at risk of regression from the Session 31 line-rating normalization**
+(see Session 31 log above for full detail). L15/L16 dropped from 800→400 MW and L09 rose from
+1200→2250 MW; the tutorial's 80/85/90% loading thresholds are unchanged but the MW flow needed
+to reach them has shifted substantially. **Blocked on a separate pre-existing bug**: `shift_03.py`'s
+own condition helpers (`_ashg1_below_250mw`, `_l15_high_load`) call a `FleetModel.get_output_mw()`
+method that does not exist (the real API is `fleet.get_unit(label).current_mw`), and
+`_l15_high_load` is written to take a `grid` argument, but `GridSimulation._process_scripted_events()`
+only ever calls `cond(self._fleet)`. This crashes Shift 3 with an `AttributeError` once sim time
+reaches minute 90 (T+90 in the shift's own event schedule) — confirmed via direct reproduction,
+not introduced this session. Shift 3 has likely been unplayable past that point since it was
+written. Fix the helper API mismatch first, then re-verify the N-1 lesson still teaches
+convincingly at the new ratings.
+
+**Shift 4-9 scenario files are stale against the Stage 23 topology redesign.**
+`shift_04.py` through `shift_09.py` were written for the old 40-bus grid (full size at Shift 5).
 Example: `shift_04.py`'s `SUBSTATION_LOAD_MW` includes `LD06`, which in the new grid is not
 active until Shift 7; `shift_05.py`/`shift_06.py` reference all six load substations (LD01-06)
 even though the new grid only activates them progressively through Shift 7. Per-bus peak MW
 values were tuned to the old `peak_demand_mw` figures and no longer match the new targets in
-`data/profiles.py`. These shifts will produce an unbalanced/overloaded grid until rewritten
-(tracked as Stage 24 above). Shifts 1-3 do not have this problem — they were rewritten this
-session.
+`data/profiles.py`. These shifts will produce an unbalanced/overloaded grid until rewritten.
+Shifts 1-3 and 10 do not have this problem — they were rewritten across Sessions 26-31.
 
 ---
 
@@ -507,6 +550,7 @@ session.
 | 20 | GEN MIX strip panel; FORECAST LOAD canvas overlay; 9/9 pass | PASS | 2026-05-28 |
 | 21 | Line trip (T) and close (C) commands; TRIP/CLOSE button in context panel; 9/9 pass | PASS | 2026-05-29 |
 | 23 | Full grid/fleet redesign (36 buses, 50 lines, 47 units); Shifts 1-3 re-tuned; N-1 spot checks + offscreen render check; 9/9 pass | PASS | 2026-07-03 |
+| 24 | Shift 10 capacity expansion (59 buses, 75 lines) + finale rewrite; flat per-voltage-tier line ratings; offscreen load-flow + gradual-tick + render checks; 9/9 pass | PASS | 2026-07-07 |
 
 ---
 

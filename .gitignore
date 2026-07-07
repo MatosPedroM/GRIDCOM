@@ -11,3 +11,4 @@ desktop.ini
 venv/
 .venv/
 *.tmp.*
+logs/

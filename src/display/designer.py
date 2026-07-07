@@ -986,7 +986,7 @@ class GridDesigner:
             col = _VOLT_LINE_COLOUR.get(l.voltage_kv, COL_LINE_NORMAL)
             if selected:
                 col = COL_SELECTION
-            thickness = {400.0: 4, 220.0: 3, 150.0: 2, 60.0: 1}.get(l.voltage_kv, 2)
+            thickness = {400.0: 2, 220.0: 2, 150.0: 1, 60.0: 1}.get(l.voltage_kv, 1)
             pygame.draw.line(surf, col,
                              (b1.canvas_x, b1.canvas_y),
                              (b2.canvas_x, b2.canvas_y), thickness)
@@ -996,7 +996,7 @@ class GridDesigner:
                 pcol  = (COL_DESIGNER_SURPLUS_NEG if preview_loading > 90
                          else COL_LOAD_WARN if preview_loading > 70
                          else COL_DESIGNER_STATUS_OK)
-                self._font.render_to(surf, (mid_x - 15, mid_y - 8),
+                self._font.render_to(surf, (mid_x - 8, mid_y - 4),
                                      f'{preview_loading:.0f}%', pcol)
 
         # Ghost line while in LINE mode and first bus chosen
@@ -1023,7 +1023,7 @@ class GridDesigner:
                                 selected=selected, scale=1.0)
             # Voltage colour dot
             pygame.draw.circle(surf, col,
-                               (b.canvas_x, b.canvas_y), BUS_SIZE // 2 + 2, 2)
+                               (b.canvas_x, b.canvas_y), BUS_SIZE // 2 + 1, 1)
             # Label
             lbl_col = COL_SELECTION if selected else COL_TEXT_PRIMARY
             lx, ly  = _label_pos(b.canvas_x, b.canvas_y, b.label_anchor)
@@ -1047,7 +1047,7 @@ class GridDesigner:
             n      = len(units)
             total  = n * UNIT_SIZE + (n - 1) * UNIT_GAP
             start_x = bus.canvas_x - total // 2
-            uy      = bus.canvas_y + BUS_SIZE + 14
+            uy      = bus.canvas_y + BUS_SIZE + 7
             for i, u in enumerate(units):
                 ux = start_x + i * (UNIT_SIZE + UNIT_GAP) + UNIT_SIZE // 2
                 draw_unit_square(surf, ux, uy,
@@ -1319,12 +1319,12 @@ def _point_segment_dist(px, py, ax, ay, bx, by) -> float:
 
 
 def _label_pos(cx: int, cy: int, anchor: str) -> tuple[int, int]:
-    off = BUS_SIZE // 2 + 4
+    off = BUS_SIZE // 2 + 2
     if anchor == 'right':
-        return cx + off, cy - 6
+        return cx + off, cy - 3
     if anchor == 'left':
-        return cx - off - 30, cy - 6
+        return cx - off - 15, cy - 3
     if anchor == 'top':
-        return cx - 12, cy - off - 14
+        return cx - 6, cy - off - 7
     # bottom
-    return cx - 12, cy + off + 2
+    return cx - 6, cy + off + 1

@@ -353,7 +353,7 @@ class GridSimulation:
         self._demand.update(sim_hour, self._fleet.total_generation_mw())
 
         # 3. Renewable outputs → fleet
-        rng_outputs = self._renewables.update(sim_hour, deterministic=False)
+        rng_outputs = self._renewables.update(sim_hour, dt_sim_seconds, deterministic=False)
         for label, mw in rng_outputs.items():
             self._fleet.set_renewable_output(label, mw)
 
@@ -595,7 +595,7 @@ class GridSimulation:
             hour = start_hour + step * dt_s / 3600.0
 
             demand_fc.update(hour, fleet_fc.total_generation_mw())
-            for lbl, mw in renew_fc.update(hour, deterministic=True).items():
+            for lbl, mw in renew_fc.update(hour, dt_s, deterministic=True).items():
                 fleet_fc.set_renewable_output(lbl, mw)
             fleet_fc.tick(dt_s)
 
@@ -1042,7 +1042,7 @@ class GridSimulation:
         sim_hour = self._start_hour
 
         self._demand.update(sim_hour, 0.0)
-        for lbl, mw in self._renewables.update(sim_hour, deterministic=True).items():
+        for lbl, mw in self._renewables.update(sim_hour, 0.0, deterministic=True).items():
             self._fleet.set_renewable_output(lbl, mw)
 
         p_inj          = self._build_p_injections()

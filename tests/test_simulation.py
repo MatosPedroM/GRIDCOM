@@ -1074,7 +1074,7 @@ def test_renewables_model() -> bool:
                      if u.unit_type in ('WIND', 'SOLAR')}
 
             for hour in [0.0, 6.0, 9.0, 13.0, 18.0, 22.0]:
-                outputs = rm.update(hour, deterministic=False)
+                outputs = rm.update(hour, 0.1, deterministic=False)
                 for label, mw in outputs.items():
                     assert 0.0 <= mw <= rated[label], \
                         f"{label} at hour {hour}: output {mw:.2f} outside " \
@@ -1093,13 +1093,13 @@ def test_renewables_model() -> bool:
             assert solar_units, "Shift 7 should have solar units"
 
             # Hour 2:00 — deep night, solar profile = 0.0
-            outputs_night = rm.update(2.0, deterministic=False)
+            outputs_night = rm.update(2.0, 0.1, deterministic=False)
             for label in solar_units:
                 assert outputs_night[label] == 0.0, \
                     f"Solar {label} at 02:00 should be 0, got {outputs_night[label]:.4f}"
 
             # Hour 13:00 — solar peak
-            outputs_peak = rm.update(13.0, deterministic=True)
+            outputs_peak = rm.update(13.0, 0.1, deterministic=True)
             for label in solar_units:
                 assert outputs_peak[label] > 0.0, \
                     f"Solar {label} at 13:00 should be > 0, got {outputs_peak[label]:.4f}"
@@ -1113,7 +1113,7 @@ def test_renewables_model() -> bool:
         try:
             from data.profiles import get_wind_mw, get_solar_mw
             rm = RenewablesModel(g7)
-            outputs = rm.update(10.0, deterministic=True)
+            outputs = rm.update(10.0, 0.1, deterministic=True)
 
             for unit in g7.get_active_units():
                 if unit.unit_type == 'WIND':

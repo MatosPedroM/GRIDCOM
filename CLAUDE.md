@@ -145,7 +145,19 @@ DUNM    Dunmore 220kV
 BRCK    Brackley 150kV
 STAN    Stanton 150kV
 FLDN    Feldon 150kV
-LD01-LD06   Load substations (150kV)
+LD01-LD15   Load substations (150kV) — each has its own place name in the
+            `name` field (see topology.py); LD01-LD06 are permanent, LD07-LD15
+            are Shift-10-only (Stage 24/25/26 capacity expansion). LD07-LD15
+            are consolidated substations, each merged from 2-3 of the original
+            23 single-substation buses that shared an identical feed-source
+            pair (LD16-LD29 labels were retired in the Stage 26 consolidation
+            and are not currently in use)
+AR01-AR04   River Arden cascade connection buses (220kV) — each has its own
+            place name distinct from the AR0N station/unit code (e.g. bus
+            AR01 is named 'Ardenbridge'; the River Arden Station 1 units are
+            still labelled AR01-1, AR01-2)
+BR01-BR03   River Brent cascade connection buses (150kV) — same pattern
+CO01-CO03   River Coln cascade connection buses (150kV) — same pattern
 INTC-N      Interconnection North
 INTC-S      Interconnection South
 ```
@@ -183,7 +195,14 @@ SLFD    Feldon Solar (400MW, 150kV)
 
 ### Line Labels
 ```
-Format:  L + 2-digit number (L01, L02 ... L45)
+Format:  L + number (L01, L02 ... L154 — not all numbers in range are in use)
+L01-L50     Permanent topology (all shifts once active_from_shift is reached)
+L91-L154    Shift-10-only additions (Stage 24/25/26 capacity expansion):
+              second circuits, dual-feed links for LD07-LD15, and the
+              River Brent/Coln loop closures. Several numbers in this range
+              (e.g. L102-L129, L139-L152) were retired in the Stage 26
+              consolidation and are not currently in use — labels are not
+              recycled, so gaps in the sequence are expected and permanent.
 ```
 
 ### Python Naming
@@ -293,6 +312,7 @@ Escape      Deselect / close panel / cancel
 A           Acknowledge top alarm
 Shift+A     Acknowledge all alarms
 F           Focus frequency panel
+L           Toggle voltage-tier colour view (lines/substations)
 ?           Show keyboard shortcut reference
 ```
 

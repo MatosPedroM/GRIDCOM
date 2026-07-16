@@ -18,6 +18,7 @@ EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
 DEBUG_SCENARIO_ACTIVE: bool = False
 DEV_SKIP_INTRO:        bool = True
+VOLTAGE_COLOUR_VIEW:   bool = False  # 'L' toggle — colour lines/substations by voltage tier instead of load
 
 # ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES
@@ -167,6 +168,27 @@ LINE_RATING_MW_BY_VOLTAGE: dict = {     # Flat MW rating per nominal line voltag
     220.0:  400.0,
     150.0:  175.0,
 }
+GENERATOR_CONNECTOR_RATING_MW: float = 5000.0  # Flat rating for lines that are a station's sole
+                                                # electrical egress into the wider grid (overrides
+                                                # the flat per-voltage-tier default for just these
+                                                # specific lines — see topology.py usage)
+CONSOLIDATED_FEED_RATING_MW_TRIPLE: float = 1250.0  # Feed rating for a single-region Shift-10 load
+                                                     # substation dual-fed directly from its
+                                                     # region's own 2 spine-anchor buses
+                                                     # (~950-1035 MW peak) — a single surviving feed
+                                                     # must carry the whole region's load under N-1
+CONSOLIDATED_FEED_RATING_MW_CAP:    float = 2400.0  # Feed rating for CAP's single consolidated
+                                                     # substation (~1988 MW peak, merged from what
+                                                     # were 2 substations) — CAP has only 2
+                                                     # independent spine-anchor buses (ASHF, WRNT),
+                                                     # so it hosts exactly 1 substation, sized to
+                                                     # cover the region's full former 2-substation
+                                                     # demand under N-1
+CONSOLIDATED_FEED_RATING_MW_WEST:   float = 3100.0  # Feed rating for WEST's single consolidated
+                                                     # substation (~2591 MW peak, merged from what
+                                                     # were 3 substations) — same reasoning as CAP,
+                                                     # WEST's 2 spine-anchor buses (DUND, RDST) can
+                                                     # only safely host 1 substation
 
 # ─────────────────────────────────────────────
 # SIMULATION TIMING
@@ -240,10 +262,12 @@ SPEED_FAST:      float = 3.00
 SPEED_VERY_FAST: float = 10.00
 
 # ─────────────────────────────────────────────
-# DEMAND NOISE
+# RENEWABLES NOISE
 # ─────────────────────────────────────────────
-WIND_NOISE_STD_FRACTION:   float = 0.03     # Wind forecast noise
-SOLAR_NOISE_STD_FRACTION:  float = 0.01     # Solar forecast noise (small)
+WIND_NOISE_STD_FRACTION:   float = 0.03     # Wind forecast noise (target std, before rate limiting)
+SOLAR_NOISE_STD_FRACTION:  float = 0.01     # Solar forecast noise (target std, before rate limiting)
+WIND_NOISE_RAMP_PCT_MIN:   float = 20.0     # Max noise-driven output change, %-of-rated per sim-minute
+SOLAR_NOISE_RAMP_PCT_MIN:  float = 30.0     # Max noise-driven output change, %-of-rated per sim-minute
 
 # ─────────────────────────────────────────────
 # ALARM DISPLAY

@@ -40,13 +40,19 @@ from display.symbols import (
     draw_unit_square, draw_station_collector,
     draw_transmission_line, draw_hydraulic_connector,
     draw_interconnector,
-    UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX,
+    UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX, HALF_BUS,
+    get_port_point,
     _draw_dashed_line,
 )
 from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC
+from display.geometry import point_segment_dist
 from data.layout_override import get_label_anchor
 from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL, FONT_SIZE_PANEL, NATIVE_WIDTH
+import simulation.constants as _sim_const
 from utils.helpers import resource_path
+
+
+_ROUTE_CLEARANCE_PX: float = HALF_BUS + 6
 
 
 # ─── Hydraulic penstock connections (visual only, not electrical) ─────────────
@@ -82,6 +88,161 @@ def _parallel_offset_endpoints(
     ox = int(-dy / length * off)
     oy = int(dx / length * off)
     return x1 + ox, y1 + oy, x2 + ox, y2 + oy
+
+
+def assign_line_ports(
+    buses: list[Bus],
+    lines: list[Line],
+    bus_pos: dict[str, tuple[int, int]],
+    bus_lines: dict[str, list[str]],
+    scale: float,
+) -> dict[str, tuple[int, int, int, int]]:
+    """
+    Assign each line's two endpoints to one of its bus's 8 fixed attachment
+    points (2 per side: N/S/E/W), instead of the bus centre.
+
+    Each line still departs its substation strictly horizontally (N/S ports)
+    or vertically (E/W ports) — see GRID_TOPOLOGY_AND_DISPLAY.md Rule 3.
+
+    Side is chosen by the dominant axis of the bearing to the line's *other*
+    raw bus centre (not its assigned port — avoids a two-pass dependency
+    between a line's two ends). Within a side, lines are ordered by the
+    secondary coordinate of their other endpoint (closest position first).
+    Ties break toward N/S, then by line label, for a deterministic layout.
+
+    Buses with more than 2 lines on one side (>8 lines total) stack the
+    overflow on the nearest of that side's 2 slots — this never happens with
+    the shipped topology (max bus degree is 7) but degrades to cosmetic
+    overlap rather than raising if it ever does.
+
+    Returns:
+        dict[line_label, (fx, fy, tx, ty)] — resolved port for from_bus and
+        to_bus respectively.
+    """
+    bus_map = {b.label: b for b in buses}
+    line_map = {l.label: l for l in lines}
+
+    # bus_label -> list of (line_label, other_dx, other_dy)
+    per_bus: dict[str, list[tuple[str, int, int]]] = {}
+    for bus in buses:
+        cx, cy = bus_pos[bus.label]
+        entries = []
+        for lbl in bus_lines.get(bus.label, []):
+            line = line_map.get(lbl)
+            if line is None:
+                continue
+            other_lbl = line.to_bus if line.from_bus == bus.label else line.from_bus
+            if other_lbl not in bus_pos:
+                continue
+            ox, oy = bus_pos[other_lbl]
+            entries.append((lbl, ox - cx, oy - cy))
+        per_bus[bus.label] = entries
+
+    # bus_label -> line_label -> (side, slot)
+    port_slot: dict[str, dict[str, tuple[str, int]]] = {}
+    for bus_label, entries in per_bus.items():
+        sides: dict[str, list[tuple[str, int]]] = {'N': [], 'S': [], 'E': [], 'W': []}
+        for lbl, dx, dy in entries:
+            if abs(dx) > abs(dy):
+                side = 'E' if dx > 0 else 'W'
+                secondary = dy
+            else:
+                side = 'S' if dy > 0 else 'N'
+                secondary = dx
+            sides[side].append((lbl, secondary))
+
+        slots: dict[str, tuple[str, int]] = {}
+        for side, members in sides.items():
+            members.sort(key=lambda m: (m[1], m[0]))
+            for i, (lbl, _secondary) in enumerate(members):
+                slot = 0 if i == 0 else 1  # overflow (i >= 2) stacks on slot 1
+                slots[lbl] = (side, slot)
+        port_slot[bus_label] = slots
+
+    line_ports: dict[str, tuple[int, int, int, int]] = {}
+    for line in lines:
+        if line.from_bus not in bus_pos or line.to_bus not in bus_pos:
+            continue
+        fside, fslot = port_slot[line.from_bus][line.label]
+        tside, tslot = port_slot[line.to_bus][line.label]
+        fx, fy = get_port_point(*bus_pos[line.from_bus], fside, fslot, scale)
+        tx, ty = get_port_point(*bus_pos[line.to_bus], tside, tslot, scale)
+        line_ports[line.label] = (fx, fy, tx, ty)
+
+    return line_ports
+
+
+def _segment_clips_bus(
+    x1: float, y1: float, x2: float, y2: float,
+    other_bus_positions: list[tuple[int, int]],
+    clearance_px: float,
+) -> bool:
+    """True if segment (x1,y1)-(x2,y2) passes within clearance_px of any bus."""
+    for bx, by in other_bus_positions:
+        if point_segment_dist(bx, by, x1, y1, x2, y2) < clearance_px:
+            return True
+    return False
+
+
+def route_line(
+    x1: int, y1: int, x2: int, y2: int,
+    other_bus_positions: list[tuple[int, int]],
+    clearance_px: float = _ROUTE_CLEARANCE_PX,
+) -> list[tuple[int, int]]:
+    """
+    Return an ordered orthogonal waypoint list [(x1,y1), ..., (x2,y2)]
+    connecting the two endpoints without a diagonal, preferring the default
+    single vertical-then-horizontal bend and only detouring around a bus
+    footprint when that default path would clip it.
+
+    other_bus_positions should exclude the line's own two endpoint buses.
+    Deterministic — never raises, never loops unboundedly. If no candidate
+    clears every bus (not expected at this grid's scale), falls back to the
+    default bend and accepts the visual clip.
+    """
+    if x1 == x2 or y1 == y2:
+        # Already a single straight segment — no bend to route around.
+        return [(x1, y1), (x2, y2)]
+
+    # Candidate 1: default vertical-then-horizontal bend.
+    bx, by = x1, y2
+    if not (_segment_clips_bus(x1, y1, bx, by, other_bus_positions, clearance_px)
+            or _segment_clips_bus(bx, by, x2, y2, other_bus_positions, clearance_px)):
+        return [(x1, y1), (bx, by), (x2, y2)]
+
+    # Candidate 2: mirror bend, horizontal-then-vertical.
+    bx2, by2 = x2, y1
+    if not (_segment_clips_bus(x1, y1, bx2, by2, other_bus_positions, clearance_px)
+            or _segment_clips_bus(bx2, by2, x2, y2, other_bus_positions, clearance_px)):
+        return [(x1, y1), (bx2, by2), (x2, y2)]
+
+    # Both single-bend options clip — escalate to a 3-segment detour that
+    # jogs sideways around the clipping bus. Try 4 fixed candidate shapes,
+    # offset by clearance_px + HALF_BUS from the midline, in a deterministic
+    # order; use the first one that clears every bus.
+    offset = clearance_px + HALF_BUS
+    mid_x = (x1 + x2) / 2.0
+    mid_y = (y1 + y2) / 2.0
+    detours = [
+        # Jog vertically at a shifted x, then horizontal-vertical-horizontal.
+        [(x1, y1), (mid_x + offset, y1), (mid_x + offset, y2), (x2, y2)],
+        [(x1, y1), (mid_x - offset, y1), (mid_x - offset, y2), (x2, y2)],
+        # Jog horizontally at a shifted y, then vertical-horizontal-vertical.
+        [(x1, y1), (x1, mid_y + offset), (x2, mid_y + offset), (x2, y2)],
+        [(x1, y1), (x1, mid_y - offset), (x2, mid_y - offset), (x2, y2)],
+    ]
+    for path in detours:
+        path_i = [(int(px), int(py)) for px, py in path]
+        clipped = False
+        for (sx1, sy1), (sx2, sy2) in zip(path_i, path_i[1:]):
+            if _segment_clips_bus(sx1, sy1, sx2, sy2, other_bus_positions, clearance_px):
+                clipped = True
+                break
+        if not clipped:
+            return path_i
+
+    # Nothing cleared — fall back to the default bend (cosmetic overlap only).
+    return [(x1, y1), (bx, by), (x2, y2)]
 
 
 def _unit_positions(station_label: str, n_units: int) -> list[tuple[int, int]]:
@@ -170,6 +331,18 @@ class GridCanvas:
             if line.to_bus in self._bus_lines:
                 self._bus_lines[line.to_bus].append(line.label)
 
+        # Per-line attachment points (8 fixed ports per bus instead of centre)
+        self._line_ports: dict[str, tuple[int, int, int, int]] = assign_line_ports(
+            self._buses, self._lines, self._bus_pos, self._bus_lines, scale,
+        )
+
+        # Obstacle-avoiding waypoints per line — computed once here (not per
+        # frame). Offsetting for double circuits happens first, then each
+        # (already-offset) endpoint pair is routed independently.
+        self._line_waypoints: dict[str, list[tuple[int, int]]] = self._build_line_waypoints(
+            self._lines, self._line_ports, scale,
+        )
+
         # Hydraulic connectors: only those where both buses are active this shift
         self._hydraulic: list[tuple[Bus, Bus]] = []
         for from_lbl, to_lbl in _HYDRAULIC_CONNECTORS:
@@ -205,17 +378,13 @@ class GridCanvas:
         self._tripped_line_surfs: dict[str, tuple[pygame.Surface, int, int]] = {}
         pad = max(2, int(2 * scale))
         for line in self._lines:
-            if line.from_bus not in self._bus_pos or line.to_bus not in self._bus_pos:
+            waypoints = self._line_waypoints.get(line.label)
+            if waypoints is None:
                 continue
-            # Tripped lines route vertical-first: bend at (x1, y2)
-            x1, y1 = self._bus_pos[line.from_bus]
-            x2, y2 = self._bus_pos[line.to_bus]
-            x1, y1, x2, y2 = _parallel_offset_endpoints(x1, y1, x2, y2, line.parallel, self._scale)
-            bx, by = x1, y2
-            min_x = min(x1, x2) - pad
-            min_y = min(y1, y2) - pad
-            max_x = max(x1, x2) + pad
-            max_y = max(y1, y2) + pad
+            xs = [p[0] for p in waypoints]
+            ys = [p[1] for p in waypoints]
+            min_x, max_x = min(xs) - pad, max(xs) + pad
+            min_y, max_y = min(ys) - pad, max(ys) + pad
             w = max(1, max_x - min_x)
             h = max(1, max_y - min_y)
             surf = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
@@ -223,19 +392,41 @@ class GridCanvas:
             ox, oy = min_x, min_y
             td = max(1, int(3 * scale))
             tg = max(1, int(2 * scale))
-            if y1 != y2:
+            for (sx1, sy1), (sx2, sy2) in zip(waypoints, waypoints[1:]):
                 _draw_dashed_line(
                     surf, COL_LINE_TRIPPED,
-                    (x1 - ox, y1 - oy), (bx - ox, by - oy),
-                    dash=td, gap=tg, width=dash_w,
-                )
-            if x1 != x2:
-                _draw_dashed_line(
-                    surf, COL_LINE_TRIPPED,
-                    (bx - ox, by - oy), (x2 - ox, y2 - oy),
+                    (sx1 - ox, sy1 - oy), (sx2 - ox, sy2 - oy),
                     dash=td, gap=tg, width=dash_w,
                 )
             self._tripped_line_surfs[line.label] = (surf, ox, oy)
+
+    def _build_line_waypoints(
+        self,
+        lines: list[Line],
+        line_ports: dict[str, tuple[int, int, int, int]],
+        scale: float,
+    ) -> dict[str, list[tuple[int, int]]]:
+        """
+        Resolve each line's obstacle-avoiding waypoint path, in the order:
+        parallel-offset endpoints first, then route around unrelated buses.
+
+        Uses self._bus_pos, which must already be populated (both call sites
+        — __init__ and load_designer_topology — set it before calling this).
+        """
+        clearance = _ROUTE_CLEARANCE_PX * scale
+        waypoints: dict[str, list[tuple[int, int]]] = {}
+        for line in lines:
+            ports = line_ports.get(line.label)
+            if ports is None:
+                continue
+            fx, fy, tx, ty = ports
+            fx, fy, tx, ty = _parallel_offset_endpoints(fx, fy, tx, ty, line.parallel, scale)
+            other_positions = [
+                pos for lbl, pos in self._bus_pos.items()
+                if lbl != line.from_bus and lbl != line.to_bus
+            ]
+            waypoints[line.label] = route_line(fx, fy, tx, ty, other_positions, clearance)
+        return waypoints
 
     def _bus_max_loading(self, bus_label: str, state) -> float:
         """Return max loading_pct of connected in-service lines, or 0 if none."""
@@ -300,6 +491,16 @@ class GridCanvas:
             if line.to_bus in self._bus_lines:
                 self._bus_lines[line.to_bus].append(line.label)
 
+        # Per-line attachment points (8 fixed ports per bus instead of centre)
+        self._line_ports = assign_line_ports(
+            buses, lines, self._bus_pos, self._bus_lines, scale,
+        )
+
+        # Obstacle-avoiding waypoints per line — see __init__ for details.
+        self._line_waypoints = self._build_line_waypoints(
+            lines, self._line_ports, scale,
+        )
+
         # No hydraulic connectors in designer topology
         self._hydraulic = []
         scaled_w  = int(NATIVE_WIDTH  * scale)
@@ -314,15 +515,13 @@ class GridCanvas:
         dash_w = max(1, round(scale))
         self._tripped_line_surfs = {}
         for line in lines:
-            if line.from_bus not in self._bus_pos or line.to_bus not in self._bus_pos:
+            waypoints = self._line_waypoints.get(line.label)
+            if waypoints is None:
                 continue
-            x1, y1 = self._bus_pos[line.from_bus]
-            x2, y2 = self._bus_pos[line.to_bus]
-            bx2, by2 = x1, y2
-            min_x = min(x1, x2) - pad
-            min_y = min(y1, y2) - pad
-            max_x = max(x1, x2) + pad
-            max_y = max(y1, y2) + pad
+            xs = [p[0] for p in waypoints]
+            ys = [p[1] for p in waypoints]
+            min_x, max_x = min(xs) - pad, max(xs) + pad
+            min_y, max_y = min(ys) - pad, max(ys) + pad
             w = max(1, max_x - min_x)
             h = max(1, max_y - min_y)
             surf = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
@@ -330,16 +529,10 @@ class GridCanvas:
             ox, oy = min_x, min_y
             td = max(1, int(3 * scale))
             tg = max(1, int(2 * scale))
-            if y1 != y2:
+            for (sx1, sy1), (sx2, sy2) in zip(waypoints, waypoints[1:]):
                 _draw_dashed_line(
                     surf, COL_LINE_TRIPPED,
-                    (x1 - ox, y1 - oy), (bx2 - ox, by2 - oy),
-                    dash=td, gap=tg, width=dash_w,
-                )
-            if x1 != x2:
-                _draw_dashed_line(
-                    surf, COL_LINE_TRIPPED,
-                    (bx2 - ox, by2 - oy), (x2 - ox, y2 - oy),
+                    (sx1 - ox, sy1 - oy), (sx2 - ox, sy2 - oy),
                     dash=td, gap=tg, width=dash_w,
                 )
             self._tripped_line_surfs[line.label] = (surf, ox, oy)
@@ -395,8 +588,9 @@ class GridCanvas:
         font_scale: float = 1.0,
     ) -> tuple:
         """Return a compact tuple that changes when the canvas must be redrawn."""
+        voltage_view = _sim_const.VOLTAGE_COLOUR_VIEW
         if state is None:
-            return (None, selected_label)
+            return (None, selected_label, voltage_view)
 
         # Tripped lines and blacked buses (infrequent changes)
         tripped_lines = frozenset(
@@ -438,7 +632,7 @@ class GridCanvas:
         return (
             tripped_lines, blacked_buses, unit_state_sig,
             loading_sig, output_sig, intc_sig,
-            selected_label, blink_key, font_scale,
+            selected_label, blink_key, font_scale, voltage_view,
         )
 
     def _redraw_to(
@@ -451,6 +645,7 @@ class GridCanvas:
     ) -> None:
         """Full schematic redraw into target surface."""
         target.fill(COL_BACKGROUND)
+        voltage_view = _sim_const.VOLTAGE_COLOUR_VIEW
 
         # Build lookup tables from state (if provided)
         line_loading:  dict[str, float] = {}
@@ -493,18 +688,18 @@ class GridCanvas:
                         target.blit(surf, (ox, oy))
                 else:
                     loading = line_loading.get(line.label, 0.0)
-                    fx, fy = self._bus_pos[line.from_bus]
-                    tx, ty = self._bus_pos[line.to_bus]
-                    fx, fy, tx, ty = _parallel_offset_endpoints(
-                        fx, fy, tx, ty, line.parallel, self._scale)
+                    waypoints = self._line_waypoints.get(line.label)
+                    if waypoints is None:
+                        continue
                     draw_transmission_line(
                         target,
-                        fx, fy, tx, ty,
+                        waypoints,
                         voltage_kv=line.voltage_kv,
                         loading_pct=loading,
                         tripped=False,
                         blink_on=blink_on,
                         scale=self._scale,
+                        voltage_view=voltage_view,
                     )
 
         # ── Layer 5: Hydraulic connectors (pre-baked, blit once) ──────────────
@@ -536,14 +731,18 @@ class GridCanvas:
             loading  = self._bus_max_loading(bus.label, state)
             if bus.bus_type == 'LOAD':
                 draw_load_substation(target, bx, by,
+                                     voltage_kv=bus.voltage_kv,
                                      loading_pct=loading,
                                      blacked=blacked, selected=selected,
-                                     scale=self._scale)
+                                     scale=self._scale,
+                                     voltage_view=voltage_view)
             else:
                 draw_substation(target, bx, by,
+                                voltage_kv=bus.voltage_kv,
                                 loading_pct=loading,
                                 blacked=blacked, selected=selected,
-                                scale=self._scale)
+                                scale=self._scale,
+                                voltage_view=voltage_view)
 
         # ── Layer 8: Generation unit squares ──────────────────────────────────
         for sl, units in self._station_units.items():

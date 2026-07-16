@@ -24,7 +24,8 @@ from __future__ import annotations
 import pygame
 import pygame.freetype
 
-from display.canvas import GridCanvas, _parallel_offset_endpoints
+from display.canvas import GridCanvas
+from display.geometry import point_segment_dist
 from display.context import draw_unit_context, draw_bus_context, draw_line_context
 from display.editor import GridEditor
 from display.animation import FlowAnimator
@@ -61,18 +62,6 @@ _BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
 _BLINK_PERIOD     = 1.0   # seconds per blink cycle (canvas, dispatch panel)
 _HIT_RADIUS       = 10    # px — Chebyshev hit radius for bus/unit selection
 _LINE_HIT_PX      = 8     # px — max perpendicular distance for line selection
-
-
-def _point_segment_dist(px: int, py: int,
-                        x1: int, y1: int, x2: int, y2: int) -> float:
-    """Return the minimum distance from point (px,py) to segment (x1,y1)-(x2,y2)."""
-    dx, dy = x2 - x1, y2 - y1
-    if dx == 0 and dy == 0:
-        return ((px - x1) ** 2 + (py - y1) ** 2) ** 0.5
-    t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
-    nx = x1 + t * dx
-    ny = y1 + t * dy
-    return ((px - nx) ** 2 + (py - ny) ** 2) ** 0.5
 
 
 class Renderer:
@@ -630,7 +619,7 @@ class Renderer:
         if state is not None and FLOW_ANIMATION:
             self._flow.update(dt_real_s, speed_mult)
             self._flow.draw(self._canvas_surf, state,
-                            self._canvas._bus_map, self._canvas._lines)
+                            self._canvas._line_waypoints, self._canvas._lines)
             native_changed = True
 
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
@@ -871,17 +860,15 @@ class Renderer:
 
         # Lines — only if no bus/unit was hit within its own radius
         if best_label is None:
+            line_waypoints = self._canvas._line_waypoints
             for line in self._canvas._lines:
-                if line.from_bus not in bus_pos or line.to_bus not in bus_pos:
+                waypoints = line_waypoints.get(line.label)
+                if waypoints is None:
                     continue
-                fx, fy = bus_pos[line.from_bus]
-                tx, ty = bus_pos[line.to_bus]
-                fx, fy, tx, ty = _parallel_offset_endpoints(
-                    fx, fy, tx, ty, line.parallel, self._canvas._scale)
-                bend_x, bend_y = fx, ty  # vertical-first routing
-                d1 = _point_segment_dist(nx, ny, fx, fy, bend_x, bend_y)
-                d2 = _point_segment_dist(nx, ny, bend_x, bend_y, tx, ty)
-                dist = min(d1, d2)
+                dist = min(
+                    point_segment_dist(nx, ny, sx1, sy1, sx2, sy2)
+                    for (sx1, sy1), (sx2, sy2) in zip(waypoints, waypoints[1:])
+                )
                 if dist <= _LINE_HIT_PX and dist < best_dist:
                     best_dist  = dist
                     best_label = line.label

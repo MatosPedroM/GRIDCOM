@@ -42,6 +42,14 @@ COL_150KV:  Colour = (255,255,   0)     # Bright Yellow — 150kV collector line
 COL_60KV:   Colour = (170,170,   0)     # Yellow — 60kV collector lines
 
 # ─────────────────────────────────────────────
+# VOLTAGE COLOUR VIEW ('L' toggle — lines/substations by voltage tier)
+# ─────────────────────────────────────────────
+COL_VVIEW_400KV:    Colour = (0,  255, 255)     # 400kV — bright cyan
+COL_VVIEW_220KV:    Colour = (255,  0,   0)     # 220kV — bright red
+COL_VVIEW_150KV:    Colour = (0,  255,   0)     # 150kV — bright green
+COL_VVIEW_60KV:     Colour = (170,170,   0)     # 60kV — yellow (matches COL_60KV; not part of the 3-tier request)
+
+# ─────────────────────────────────────────────
 # LINE STATES
 # ─────────────────────────────────────────────
 COL_LINE_NORMAL:    Colour = (85,  85,  85)     # De-emphasised — unenergised / no-state

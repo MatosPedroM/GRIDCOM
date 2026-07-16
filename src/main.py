@@ -20,6 +20,7 @@ Controls (PLAYING state):
     A               Acknowledge top alarm
     Shift+A         Acknowledge all alarms
     Tab             Cycle element selection
+    L               Toggle voltage-tier colour view (lines/substations)
     F1 / F3 / F5    Switch active shift (1, 3, or 5) [debug]
     P / Space       Pause / resume simulation (toggle)
     Mouse wheel     Scroll dispatch or alarm panel (when over strip)
@@ -642,6 +643,10 @@ def main() -> None:
                           and not renderer._input_active):
                         renderer.on_tab()
 
+                    elif (event.key == pygame.K_l and not _const.EDITOR_MODE
+                          and not renderer._input_active):
+                        _const.VOLTAGE_COLOUR_VIEW = not _const.VOLTAGE_COLOUR_VIEW
+
                     elif event.key == pygame.K_d:
                         _const.DEBUG_DISPLAY = not _const.DEBUG_DISPLAY
 
@@ -917,6 +922,8 @@ def main() -> None:
                             _rend.on_ack_alarm(_sim)
                     elif event.key == pygame.K_TAB and not _rend._input_active:
                         _rend.on_tab()
+                    elif event.key == pygame.K_l and not _rend._input_active:
+                        _const.VOLTAGE_COLOUR_VIEW = not _const.VOLTAGE_COLOUR_VIEW
                     elif event.key == pygame.K_BACKSPACE:
                         _rend.on_backspace()
                     elif event.key == pygame.K_RETURN:

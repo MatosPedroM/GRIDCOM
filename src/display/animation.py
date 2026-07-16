@@ -23,7 +23,6 @@ from simulation.constants import (
     FLOW_MARKER_SIZE, FLOW_MARKER_SPACING,
     FLOW_SPEED_BASE, FLOW_SPEED_MAX,
 )
-from display.canvas import _parallel_offset_endpoints
 
 
 _FLOW_THRESHOLD_PCT: float = 5.0    # minimum |loading %| to draw markers
@@ -46,7 +45,7 @@ class FlowAnimator:
         animator = FlowAnimator()
         # each frame:
         animator.update(dt_real_s, speed_mult)
-        animator.draw(canvas_surf, state, bus_map, lines)
+        animator.draw(canvas_surf, state, line_ports, lines)
     """
 
     def __init__(self) -> None:
@@ -62,19 +61,22 @@ class FlowAnimator:
 
     def draw(
         self,
-        surf:    pygame.Surface,
+        surf:            pygame.Surface,
         state,
-        bus_map: dict,
-        lines:   list,
+        line_waypoints:  dict,
+        lines:           list,
     ) -> None:
         """
         Draw flow markers for all active lines.
 
         Args:
-            surf:    Canvas surface (1920×CANVAS_HEIGHT).
-            state:   Current SimulationState.
-            bus_map: dict[label → Bus] with canvas_x/canvas_y.
-            lines:   list[Line] — active lines for this shift.
+            surf:           Canvas surface (1920×CANVAS_HEIGHT, already display-scaled).
+            state:          Current SimulationState.
+            line_waypoints: dict[line_label -> [(x,y), ...]] — GridCanvas's
+                            precomputed, scaled, obstacle-avoiding waypoint path
+                            per line (see canvas.GridCanvas._line_waypoints).
+                            Never computes routing itself — this runs every frame.
+            lines:          list[Line] — active lines for this shift.
         """
         if state is None:
             return
@@ -102,18 +104,16 @@ class FlowAnimator:
             if lbl not in self._phases:
                 self._phases[lbl] = 0.0
 
-            fb = bus_map.get(line.from_bus)
-            tb = bus_map.get(line.to_bus)
-            if fb is None or tb is None:
+            waypoints = line_waypoints.get(lbl)
+            if waypoints is None or len(waypoints) < 2:
                 continue
 
-            x1, y1 = fb.canvas_x, fb.canvas_y
-            x2, y2 = tb.canvas_x, tb.canvas_y
-            x1, y1, x2, y2 = _parallel_offset_endpoints(x1, y1, x2, y2, line.parallel, 1.0)
-
-            dx = x2 - x1
-            dy = y2 - y1
-            length = math.sqrt(dx * dx + dy * dy)
+            segments = list(zip(waypoints, waypoints[1:]))
+            seg_lengths = [
+                math.sqrt((sx2 - sx1) ** 2 + (sy2 - sy1) ** 2)
+                for (sx1, sy1), (sx2, sy2) in segments
+            ]
+            length = sum(seg_lengths)
             if length < 1.0:
                 continue
 
@@ -130,14 +130,20 @@ class FlowAnimator:
 
             phase  = self._phases[lbl]
             col    = _VOLTAGE_FLOW_COL.get(line.voltage_kv, COL_FLOW_220KV)
-            ux, uy = dx / length, dy / length   # unit vector along line
 
-            # Draw markers spaced FLOW_MARKER_SPACING apart, starting at phase offset
-            pos = phase
+            # Draw markers spaced FLOW_MARKER_SPACING apart, starting at phase
+            # offset, walking along the routed waypoint path segment by segment.
             half = FLOW_MARKER_SIZE // 2
+            pos = phase
             while pos < length:
-                mx = int(x1 + ux * pos) - half
-                my = int(y1 + uy * pos) - half
-                pygame.draw.rect(surf, col,
-                                 pygame.Rect(mx, my, FLOW_MARKER_SIZE, FLOW_MARKER_SIZE))
+                remaining = pos
+                for ((sx1, sy1), (sx2, sy2)), seg_len in zip(segments, seg_lengths):
+                    if remaining <= seg_len or seg_len < 1e-6:
+                        t = remaining / seg_len if seg_len >= 1e-6 else 0.0
+                        mx = int(sx1 + (sx2 - sx1) * t) - half
+                        my = int(sy1 + (sy2 - sy1) * t) - half
+                        pygame.draw.rect(surf, col,
+                                         pygame.Rect(mx, my, FLOW_MARKER_SIZE, FLOW_MARKER_SIZE))
+                        break
+                    remaining -= seg_len
                 pos += FLOW_MARKER_SPACING

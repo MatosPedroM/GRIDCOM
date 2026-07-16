@@ -511,13 +511,13 @@ STATION_POSITIONS: dict[str, tuple[int, int]] = {
     # Capital CCGT (above their 220kV buses)
     'ASHG': (880,  260),
     'WRNG': (1180, 260),
-    # West hydro pocket
+    # West hydro pocket (re-spaced Stage 27 — see topology.py bus comment)
     'DUND': (640,  380),
-    'KELD': (140,  520),
-    'AR01': (430,  400),
-    'AR02': (360,  560),
-    'AR03': (430,  650),
-    'AR04': (640,  600),
+    'KELD': (40,   680),
+    'AR01': (230,  480),
+    'AR02': (340,  680),
+    'AR03': (510,  670),
+    'AR04': (760,  590),
     # East pocket
     'BARD': (1620, 490),
     'WNCN': (1300, 510),

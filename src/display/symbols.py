@@ -16,8 +16,8 @@ import pygame
 from simulation.constants import FONT_SIZE_OVERLAY
 from display.palette import (
     COL_BACKGROUND,
-    COL_BUS_400KV, COL_BUS_220KV, COL_BUS_150KV, COL_BUS_60KV,
     COL_BUS_BLACKED, COL_BUS_SELECTED,
+    COL_VVIEW_400KV, COL_VVIEW_220KV, COL_VVIEW_150KV, COL_VVIEW_60KV,
     COL_LINE_ENERGISED, COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_HYDRO_PUMP, COL_UNIT_WIND, COL_UNIT_SOLAR,
@@ -30,7 +30,7 @@ from display.palette import (
 )
 
 # Symbol size constants
-BUS_SIZE:   int = 12   # substation square side length (px)
+BUS_SIZE:   int = 18   # substation square side length (px)
 UNIT_SIZE:  int = 12   # generation unit square side length (px)
 UNIT_GAP:   int = 1    # gap between unit squares in a multi-unit station
 HALF_BUS:   int = BUS_SIZE // 2
@@ -40,6 +40,48 @@ HALF_UNIT:  int = UNIT_SIZE // 2
 # (Line.parallel = +1 / -1), so both circuits are visible and separately
 # clickable instead of overdrawing each other.
 PARALLEL_LINE_OFFSET_PX: int = 10
+
+# Fraction of BUS_SIZE used to offset each of the 2 line-attachment points on
+# a given side of the substation square from its centreline (e.g. the two N
+# ports sit at cx - quarter and cx + quarter, both at y = cy - half). Ports
+# stay on the square's edge so every line still departs strictly horizontally
+# or vertically — see GRID_TOPOLOGY_AND_DISPLAY.md Rule 3 (no diagonal lines).
+PORT_EDGE_INSET_FRAC: float = 0.25
+
+# The 8 attachment points as (side, slot) -> (dx_frac, dy_frac) offsets from
+# a bus centre, in units of BUS_SIZE. slot 0 is the lower-coordinate point on
+# that side (left-of-centre for N/S, top-of-centre for E/W), slot 1 the
+# higher. Multiply by (BUS_SIZE * scale) at draw time.
+PORT_OFFSETS: dict[tuple[str, int], tuple[float, float]] = {
+    ('N', 0): (-PORT_EDGE_INSET_FRAC, -0.5),
+    ('N', 1): (PORT_EDGE_INSET_FRAC, -0.5),
+    ('S', 0): (-PORT_EDGE_INSET_FRAC, 0.5),
+    ('S', 1): (PORT_EDGE_INSET_FRAC, 0.5),
+    ('E', 0): (0.5, -PORT_EDGE_INSET_FRAC),
+    ('E', 1): (0.5, PORT_EDGE_INSET_FRAC),
+    ('W', 0): (-0.5, -PORT_EDGE_INSET_FRAC),
+    ('W', 1): (-0.5, PORT_EDGE_INSET_FRAC),
+}
+
+
+def get_port_point(
+    cx: int, cy: int, side: str, slot: int, scale: float = 1.0,
+) -> tuple[int, int]:
+    """
+    Return the (x, y) canvas position of one of a bus's 8 attachment points.
+
+    Args:
+        cx, cy: Bus centre (already scaled).
+        side:   'N', 'S', 'E', or 'W'.
+        slot:   0 or 1 — which of the 2 points on that side.
+        scale:  Display scale factor (applied to the offset distance only;
+                cx/cy are assumed already scaled, matching self._bus_pos).
+    """
+    dx_frac, dy_frac = PORT_OFFSETS[(side, slot)]
+    return (
+        cx + int(dx_frac * BUS_SIZE * scale),
+        cy + int(dy_frac * BUS_SIZE * scale),
+    )
 
 
 # ─────── PRIVATE COLOUR HELPERS (needed at module load for cache dicts) ──────
@@ -131,12 +173,12 @@ _UNIT_BAR_CACHE: dict[str, tuple[int, int, int]] = {
     for ut, col in _UNIT_TYPE_COLOUR.items()
 }
 
-# Voltage level → bus colour
+# Voltage level → colour, used by the 'L' voltage-colour-view toggle
 _VOLTAGE_COLOUR: dict[float, tuple] = {
-    400.0: COL_BUS_400KV,
-    220.0: COL_BUS_220KV,
-    150.0: COL_BUS_150KV,
-    60.0:  COL_BUS_60KV,
+    400.0: COL_VVIEW_400KV,
+    220.0: COL_VVIEW_220KV,
+    150.0: COL_VVIEW_150KV,
+    60.0:  COL_VVIEW_60KV,
 }
 
 
@@ -146,24 +188,30 @@ def draw_substation(
     surf: pygame.Surface,
     cx: int,
     cy: int,
+    voltage_kv: float = 0.0,
     loading_pct: float = 0.0,
     blacked: bool = False,
     selected: bool = False,
     scale: float = 1.0,
+    voltage_view: bool = False,
 ) -> None:
     """
     Draw a transmission substation symbol: plain square with filled interior.
 
     Args:
-        surf:        Target surface (canvas).
-        cx, cy:      Centre position of the symbol (already scaled).
-        loading_pct: Max loading % of connected lines — determines colour.
-        blacked:     True if bus is in a blackout zone.
-        selected:    True if this element is selected.
-        scale:       Display scale factor (applied to symbol sizes).
+        surf:         Target surface (canvas).
+        cx, cy:       Centre position of the symbol (already scaled).
+        voltage_kv:   Bus voltage tier — determines colour when voltage_view is True.
+        loading_pct:  Max loading % of connected lines — determines colour otherwise.
+        blacked:      True if bus is in a blackout zone.
+        selected:     True if this element is selected.
+        scale:        Display scale factor (applied to symbol sizes).
+        voltage_view: If True, colour by voltage tier instead of loading.
     """
     if blacked:
         col = COL_BUS_BLACKED
+    elif voltage_view:
+        col = _VOLTAGE_COLOUR.get(voltage_kv, COL_LINE_ENERGISED)
     elif loading_pct >= 95.0:
         col = COL_LOAD_CRIT
     elif loading_pct >= 80.0:
@@ -188,17 +236,22 @@ def draw_load_substation(
     surf: pygame.Surface,
     cx: int,
     cy: int,
+    voltage_kv: float = 0.0,
     loading_pct: float = 0.0,
     blacked: bool = False,
     selected: bool = False,
     scale: float = 1.0,
+    voltage_view: bool = False,
 ) -> None:
     """
     Draw a load substation symbol: square with downward triangle inside.
-    Coloured by load state of connected feeder lines.
+    Coloured by load state of connected feeder lines, unless voltage_view is
+    True, in which case coloured by voltage tier.
     """
     if blacked:
         col = COL_BUS_BLACKED
+    elif voltage_view:
+        col = _VOLTAGE_COLOUR.get(voltage_kv, COL_LINE_ENERGISED)
     elif loading_pct >= 95.0:
         col = COL_LOAD_CRIT
     elif loading_pct >= 80.0:
@@ -431,26 +484,29 @@ def draw_hydraulic_connector(
 
 def draw_transmission_line(
     surf: pygame.Surface,
-    x1: int,
-    y1: int,
-    x2: int,
-    y2: int,
+    waypoints: list[tuple[int, int]],
     voltage_kv: float,
     loading_pct: float = 0.0,
     tripped: bool = False,
     blink_on: bool = True,
     scale: float = 1.0,
+    voltage_view: bool = False,
 ) -> None:
     """
-    Draw a transmission line. Thickness encodes voltage tier; colour encodes load state.
+    Draw a transmission line as a sequence of orthogonal segments.
+    Thickness always encodes voltage tier; colour encodes load state,
+    unless voltage_view is True, in which case colour encodes voltage tier.
 
     400kV: 4px.  220kV: 3px.  150kV: 2px.  60kV: dashed 1px.  (at scale=1.0)
 
     Args:
-        loading_pct: 0–200+. Drives colour when energised.
-        tripped:     If True, draw in dark grey tripped style.
-        blink_on:    Blink phase — used when loading > 100%.
-        scale:       Display scale factor applied to line widths.
+        waypoints:    Ordered [(x1,y1), ..., (xn,yn)] path from canvas.route_line()
+                      (or canvas.assign_line_ports() endpoints for a simple bend).
+        loading_pct:  0–200+. Drives colour when energised and voltage_view is False.
+        tripped:      If True, draw in dark grey tripped style.
+        blink_on:     Blink phase — used when loading > 100%.
+        scale:        Display scale factor applied to line widths.
+        voltage_view: If True, colour by voltage tier instead of loading.
     """
     from display.palette import (
         COL_LINE_ENERGISED,
@@ -458,35 +514,30 @@ def draw_transmission_line(
     )
 
     if tripped:
-        bx, by = x1, y2
         td = max(1, int(3 * scale))
         tg = max(1, int(2 * scale))
-        if y1 != y2:
-            _draw_dashed_line(surf, COL_LINE_TRIPPED, (x1, y1), (bx, by),
-                              dash=td, gap=tg, width=1)
-        if x1 != x2:
-            _draw_dashed_line(surf, COL_LINE_TRIPPED, (bx, by), (x2, y2),
+        for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
+            _draw_dashed_line(surf, COL_LINE_TRIPPED, (x1, y1), (x2, y2),
                               dash=td, gap=tg, width=1)
         return
 
-    base_col = COL_LINE_ENERGISED
-
-    if loading_pct > 100.0:
-        col = COL_LOAD_CRIT if blink_on else base_col
-    elif loading_pct >= 95.0:
-        col = COL_LOAD_CRIT
-    elif loading_pct >= 80.0:
-        col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
-    elif loading_pct >= 60.0:
-        col = _blend(base_col, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
+    if voltage_view:
+        col = _VOLTAGE_COLOUR.get(voltage_kv, COL_LINE_ENERGISED)
     else:
-        col = base_col
+        base_col = COL_LINE_ENERGISED
+        if loading_pct > 100.0:
+            col = COL_LOAD_CRIT if blink_on else base_col
+        elif loading_pct >= 95.0:
+            col = COL_LOAD_CRIT
+        elif loading_pct >= 80.0:
+            col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
+        elif loading_pct >= 60.0:
+            col = _blend(base_col, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
+        else:
+            col = base_col
 
-    bx, by = x1, y2
-    if y1 != y2:
-        _draw_line_segment(surf, x1, y1, bx, by, voltage_kv, col, scale)
-    if x1 != x2:
-        _draw_line_segment(surf, bx, by, x2, y2, voltage_kv, col, scale)
+    for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
+        _draw_line_segment(surf, x1, y1, x2, y2, voltage_kv, col, scale)
 
 
 def _draw_line_segment(

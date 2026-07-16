@@ -28,7 +28,6 @@ F_NOMINAL: float = 50.0         # Hz — nominal system frequency
 V_NOMINAL_400: float = 400.0    # kV
 V_NOMINAL_220: float = 220.0    # kV
 V_NOMINAL_150: float = 150.0    # kV
-V_NOMINAL_60:  float = 60.0     # kV
 
 # ─────────────────────────────────────────────
 # NETWORK TOPOLOGY
@@ -293,8 +292,8 @@ DEBUG_CLICK_DISPLAY_S: float = 3.0         # seconds to display clicked coordina
 # ─────────────────────────────────────────────
 # GRID DESIGNER MODE
 # ─────────────────────────────────────────────
-DESIGNER_SIDEBAR_W:          int   = 320    # px — sidebar panel width
-DESIGNER_CANVAS_W:           int   = 1600   # px — canvas area width (NATIVE_WIDTH - DESIGNER_SIDEBAR_W)
+DESIGNER_SIDEBAR_W:          int   = 208    # px — sidebar panel width (left edge)
+DESIGNER_CANVAS_W:           int   = NATIVE_WIDTH - DESIGNER_SIDEBAR_W  # px — canvas area width (right edge)
 DESIGNER_X_SCALE:            float = 0.05   # reactance pu per 1920px of Euclidean distance
 DESIGNER_TARGET_LOADING_PCT: float = 70.0   # auto-route: add parallel line when loading exceeds this
 DESIGNER_N1_OVERLOAD_PCT:    float = 90.0   # auto-route: N-1 contingency overload threshold
@@ -304,13 +303,3 @@ DESIGNER_LINE_HIT_PX:        int   = 8      # px — perpendicular distance thre
 DESIGNER_FONT_SIZE:          int   = 12     # px — designer sidebar and overlay font size
 DESIGNER_FONT_SIZE_LARGE:    int   = 22     # px — status messages on canvas
 DESIGNER_UNDO_MAX:           int   = 50     # maximum undo stack depth
-DESIGNER_DEFAULT_RATING: dict = {           # MW rating defaults by voltage tier
-    400.0: 1200.0,
-    220.0:  600.0,
-    150.0:  300.0,
-     60.0:  100.0,
-}
-DESIGNER_LINE_RATING_PRESETS: tuple = (     # selectable MW ratings for manual line placement
-    100.0, 150.0, 200.0, 250.0, 300.0, 400.0, 500.0,
-    600.0, 800.0, 1000.0, 1200.0, 1500.0, 2000.0,
-)

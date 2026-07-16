@@ -39,7 +39,6 @@ COL_PANEL_BORDER:   Colour = (0, 170,   0)      # Panel border — green (SCADA 
 COL_400KV:  Colour = (0,  255, 255)     # Bright Cyan  — 400kV collector lines
 COL_220KV:  Colour = (0,  255,   0)     # Bright Green — 220kV collector lines
 COL_150KV:  Colour = (255,255,   0)     # Bright Yellow — 150kV collector lines
-COL_60KV:   Colour = (170,170,   0)     # Yellow — 60kV collector lines
 
 # ─────────────────────────────────────────────
 # VOLTAGE COLOUR VIEW ('L' toggle — lines/substations by voltage tier)
@@ -47,7 +46,7 @@ COL_60KV:   Colour = (170,170,   0)     # Yellow — 60kV collector lines
 COL_VVIEW_400KV:    Colour = (0,  255, 255)     # 400kV — bright cyan
 COL_VVIEW_220KV:    Colour = (255,  0,   0)     # 220kV — bright red
 COL_VVIEW_150KV:    Colour = (0,  255,   0)     # 150kV — bright green
-COL_VVIEW_60KV:     Colour = (170,170,   0)     # 60kV — yellow (matches COL_60KV; not part of the 3-tier request)
+COL_VVIEW_60KV:     Colour = (170,170,   0)     # 60kV — yellow (unused; no 60kV tier exists in the real topology, kept for completeness)
 
 # ─────────────────────────────────────────────
 # LINE STATES

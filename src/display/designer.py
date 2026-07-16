@@ -9,8 +9,9 @@ Allows placing buses, generation units, and transmission lines on the
 Saves to assets/designer_grids/<name>.json.
 
 Coordinate system: all positions are in native 1920×1080 space.
-The canvas area is DESIGNER_CANVAS_W (1600) px wide; the right 320 px is
-the sidebar (drawn by designer_panels.py).
+The sidebar (drawn by designer_panels.py) occupies the left
+DESIGNER_SIDEBAR_W (208) px; the canvas area is the remaining
+DESIGNER_CANVAS_W (1712) px on the right.
 """
 
 from __future__ import annotations
@@ -28,34 +29,30 @@ from data.designer_io import (
     list_designer_grids,
     next_bus_label, next_station_label, next_line_label,
     UNIT_DEFAULTS,
+    designer_buses_to_topology, designer_lines_to_topology, designer_units_to_fleet,
+    import_shift_as_designer_grid,
 )
+from display.geometry import point_segment_dist
 from display.palette import (
-    COL_BACKGROUND, COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
-    COL_TEXT_VALUE, COL_TEXT_HEADING, COL_TEXT_WARN, COL_TEXT_CRIT,
-    COL_BUS_400KV, COL_BUS_220KV, COL_BUS_150KV, COL_BUS_60KV,
-    COL_400KV, COL_220KV, COL_150KV, COL_60KV,
-    COL_LINE_ENERGISED, COL_LOAD_WARN, COL_LINE_NORMAL, COL_LINE_TRIPPED,
+    COL_BACKGROUND, COL_TEXT_PRIMARY,
+    COL_TEXT_VALUE, COL_TEXT_WARN, COL_TEXT_CRIT,
+    COL_400KV, COL_220KV, COL_150KV,
+    COL_LINE_NORMAL, COL_LINE_TRIPPED,
     COL_SELECTION, COL_PANEL_BORDER,
-    COL_DESIGNER_SIDEBAR_BG, COL_DESIGNER_SIDEBAR_SEP,
     COL_DESIGNER_LINE_DRAW, COL_DESIGNER_STATUS_OK, COL_DESIGNER_STATUS_INFO,
-    COL_DESIGNER_SURPLUS_POS, COL_DESIGNER_SURPLUS_NEG,
     COL_DESIGNER_DELETE_CURSOR,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_WIND, COL_UNIT_SOLAR, COL_UNIT_HYDRO_PUMP,
-    COL_UNIT_OFFLINE, COL_UNIT_BORDER,
 )
-from display.symbols import (
-    draw_substation, draw_load_substation, draw_unit_square,
-    draw_transmission_line, BUS_SIZE, UNIT_SIZE, UNIT_GAP,
-)
+from display.symbols import _draw_dashed_line
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT, CANVAS_HEIGHT,
     DESIGNER_SIDEBAR_W, DESIGNER_CANVAS_W,
-    DESIGNER_X_SCALE, DESIGNER_TARGET_LOADING_PCT, DESIGNER_N1_OVERLOAD_PCT,
+    DESIGNER_X_SCALE, DESIGNER_TARGET_LOADING_PCT,
     DESIGNER_STATUS_DISPLAY_S, DESIGNER_HIT_RADIUS, DESIGNER_LINE_HIT_PX,
     DESIGNER_FONT_SIZE, DESIGNER_FONT_SIZE_LARGE, DESIGNER_UNDO_MAX,
-    DESIGNER_DEFAULT_RATING, DESIGNER_LINE_RATING_PRESETS,
-    YSHUNT_REG, S_BASE,
+    LINE_RATING_MW_BY_VOLTAGE,
+    OVERLOAD_WARN_PCT, OVERLOAD_CRIT_PCT,
 )
 from utils.helpers import resource_path
 
@@ -70,19 +67,10 @@ MODE_UNIT    = 'UNIT'
 MODE_LINE    = 'LINE'
 MODE_DELETE  = 'DELETE'
 
-# Voltage → canvas colour
-_VOLT_COLOUR: dict[float, tuple] = {
-    400.0: COL_BUS_400KV,
-    220.0: COL_BUS_220KV,
-    150.0: COL_BUS_150KV,
-     60.0: COL_BUS_60KV,
-}
-
 _VOLT_LINE_COLOUR: dict[float, tuple] = {
     400.0: COL_400KV,
     220.0: COL_220KV,
     150.0: COL_150KV,
-     60.0: COL_60KV,
 }
 
 _UNIT_TYPE_COLOUR: dict[str, tuple] = {
@@ -140,16 +128,21 @@ class GridDesigner:
         self._lines:  list[DesignerLine] = []
         self._units:  list[DesignerUnit] = []
 
+        # Production-quality canvas (ports + obstacle-avoiding routing),
+        # rebuilt from the designer state whenever topology shape changes.
+        self._canvas = None            # display.canvas.GridCanvas | None
+        self._canvas_dirty: bool = True
+
         # Selection
         self._selected_bus:  DesignerBus  | None = None
         self._selected_line: DesignerLine | None = None
         self._selected_unit: DesignerUnit | None = None
 
         # Palette / mode
-        self._palette_mode:        str   = MODE_SELECT
-        self._palette_voltage:     float = 400.0    # for MODE_BUS
-        self._palette_unit_type:   str   = 'COAL'   # for MODE_UNIT
-        self._palette_line_rating: float = 1200.0   # for MODE_LINE (manual placement)
+        self._palette_mode:         str   = MODE_SELECT
+        self._palette_voltage:      float = 400.0    # for MODE_BUS
+        self._palette_load_toggle:  bool  = False    # for MODE_BUS — place a 150kV LOAD bus
+        self._palette_unit_type:    str   = 'COAL'   # for MODE_UNIT
 
         # Line-draw state
         self._line_first_bus: DesignerBus | None = None
@@ -157,6 +150,8 @@ class GridDesigner:
         # Drag state (bus drag)
         self._dragging_bus:  DesignerBus | None = None
         self._drag_offset:   tuple[int, int] = (0, 0)
+        # Drag state (station drag) — reuses _drag_offset, only one drag active at a time
+        self._dragging_station: str | None = None   # station_label
 
         # Undo stack (list of (buses_copy, lines_copy, units_copy))
         self._undo_stack: list = []
@@ -200,6 +195,15 @@ class GridDesigner:
         # Signature: (grid_name: str) -> None
         self.on_test_request = None
 
+        # Analysis mode — session-only what-if state, never persisted to the
+        # saved grid JSON (peak_load_mw/rated_mw on the real dataclasses are
+        # the source of truth; these are overrides for one analysis run).
+        self._analysis_unit_mw:         dict[str, float] = {}
+        self._analysis_unit_available:  dict[str, bool]  = {}
+        self._analysis_bus_load_mw:     dict[str, float] = {}
+        self._analysis_line_in_service: dict[str, bool]  = {}
+        self._analysis_result = None   # designer_analysis.AnalysisResult | None
+
     # ─── Public event interface ───────────────────────────────────────────────
 
     def to_native(self, pos: tuple[int, int]) -> tuple[int, int]:
@@ -216,10 +220,27 @@ class GridDesigner:
         if self._dragging_bus is not None:
             nx = native_pos[0] + self._drag_offset[0]
             ny = native_pos[1] + self._drag_offset[1]
-            nx = max(0, min(DESIGNER_CANVAS_W - 1, nx))
+            nx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, nx))
             ny = max(0, min(CANVAS_HEIGHT - 1, ny))
             self._dragging_bus.canvas_x = nx
             self._dragging_bus.canvas_y = ny
+            # Full GridCanvas resync (ports/routing/dash pre-bake) is too
+            # costly to run every drag frame at Shift-10 scale (measured
+            # ~30-50ms at 41 buses/62 lines, well over a 16.6ms frame
+            # budget). Draw a cheap straight-line ghost for the dragged
+            # bus's own lines during the drag instead (see
+            # _draw_canvas_overlays); the full resync runs once on release.
+        elif self._dragging_station is not None:
+            nx = native_pos[0] + self._drag_offset[0]
+            ny = native_pos[1] + self._drag_offset[1]
+            nx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, nx))
+            ny = max(0, min(CANVAS_HEIGHT - 1, ny))
+            for u in self._units:
+                if u.station_label == self._dragging_station:
+                    u.station_x = nx
+                    u.station_y = ny
+            # Same deferred-resync rationale as bus drag — see
+            # _draw_canvas_overlays for the station-drag ghost.
 
     def on_mouse_down(self, native_pos: tuple[int, int]) -> None:
         if self._dialog_active:
@@ -227,7 +248,13 @@ class GridDesigner:
         # Only drag in SELECT mode over the canvas area
         if self._palette_mode != MODE_SELECT:
             return
-        if native_pos[0] >= DESIGNER_CANVAS_W:
+        if native_pos[0] < DESIGNER_SIDEBAR_W:
+            return
+        station_label = self._hit_station(native_pos)
+        if station_label is not None:
+            sx, sy = self._station_anchor(station_label)
+            self._dragging_station = station_label
+            self._drag_offset      = (sx - native_pos[0], sy - native_pos[1])
             return
         bus = self._hit_bus(native_pos)
         if bus is not None:
@@ -238,7 +265,10 @@ class GridDesigner:
     def on_mouse_up(self, native_pos: tuple[int, int]) -> None:
         if self._dragging_bus is not None:
             self._dragging_bus = None
-            self._dirty = True
+            self._mark_dirty()
+        elif self._dragging_station is not None:
+            self._dragging_station = None
+            self._mark_dirty()
 
     def on_click(self, native_pos: tuple[int, int]) -> None:
         if self._dialog_active:
@@ -247,8 +277,8 @@ class GridDesigner:
         x, y = native_pos
 
         # Sidebar click → delegate to panel handler
-        if x >= DESIGNER_CANVAS_W:
-            self._handle_sidebar_click(x - DESIGNER_CANVAS_W, y)
+        if x < DESIGNER_SIDEBAR_W:
+            self._handle_sidebar_click(x, y)
             return
 
         # Canvas click
@@ -289,6 +319,13 @@ class GridDesigner:
             return self._handle_save_dialog_key(event)
         if self._sidebar_mode in ('load_browser', 'test_browser'):
             return self._handle_load_browser_key(event)
+        if self._sidebar_mode == 'analysis' and self._editing_field is None:
+            if event.key == pygame.K_ESCAPE:
+                self._close_sidebar_overlay()
+                return True
+            if event.key == pygame.K_RETURN:
+                self._run_analysis()
+                return True
 
         if self._editing_field is not None:
             return self._handle_edit_key(event)
@@ -329,6 +366,10 @@ class GridDesigner:
             self._open_test_browser()
             return True
 
+        if ctrl and event.key == pygame.K_a:
+            self._open_analysis()
+            return True
+
         if event.key == pygame.K_l:
             self._palette_mode = MODE_LINE
             self._line_first_bus = None
@@ -349,7 +390,7 @@ class GridDesigner:
                 cur = self._selected_bus.label_anchor
                 idx = (_ANCHOR_CYCLE.index(cur) + 1) % len(_ANCHOR_CYCLE)
                 self._selected_bus.label_anchor = _ANCHOR_CYCLE[idx]
-                self._dirty = True
+                self._mark_dirty()
             return True
 
         if event.key == pygame.K_e and not ctrl:
@@ -381,6 +422,16 @@ class GridDesigner:
         self._status_colour = colour or COL_DESIGNER_STATUS_INFO
         self._status_timer  = DESIGNER_STATUS_DISPLAY_S
 
+    def _mark_dirty(self) -> None:
+        """
+        Flag unsaved changes AND flag the production canvas as needing a
+        rebuild (ports/routing/double-circuit offsets). Every topology
+        mutation goes through this — simplest safe rule, resync cost is
+        cheap at this project's grid scale (see Part 1 of the plan).
+        """
+        self._dirty = True
+        self._canvas_dirty = True
+
     def _push_undo(self) -> None:
         snapshot = (
             copy.deepcopy(self._buses),
@@ -397,7 +448,7 @@ class GridDesigner:
             return
         self._buses, self._lines, self._units = self._undo_stack.pop()
         self._clear_selection()
-        self._dirty = True
+        self._mark_dirty()
         self._set_status('Undo', COL_DESIGNER_STATUS_INFO)
 
     def _open_save_dialog(self) -> None:
@@ -418,6 +469,88 @@ class GridDesigner:
 
     def _close_sidebar_overlay(self) -> None:
         self._sidebar_mode = 'normal'
+
+    def _import_campaign_shift(self, shift_number: int = 10) -> None:
+        """
+        Import the current campaign topology for the given shift as a named
+        Designer grid ('shift{N}'), then load it into the editor. Confirms
+        before overwriting an existing file under that name — the one
+        genuinely destructive action in the Designer sidebar.
+        """
+        name = f'shift{shift_number}'
+        if name in list_designer_grids():
+            self._dialog_prompt   = f"'{name}' already exists — overwrite? (y/n):"
+            self._dialog_buffer   = ''
+            self._dialog_active   = True
+            self._dialog_callback = lambda ans: self._confirm_import_campaign_shift(
+                shift_number, name, ans)
+        else:
+            self._do_import_campaign_shift(shift_number, name)
+
+    def _confirm_import_campaign_shift(self, shift_number: int, name: str, answer: str) -> None:
+        if answer.strip().lower().startswith('y'):
+            self._do_import_campaign_shift(shift_number, name)
+        else:
+            self._set_status('Import cancelled', COL_DESIGNER_STATUS_INFO)
+
+    def _do_import_campaign_shift(self, shift_number: int, name: str) -> None:
+        try:
+            import_shift_as_designer_grid(shift_number, name)
+            self._commit_load(name)
+            self._set_status(f'Imported Shift {shift_number} as {name!r}',
+                             COL_DESIGNER_STATUS_OK)
+        except Exception as e:
+            self._set_status(f'Import failed: {e}', COL_DESIGNER_STATUS_INFO)
+
+    def _open_analysis(self) -> None:
+        self._sync_analysis_state()
+        self._sidebar_mode   = 'analysis'
+        self._analysis_result = None   # cleared until RUN is pressed
+
+    def _sync_analysis_state(self) -> None:
+        """
+        Seed the what-if dicts from current dataclass defaults for any
+        element not already present (preserves user overrides across
+        open/close within one session), and prune entries for elements no
+        longer in the topology.
+        """
+        for u in self._units:
+            self._analysis_unit_mw.setdefault(u.label, u.rated_mw)
+            self._analysis_unit_available.setdefault(u.label, True)
+        for b in self._buses:
+            if b.bus_type == 'LOAD':
+                self._analysis_bus_load_mw.setdefault(b.label, b.peak_load_mw)
+        for l in self._lines:
+            self._analysis_line_in_service.setdefault(l.label, True)
+
+        live_units = {u.label for u in self._units}
+        live_buses = {b.label for b in self._buses if b.bus_type == 'LOAD'}
+        live_lines = {l.label for l in self._lines}
+        self._analysis_unit_mw = {
+            k: v for k, v in self._analysis_unit_mw.items() if k in live_units}
+        self._analysis_unit_available = {
+            k: v for k, v in self._analysis_unit_available.items() if k in live_units}
+        self._analysis_bus_load_mw = {
+            k: v for k, v in self._analysis_bus_load_mw.items() if k in live_buses}
+        self._analysis_line_in_service = {
+            k: v for k, v in self._analysis_line_in_service.items() if k in live_lines}
+
+    def _run_analysis(self) -> None:
+        if not self._buses or not self._lines:
+            self._set_status('No topology to analyse', COL_DESIGNER_STATUS_INFO)
+            return
+        self._sync_analysis_state()
+        from simulation.designer_grid import DesignerGrid
+        from simulation.designer_analysis import run_full_analysis
+        grid = DesignerGrid(self._buses, self._lines, self._units)
+        self._analysis_result = run_full_analysis(
+            grid, self._analysis_unit_mw, self._analysis_unit_available,
+            self._analysis_bus_load_mw, self._analysis_line_in_service)
+        if self._analysis_result.solver_error:
+            self._set_status(f'Solve failed: {self._analysis_result.solver_error}',
+                             COL_DESIGNER_STATUS_INFO)
+        else:
+            self._set_status('Analysis complete', COL_DESIGNER_STATUS_OK)
 
     def _handle_save_dialog_key(self, event: pygame.event.Event) -> bool:
         if event.key == pygame.K_RETURN:
@@ -484,6 +617,7 @@ class GridDesigner:
             self._grid_name = name
             self._clear_selection()
             self._dirty = False
+            self._canvas_dirty = True
             self._set_status(f'Loaded: {name}', COL_DESIGNER_STATUS_OK)
         except Exception as e:
             self._set_status(f'Load failed: {e}', COL_DESIGNER_STATUS_INFO)
@@ -502,17 +636,21 @@ class GridDesigner:
         return best
 
     def _hit_line(self, pos: tuple[int, int]) -> DesignerLine | None:
+        """
+        Hit-test against the line's routed waypoints (matching what's
+        actually drawn post rendering-parity), not the naive bus-centre
+        segment — mirrors renderer.py's production click hit-test pattern.
+        """
         px, py = pos
         best_dist = DESIGNER_LINE_HIT_PX + 1
         best = None
+        waypoints_map = self._canvas._line_waypoints if self._canvas is not None else {}
         for l in self._lines:
-            b1 = self._bus_by_label(l.from_bus)
-            b2 = self._bus_by_label(l.to_bus)
-            if b1 is None or b2 is None:
-                continue
-            d = _point_segment_dist(px, py,
-                                    b1.canvas_x, b1.canvas_y,
-                                    b2.canvas_x, b2.canvas_y)
+            waypoints = waypoints_map.get(l.label)
+            if waypoints is None:
+                continue  # canvas not yet synced this session — no hit this frame
+            d = min(point_segment_dist(px, py, sx1, sy1, sx2, sy2)
+                    for (sx1, sy1), (sx2, sy2) in zip(waypoints, waypoints[1:]))
             if d < best_dist:
                 best_dist = d
                 best = l
@@ -524,19 +662,50 @@ class GridDesigner:
                 return b
         return None
 
+    def _station_anchor(self, station_label: str) -> tuple[int, int]:
+        """
+        Resolve a station's current canvas anchor. Falls back to 20px above
+        its bus when unset (sentinel -1, e.g. a pre-feature save file).
+        """
+        for u in self._units:
+            if u.station_label == station_label:
+                if u.station_x != -1 and u.station_y != -1:
+                    return u.station_x, u.station_y
+                bus = self._bus_by_label(u.bus_label)
+                if bus is not None:
+                    return bus.canvas_x, max(0, bus.canvas_y - 20)
+                return 0, 0
+        return 0, 0
+
+    def _hit_station(self, pos: tuple[int, int]) -> str | None:
+        px, py = pos
+        best_dist = DESIGNER_HIT_RADIUS + 1
+        best = None
+        seen: set[str] = set()
+        for u in self._units:
+            sl = u.station_label
+            if sl in seen:
+                continue
+            seen.add(sl)
+            sx, sy = self._station_anchor(sl)
+            d = max(abs(sx - px), abs(sy - py))
+            if d < best_dist:
+                best_dist = d
+                best = sl
+        return best
+
     # ─── Placement ───────────────────────────────────────────────────────────
 
     def _do_place_bus(self, x: int, y: int) -> None:
-        vkv = self._palette_voltage
-        if vkv == 60.0:
+        if self._palette_load_toggle:
             # Ask for peak load
-            self._dialog_prompt  = 'Peak load MW (60kV bus):'
+            self._dialog_prompt  = 'Peak load MW (150kV LOAD bus):'
             self._dialog_buffer  = '100'
             self._dialog_active  = True
             self._dialog_callback = lambda mw_str: self._finish_place_load_bus(x, y, mw_str)
         else:
             self._push_undo()
-            self._place_bus(x, y, vkv, peak_load_mw=0.0)
+            self._place_bus(x, y, self._palette_voltage, peak_load_mw=0.0)
 
     def _finish_place_load_bus(self, x: int, y: int, mw_str: str) -> None:
         try:
@@ -544,12 +713,12 @@ class GridDesigner:
         except ValueError:
             mw = 100.0
         self._push_undo()
-        self._place_bus(x, y, 60.0, peak_load_mw=mw)
+        self._place_bus(x, y, 150.0, bus_type='LOAD', peak_load_mw=mw)
 
     def _place_bus(self, x: int, y: int, voltage_kv: float,
+                   bus_type: str = 'TRANSMISSION',
                    peak_load_mw: float = 0.0) -> None:
-        label    = next_bus_label(self._used_bus_labels)
-        bus_type = 'LOAD' if voltage_kv == 60.0 else 'TRANSMISSION'
+        label = next_bus_label(self._used_bus_labels)
         bus = DesignerBus(
             label=label,
             name=label,
@@ -568,7 +737,7 @@ class GridDesigner:
         self._selected_line = None
         self._selected_unit = None
         self._palette_mode  = MODE_SELECT
-        self._dirty = True
+        self._mark_dirty()
 
     def _ask_unit_count(self, bus: DesignerBus) -> None:
         self._dialog_prompt  = f'How many {self._palette_unit_type} units at {bus.label}?'
@@ -585,6 +754,7 @@ class GridDesigner:
         unit_type = self._palette_unit_type
         station_label = next_station_label(self._used_station_labels)
         self._used_station_labels.add(station_label)
+        sx, sy = bus.canvas_x, max(0, bus.canvas_y - 20)
         defaults = UNIT_DEFAULTS.get(unit_type, UNIT_DEFAULTS['COAL'])
         for i in range(1, count + 1):
             unit_label = f'{station_label}-{i}'
@@ -603,21 +773,22 @@ class GridDesigner:
                 can_pump=(unit_type == 'HYDRO_PUMP'),
                 active_from_shift=1,
                 description=f'{station_label} {unit_type} unit {i}',
+                station_x=sx,
+                station_y=sy,
             )
             self._units.append(unit)
         self._palette_mode = MODE_SELECT
-        self._dirty = True
+        self._mark_dirty()
         self._set_status(f'Placed {count}× {unit_type} at {bus.label}',
                          COL_DESIGNER_STATUS_OK)
 
-    def _place_line(self, b1: DesignerBus, b2: DesignerBus,
-                    rating_override: float | None = None) -> None:
+    def _place_line(self, b1: DesignerBus, b2: DesignerBus) -> None:
         # Infer voltage: lower of the two endpoints
         vkv  = min(b1.voltage_kv, b2.voltage_kv)
         dist = math.hypot(b2.canvas_x - b1.canvas_x, b2.canvas_y - b1.canvas_y)
         x_pu = max(0.010, dist / NATIVE_WIDTH * DESIGNER_X_SCALE * 10)
-        # Manual placement uses the user-selected rating; auto-route passes its own
-        rating = rating_override if rating_override is not None else self._palette_line_rating
+        # Rating always matches the standard rating for this line's voltage tier
+        rating = LINE_RATING_MW_BY_VOLTAGE.get(vkv, LINE_RATING_MW_BY_VOLTAGE[150.0])
         label  = next_line_label(self._used_line_labels)
         line = DesignerLine(
             label=label,
@@ -632,7 +803,7 @@ class GridDesigner:
         self._lines.append(line)
         self._used_line_labels.add(label)
         self._selected_line = line
-        self._dirty = True
+        self._mark_dirty()
         self._set_status(f'Line {label}: {b1.label}↔{b2.label}  {vkv:.0f}kV  {rating:.0f}MW',
                          COL_DESIGNER_STATUS_OK)
 
@@ -671,7 +842,7 @@ class GridDesigner:
             self._push_undo()
             self._lines.remove(line)
             self._used_line_labels.discard(line.label)
-            self._dirty = True
+            self._mark_dirty()
             return
 
     def _delete_selected(self) -> None:
@@ -683,7 +854,7 @@ class GridDesigner:
             self._lines.remove(self._selected_line)
             self._used_line_labels.discard(self._selected_line.label)
             self._selected_line = None
-            self._dirty = True
+            self._mark_dirty()
 
     def _remove_bus(self, bus: DesignerBus) -> None:
         lbl = bus.label
@@ -694,7 +865,7 @@ class GridDesigner:
         self._used_bus_labels.discard(lbl)
         self._used_line_labels = {l.label for l in self._lines}
         self._clear_selection()
-        self._dirty = True
+        self._mark_dirty()
 
     # ─── Sidebar interaction ─────────────────────────────────────────────────
 
@@ -729,10 +900,16 @@ class GridDesigner:
         if action is None:
             return
 
-        if action.startswith('bus_'):
-            self._palette_mode    = MODE_BUS
-            self._palette_voltage = float(action.split('_')[1])
-            self._line_first_bus  = None
+        if action == 'bus_load_toggle':
+            self._palette_mode        = MODE_BUS
+            self._palette_load_toggle = not self._palette_load_toggle
+            self._line_first_bus      = None
+
+        elif action.startswith('bus_'):
+            self._palette_mode        = MODE_BUS
+            self._palette_voltage     = float(action.split('_')[1])
+            self._palette_load_toggle = False
+            self._line_first_bus      = None
 
         elif action.startswith('unit_'):
             self._palette_mode      = MODE_UNIT
@@ -746,12 +923,6 @@ class GridDesigner:
             self._palette_mode   = MODE_LINE
             self._line_first_bus = None
 
-        elif action == 'line_rating_up':
-            self._cycle_line_rating(+1)
-
-        elif action == 'line_rating_down':
-            self._cycle_line_rating(-1)
-
         elif action == 'auto_route':
             self._auto_route()
 
@@ -759,7 +930,7 @@ class GridDesigner:
             self._push_undo()
             self._lines.clear()
             self._used_line_labels.clear()
-            self._dirty = True
+            self._mark_dirty()
             self._set_status('All lines cleared', COL_DESIGNER_STATUS_INFO)
 
         elif action == 'save':
@@ -771,8 +942,17 @@ class GridDesigner:
         elif action == 'test_grid':
             self._open_test_browser()
 
-        elif action == 'export_preview':
-            self._export_preview()
+        elif action == 'import_shift10':
+            self._import_campaign_shift(10)
+
+        elif action == 'analysis':
+            self._open_analysis()
+
+        elif action == 'analysis_run':
+            self._run_analysis()
+
+        elif action == 'analysis_close':
+            self._close_sidebar_overlay()
 
         elif action == 'prop_shift_plus':
             self._change_active_shift(+1)
@@ -785,15 +965,35 @@ class GridDesigner:
                 for b in self._buses:
                     b.is_slack = False
                 self._selected_bus.is_slack = True
-                self._dirty = True
+                self._mark_dirty()
 
         elif action == 'edit_reactance_pu':
             if self._selected_line is not None:
                 self._start_edit('reactance_pu', f'{self._selected_line.reactance_pu:.4f}')
 
-        elif action == 'edit_rating_mw':
+        elif action == 'edit_analysis_unit_mw':
+            if self._selected_unit is not None:
+                mw = self._analysis_unit_mw.get(self._selected_unit.label,
+                                                self._selected_unit.rated_mw)
+                self._start_edit('analysis_unit_mw', f'{mw:.0f}')
+
+        elif action == 'edit_analysis_bus_load_mw':
+            if self._selected_bus is not None:
+                mw = self._analysis_bus_load_mw.get(self._selected_bus.label,
+                                                    self._selected_bus.peak_load_mw)
+                self._start_edit('analysis_bus_load_mw', f'{mw:.0f}')
+
+        elif action == 'analysis_unit_toggle_avail':
+            if self._selected_unit is not None:
+                lbl = self._selected_unit.label
+                self._analysis_unit_available[lbl] = not self._analysis_unit_available.get(lbl, True)
+                self._analysis_result = None
+
+        elif action == 'analysis_line_toggle_service':
             if self._selected_line is not None:
-                self._start_edit('rating_mw', f'{self._selected_line.rating_mw:.0f}')
+                lbl = self._selected_line.label
+                self._analysis_line_in_service[lbl] = not self._analysis_line_in_service.get(lbl, True)
+                self._analysis_result = None
 
     # ─── Property editing ────────────────────────────────────────────────────
 
@@ -832,17 +1032,26 @@ class GridDesigner:
                     if l.to_bus   == old: l.to_bus   = self._selected_bus.label
                 for u in self._units:
                     if u.bus_label == old: u.bus_label = self._selected_bus.label
-                self._dirty = True
+                self._mark_dirty()
         elif self._selected_line is not None and field == 'reactance_pu':
             try:
                 self._selected_line.reactance_pu = max(0.001, float(val))
-                self._dirty = True
+                self._mark_dirty()
             except ValueError:
                 pass
-        elif self._selected_line is not None and field == 'rating_mw':
+        elif self._selected_unit is not None and field == 'analysis_unit_mw':
             try:
-                self._selected_line.rating_mw = max(1.0, float(val))
-                self._dirty = True
+                u  = self._selected_unit
+                mw = max(u.min_mw, min(u.rated_mw, float(val)))
+                self._analysis_unit_mw[u.label] = mw
+                self._analysis_result = None
+            except ValueError:
+                pass
+        elif self._selected_bus is not None and field == 'analysis_bus_load_mw':
+            try:
+                mw = max(0.0, float(val))
+                self._analysis_bus_load_mw[self._selected_bus.label] = mw
+                self._analysis_result = None
             except ValueError:
                 pass
         self._editing_field = None
@@ -852,25 +1061,15 @@ class GridDesigner:
         if self._selected_bus is not None:
             self._selected_bus.active_from_shift = max(1, min(10,
                 self._selected_bus.active_from_shift + delta))
-            self._dirty = True
+            self._mark_dirty()
         elif self._selected_line is not None:
             self._selected_line.active_from_shift = max(1, min(10,
                 self._selected_line.active_from_shift + delta))
-            self._dirty = True
+            self._mark_dirty()
         elif self._selected_unit is not None:
             self._selected_unit.active_from_shift = max(1, min(10,
                 self._selected_unit.active_from_shift + delta))
-            self._dirty = True
-
-    def _cycle_line_rating(self, direction: int) -> None:
-        presets = DESIGNER_LINE_RATING_PRESETS
-        try:
-            idx = list(presets).index(self._palette_line_rating)
-        except ValueError:
-            idx = len(presets) // 2
-        self._palette_line_rating = presets[
-            max(0, min(len(presets) - 1, idx + direction))
-        ]
+            self._mark_dirty()
 
     # ─── Dialog handling ─────────────────────────────────────────────────────
 
@@ -914,26 +1113,9 @@ class GridDesigner:
         self._lines.extend(added)
         for l in added:
             self._used_line_labels.add(l.label)
-        self._dirty = True
+        self._mark_dirty()
         self._set_status(f'AUTO-ROUTE COMPLETE — {n} line{"s" if n != 1 else ""} added',
                          COL_DESIGNER_STATUS_OK)
-
-    def _export_preview(self) -> None:
-        """Run DC load flow and show loading on the canvas."""
-        if not self._buses or not self._lines:
-            self._set_status('No topology to preview', COL_DESIGNER_STATUS_INFO)
-            return
-        try:
-            result = _run_loadflow(self._buses, self._lines, self._units)
-            lines_shown = 0
-            for label, pct in result.items():
-                for l in self._lines:
-                    if l.label == label:
-                        l._preview_loading = pct
-                        lines_shown += 1
-            self._set_status(f'Preview: {lines_shown} lines computed', COL_DESIGNER_STATUS_OK)
-        except Exception as e:
-            self._set_status(f'Load flow error: {e}', COL_DESIGNER_STATUS_INFO)
 
     # ─── Drawing ─────────────────────────────────────────────────────────────
 
@@ -970,105 +1152,169 @@ class GridDesigner:
                 self._status_timer = 0.0
         self.draw(display_surf)
 
+    def _selected_label_for_canvas(self) -> str | None:
+        """Bus/unit label to highlight via GridCanvas's own selection ring."""
+        if self._selected_bus is not None:
+            return self._selected_bus.label
+        if self._selected_unit is not None:
+            return self._selected_unit.label
+        return None
+
+    def _sync_canvas(self) -> None:
+        """
+        Rebuild the production-quality GridCanvas from current designer
+        state (ports, obstacle-avoiding routing, double-circuit offsets).
+
+        Converts Designer* dataclasses to the real frozen topology/fleet
+        dataclasses GridCanvas expects, via the previously-unused
+        designer_io.py conversion helpers.
+        """
+        from display.canvas import GridCanvas
+
+        real_buses = designer_buses_to_topology(self._buses)
+        real_lines = designer_lines_to_topology(self._lines)
+        real_units = designer_units_to_fleet(self._units)
+
+        station_positions: dict[str, tuple[int, int]] = {}
+        for u in self._units:
+            if u.station_label in station_positions:
+                continue
+            if u.station_x != -1 and u.station_y != -1:
+                station_positions[u.station_label] = (u.station_x, u.station_y)
+
+        if self._canvas is None:
+            # shift=0 sentinel — never actually used; load_designer_topology()
+            # immediately replaces everything __init__ would have populated
+            # from get_buses_by_shift(0).
+            self._canvas = GridCanvas(shift=0, font=self._font, scale=1.0)
+        self._canvas.load_designer_topology(real_buses, real_lines, real_units,
+                                            station_positions)
+        self._canvas_dirty = False
+
     def _draw_canvas(self, surf: pygame.Surface) -> None:
-        # Canvas clip region
-        canvas_rect = pygame.Rect(0, 0, DESIGNER_CANVAS_W, CANVAS_HEIGHT)
+        # Canvas clip region — occupies the right side, sidebar is on the left
+        canvas_rect = pygame.Rect(DESIGNER_SIDEBAR_W, 0, DESIGNER_CANVAS_W, CANVAS_HEIGHT)
         pygame.draw.rect(surf, (10, 10, 10), canvas_rect)
 
-        # Draw lines
-        for l in self._lines:
-            b1 = self._bus_by_label(l.from_bus)
-            b2 = self._bus_by_label(l.to_bus)
-            if b1 is None or b2 is None:
-                continue
-            selected = (l is self._selected_line)
-            preview_loading = getattr(l, '_preview_loading', None)
-            col = _VOLT_LINE_COLOUR.get(l.voltage_kv, COL_LINE_NORMAL)
-            if selected:
-                col = COL_SELECTION
-            thickness = {400.0: 2, 220.0: 2, 150.0: 1, 60.0: 1}.get(l.voltage_kv, 1)
-            pygame.draw.line(surf, col,
-                             (b1.canvas_x, b1.canvas_y),
-                             (b2.canvas_x, b2.canvas_y), thickness)
-            if preview_loading is not None:
-                mid_x = (b1.canvas_x + b2.canvas_x) // 2
-                mid_y = (b1.canvas_y + b2.canvas_y) // 2
-                pcol  = (COL_DESIGNER_SURPLUS_NEG if preview_loading > 90
-                         else COL_LOAD_WARN if preview_loading > 70
-                         else COL_DESIGNER_STATUS_OK)
-                self._font.render_to(surf, (mid_x - 8, mid_y - 4),
-                                     f'{preview_loading:.0f}%', pcol)
+        if self._canvas_dirty:
+            self._sync_canvas()
 
-        # Ghost line while in LINE mode and first bus chosen
+        if self._buses:
+            # GridCanvas.draw() always blits at (0,0) of the surface it's
+            # given, and bus/line positions are native-space (not offset by
+            # the sidebar) — so it must draw directly onto the full native
+            # surf, never a subsurface (a subsurface would double-offset
+            # every position by the sidebar width).
+            self._canvas.draw(surf, state=None, blink_on=True,
+                              selected_label=self._selected_label_for_canvas())
+
+        self._draw_canvas_overlays(surf)
+
+    def _draw_canvas_overlays(self, surf: pygame.Surface) -> None:
+        """
+        Designer-only chrome drawn on top of GridCanvas's blit: selected-line
+        highlight, ghost line while drawing, delete-mode cursor, mode hint,
+        and (when in analysis mode) loading-% labels / out-of-service marks.
+        """
+        # While actively dragging a bus, GridCanvas's last-synced routing is
+        # stale (a full resync is deferred to drag-end for performance — see
+        # on_mouse_move). Cover the dragged bus's own lines with a cheap
+        # straight-line ghost that tracks the live position, so the display
+        # doesn't visibly lag behind the mouse.
+        if self._dragging_bus is not None:
+            dx, dy = self._dragging_bus.canvas_x, self._dragging_bus.canvas_y
+            for l in self._lines:
+                other_lbl = None
+                if l.from_bus == self._dragging_bus.label:
+                    other_lbl = l.to_bus
+                elif l.to_bus == self._dragging_bus.label:
+                    other_lbl = l.from_bus
+                if other_lbl is None:
+                    continue
+                other = self._bus_by_label(other_lbl)
+                if other is None:
+                    continue
+                col = _VOLT_LINE_COLOUR.get(l.voltage_kv, COL_LINE_NORMAL)
+                pygame.draw.line(surf, col, (dx, dy),
+                                 (other.canvas_x, other.canvas_y), 1)
+
+        # Same deferred-resync trick for a dragged station: draw a cheap
+        # collector-line ghost to its bus plus an outline marker at the
+        # live anchor, instead of reproducing the exact unit-square layout.
+        if self._dragging_station is not None:
+            sx, sy = self._station_anchor(self._dragging_station)
+            station_units = [u for u in self._units
+                             if u.station_label == self._dragging_station]
+            if station_units:
+                bus = self._bus_by_label(station_units[0].bus_label)
+                if bus is not None:
+                    pygame.draw.line(surf, COL_LINE_NORMAL, (sx, sy),
+                                     (bus.canvas_x, bus.canvas_y), 1)
+                pygame.draw.rect(surf, COL_SELECTION,
+                                 pygame.Rect(sx - 8, sy - 8, 16, 16), 1)
+
+        # Selected-line highlight — GridCanvas has no line-selection concept
+        # of its own (production gameplay only has click-to-trip), so redraw
+        # a highlight stroke along the line's already-computed waypoints.
+        if self._selected_line is not None and self._canvas is not None:
+            waypoints = self._canvas._line_waypoints.get(self._selected_line.label)
+            if waypoints:
+                for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
+                    pygame.draw.line(surf, COL_SELECTION, (x1, y1), (x2, y2), 3)
+
+        # Analysis mode: loading-% labels + out-of-service dashed overstroke.
+        # Lines toggled out of service render no differently in GridCanvas's
+        # own topology-only (state=None) draw path, so overstroke them here
+        # rather than adding a designer-only concept to production rendering.
+        if (self._sidebar_mode == 'analysis' and self._canvas is not None
+                and self._analysis_result is not None):
+            for l in self._lines:
+                waypoints = self._canvas._line_waypoints.get(l.label)
+                if not waypoints:
+                    continue
+                in_service = self._analysis_line_in_service.get(l.label, True)
+                if not in_service:
+                    for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
+                        _draw_dashed_line(surf, COL_LINE_TRIPPED,
+                                          (x1, y1), (x2, y2), dash=4, gap=3, width=2)
+                    continue
+                flow = self._analysis_result.line_flows.get(l.label)
+                if flow is None:
+                    continue
+                pct = flow.loading_pct
+                pcol = (COL_TEXT_CRIT if pct >= OVERLOAD_CRIT_PCT
+                        else COL_TEXT_WARN if pct >= OVERLOAD_WARN_PCT
+                        else COL_DESIGNER_STATUS_OK)
+                mid_idx = len(waypoints) // 2
+                mx, my = waypoints[max(0, mid_idx - 1)]
+                mx2, my2 = waypoints[min(len(waypoints) - 1, mid_idx)]
+                lx, ly = (mx + mx2) // 2, (my + my2) // 2
+                self._font.render_to(surf, (lx - 8, ly - 4), f'{pct:.0f}%', pcol)
+
+        # Ghost line while in LINE mode and first bus chosen — not yet a
+        # real line with ports/routing (no second endpoint exists yet), so a
+        # straight-line ghost is the correct preview.
         if self._palette_mode == MODE_LINE and self._line_first_bus is not None:
             fx = self._line_first_bus.canvas_x
             fy = self._line_first_bus.canvas_y
             mx, my = self._mouse_pos
-            if mx < DESIGNER_CANVAS_W:
+            if mx >= DESIGNER_SIDEBAR_W:
                 pygame.draw.line(surf, COL_DESIGNER_LINE_DRAW,
                                  (fx, fy), (mx, my), 1)
-
-        # Draw buses
-        for b in self._buses:
-            vkv = b.voltage_kv
-            col = _VOLT_COLOUR.get(vkv, COL_BUS_400KV)
-            selected = (b is self._selected_bus)
-            if b.bus_type == 'LOAD':
-                draw_load_substation(surf, b.canvas_x, b.canvas_y,
-                                     loading_pct=0.0, blacked=False,
-                                     selected=selected, scale=1.0)
-            else:
-                draw_substation(surf, b.canvas_x, b.canvas_y,
-                                loading_pct=0.0, blacked=False,
-                                selected=selected, scale=1.0)
-            # Voltage colour dot
-            pygame.draw.circle(surf, col,
-                               (b.canvas_x, b.canvas_y), BUS_SIZE // 2 + 1, 1)
-            # Label
-            lbl_col = COL_SELECTION if selected else COL_TEXT_PRIMARY
-            lx, ly  = _label_pos(b.canvas_x, b.canvas_y, b.label_anchor)
-            self._font.render_to(surf, (lx, ly), b.label, lbl_col)
-
-            # Peak load for LOAD buses
-            if b.bus_type == 'LOAD' and b.peak_load_mw > 0:
-                self._font.render_to(surf, (lx, ly + 14),
-                                     f'{b.peak_load_mw:.0f}MW',
-                                     COL_TEXT_DIM)
-
-        # Draw units (simple coloured squares below their bus)
-        station_units: dict[str, list[DesignerUnit]] = {}
-        for u in self._units:
-            station_units.setdefault(u.bus_label, []).append(u)
-
-        for bus_label, units in station_units.items():
-            bus = self._bus_by_label(bus_label)
-            if bus is None:
-                continue
-            n      = len(units)
-            total  = n * UNIT_SIZE + (n - 1) * UNIT_GAP
-            start_x = bus.canvas_x - total // 2
-            uy      = bus.canvas_y + BUS_SIZE + 7
-            for i, u in enumerate(units):
-                ux = start_x + i * (UNIT_SIZE + UNIT_GAP) + UNIT_SIZE // 2
-                draw_unit_square(surf, ux, uy,
-                                 unit_type=u.unit_type,
-                                 unit_state='OFFLINE',
-                                 output_fraction=0.0,
-                                 selected=False,
-                                 blink_on=False,
-                                 scale=1.0)
 
         # Delete cursor hint
         if self._palette_mode == MODE_DELETE:
             mx, my = self._mouse_pos
-            if mx < DESIGNER_CANVAS_W:
+            if mx >= DESIGNER_SIDEBAR_W:
                 pygame.draw.circle(surf, COL_DESIGNER_DELETE_CURSOR,
                                    (mx, my), DESIGNER_HIT_RADIUS, 1)
 
         # Mode hint bottom-left of canvas
+        bus_hint = (f'PLACE BUS  150kV LOAD  (click canvas)' if self._palette_load_toggle
+                    else f'PLACE BUS  {self._palette_voltage:.0f}kV  (click canvas)')
         hint_map = {
             MODE_SELECT: '',
-            MODE_BUS:    f'PLACE BUS  {self._palette_voltage:.0f}kV  (click canvas)',
+            MODE_BUS:    bus_hint,
             MODE_UNIT:   f'PLACE UNIT  {self._palette_unit_type}  (click a bus)',
             MODE_LINE:   ('Click first bus' if self._line_first_bus is None
                           else f'Click second bus  (from {self._line_first_bus.label})'),
@@ -1076,13 +1322,13 @@ class GridDesigner:
         }
         hint = hint_map.get(self._palette_mode, '')
         if hint:
-            self._font.render_to(surf, (8, CANVAS_HEIGHT - 20), hint,
+            self._font.render_to(surf, (DESIGNER_SIDEBAR_W + 8, CANVAS_HEIGHT - 20), hint,
                                  COL_DESIGNER_STATUS_INFO)
 
     def _draw_sidebar(self, surf: pygame.Surface) -> None:
         from display.designer_panels import draw_sidebar
         sidebar_surf = surf.subsurface(
-            (DESIGNER_CANVAS_W, 0, DESIGNER_SIDEBAR_W, NATIVE_HEIGHT))
+            (0, 0, DESIGNER_SIDEBAR_W, NATIVE_HEIGHT))
         draw_sidebar(sidebar_surf, self, self._font, self._font_bold)
 
     def get_sidebar_mode(self) -> str:
@@ -1091,9 +1337,9 @@ class GridDesigner:
     def _draw_dialog(self, surf: pygame.Surface) -> None:
         if not self._dialog_active:
             return
-        # Modal dialog box centred on canvas
+        # Modal dialog box centred on the canvas region (right of the sidebar)
         dw, dh = 500, 90
-        dx = (DESIGNER_CANVAS_W - dw) // 2
+        dx = DESIGNER_SIDEBAR_W + (DESIGNER_CANVAS_W - dw) // 2
         dy = (CANVAS_HEIGHT     - dh) // 2
         pygame.draw.rect(surf, (0, 0, 0), (dx, dy, dw, dh))
         pygame.draw.rect(surf, COL_PANEL_BORDER, (dx, dy, dw, dh), 1)
@@ -1112,7 +1358,7 @@ class GridDesigner:
         w, _ = surf.get_size()
         r, g, bb = self._status_colour
         rect_w = min(700, len(self._status_text) * 9 + 16)
-        rect_x = (DESIGNER_CANVAS_W - rect_w) // 2
+        rect_x = DESIGNER_SIDEBAR_W + (DESIGNER_CANVAS_W - rect_w) // 2
         rect_y = CANVAS_HEIGHT - 50
         pygame.draw.rect(surf, (0, 0, 0), (rect_x, rect_y, rect_w, 28))
         pygame.draw.rect(surf, self._status_colour, (rect_x, rect_y, rect_w, 28), 1)
@@ -1161,7 +1407,7 @@ def _auto_route_lines(
             from_bus=b1.label,
             to_bus=b2.label,
             reactance_pu=round(xpu, 4),
-            rating_mw=DESIGNER_DEFAULT_RATING.get(vkv, 300.0),
+            rating_mw=LINE_RATING_MW_BY_VOLTAGE.get(vkv, LINE_RATING_MW_BY_VOLTAGE[150.0]),
             voltage_kv=vkv,
         )
 
@@ -1204,15 +1450,28 @@ def _auto_route_lines(
     for a, b in mst_edges:
         new_lines.append(make_line(all_buses[a], all_buses[b]))
 
-    # Steps 2-5: iterative load flow, parallel lines where overloaded
+    # Steps 2-5: iterative load flow, parallel lines where overloaded.
+    # Uses the real DCLoadFlow (via a throwaway DesignerGrid) instead of a
+    # bespoke duplicate solver — same numerics the analysis panel uses.
     all_lines_for_lf = existing_lines + new_lines
     try:
+        from simulation.designer_grid import DesignerGrid
+        from simulation.designer_analysis import run_static_solve
+
+        unit_mw        = {u.label: u.rated_mw for u in units}
+        unit_available = {u.label: True for u in units}
+        bus_load_mw    = {b.label: b.peak_load_mw for b in buses if b.bus_type == 'LOAD'}
+
         for _iteration in range(5):
-            p_inj = _build_p_injections(buses, units)
-            lf_result = _run_loadflow_on(buses, all_lines_for_lf, p_inj)
+            line_in_service = {l.label: True for l in all_lines_for_lf}
+            grid = DesignerGrid(buses, all_lines_for_lf, units)
+            line_flows, error = run_static_solve(
+                grid, unit_mw, unit_available, bus_load_mw, line_in_service)
+            if error:
+                break
             added_any = False
-            for lbl, pct in lf_result.items():
-                if pct > DESIGNER_TARGET_LOADING_PCT:
+            for lbl, flow in line_flows.items():
+                if flow.loading_pct > DESIGNER_TARGET_LOADING_PCT:
                     # Find the line and add a parallel
                     for l in all_lines_for_lf:
                         if l.label == lbl:
@@ -1232,99 +1491,3 @@ def _auto_route_lines(
     return new_lines
 
 
-def _build_p_injections(
-    buses: list[DesignerBus],
-    units: list[DesignerUnit],
-) -> dict[str, float]:
-    p = {}
-    bus_gen: dict[str, float] = {}
-    for u in units:
-        bus_gen[u.bus_label] = bus_gen.get(u.bus_label, 0.0) + u.rated_mw
-    for b in buses:
-        gen  = bus_gen.get(b.label, 0.0)
-        load = b.peak_load_mw if b.bus_type == 'LOAD' else 0.0
-        p[b.label] = gen - load
-    return p
-
-
-def _run_loadflow_on(
-    buses: list[DesignerBus],
-    lines: list[DesignerLine],
-    p_injections: dict[str, float],
-) -> dict[str, float]:
-    """Return {line_label: loading_pct}. Raises on solver failure."""
-    import numpy as np
-
-    bus_labels = [b.label for b in buses]
-    slack = next((b.label for b in buses if b.is_slack), bus_labels[0])
-    idx   = {lbl: i for i, lbl in enumerate(bus_labels)}
-    n     = len(bus_labels)
-
-    B = np.zeros((n, n))
-    for l in lines:
-        if l.from_bus not in idx or l.to_bus not in idx:
-            continue
-        i, j = idx[l.from_bus], idx[l.to_bus]
-        b_val = 1.0 / max(1e-6, l.reactance_pu)
-        B[i, i] += b_val + YSHUNT_REG
-        B[j, j] += b_val + YSHUNT_REG
-        B[i, j] -= b_val
-        B[j, i] -= b_val
-
-    slack_idx = idx[slack]
-    keep = [i for i in range(n) if i != slack_idx]
-    Br   = B[np.ix_(keep, keep)]
-
-    P_full = np.array([p_injections.get(lbl, 0.0) / S_BASE
-                       for lbl in bus_labels])
-    Pr = P_full[keep]
-
-    theta_r = np.linalg.solve(Br, Pr)
-    theta   = np.zeros(n)
-    for k, i in enumerate(keep):
-        theta[i] = theta_r[k]
-
-    results: dict[str, float] = {}
-    for l in lines:
-        if l.from_bus not in idx or l.to_bus not in idx:
-            continue
-        i, j  = idx[l.from_bus], idx[l.to_bus]
-        flow   = (theta[i] - theta[j]) / max(1e-6, l.reactance_pu) * S_BASE
-        pct    = abs(flow) / max(1.0, l.rating_mw) * 100.0
-        results[l.label] = pct
-    return results
-
-
-def _run_loadflow(
-    buses: list[DesignerBus],
-    lines: list[DesignerLine],
-    units: list[DesignerUnit],
-) -> dict[str, float]:
-    """Public wrapper used by _export_preview."""
-    p = _build_p_injections(buses, units)
-    return _run_loadflow_on(buses, lines, p)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# GEOMETRY HELPERS
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _point_segment_dist(px, py, ax, ay, bx, by) -> float:
-    dx, dy = bx - ax, by - ay
-    if dx == 0 and dy == 0:
-        return math.hypot(px - ax, py - ay)
-    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
-    t = max(0.0, min(1.0, t))
-    return math.hypot(px - ax - t * dx, py - ay - t * dy)
-
-
-def _label_pos(cx: int, cy: int, anchor: str) -> tuple[int, int]:
-    off = BUS_SIZE // 2 + 2
-    if anchor == 'right':
-        return cx + off, cy - 3
-    if anchor == 'left':
-        return cx - off - 15, cy - 3
-    if anchor == 'top':
-        return cx - 6, cy - off - 7
-    # bottom
-    return cx - 6, cy + off + 1

@@ -443,16 +443,19 @@ class GridCanvas:
         buses:  list,
         lines:  list,
         units:  list,
+        station_positions: dict[str, tuple[int, int]] | None = None,
     ) -> None:
         """
         Replace the canvas topology with designer-supplied Bus/Line/Unit lists.
 
         Bypasses get_buses_by_shift(), UNITS, and get_station_position() so the
         canvas draws the designer grid instead of the campaign shift topology.
-        Station position is taken from the unit's bus position (designer units
-        live at their bus node).
+        Station position comes from station_positions (unscaled, native-space
+        anchors set/dragged in the Designer); a station missing an entry falls
+        back to 20px above its bus.
         """
         scale = self._scale
+        station_positions = station_positions or {}
 
         self._buses    = buses
         self._lines    = lines
@@ -460,7 +463,7 @@ class GridCanvas:
                           for b in buses}
         self._bus_map  = {b.label: b for b in buses}
 
-        # Unit layout — group by station_label, position at bus node
+        # Unit layout — group by station_label, position at its stored anchor
         active_bus_labels = {b.label for b in buses}
         self._station_units = {}
         for unit in units:
@@ -469,19 +472,24 @@ class GridCanvas:
             sl = unit.station_label
             self._station_units.setdefault(sl, []).append(unit)
 
-        # Station screen position = bus canvas position scaled
         self._station_pos = {}
         for sl, sunits in self._station_units.items():
             bus_lbl = sunits[0].bus_label
-            if bus_lbl in self._bus_pos:
-                bx, by = self._bus_pos[bus_lbl]
-                n = len(sunits)
-                total_w = n * int(UNIT_SIZE * scale) + (n - 1) * max(1, int(UNIT_GAP * scale))
-                start_x = bx - total_w // 2 + int(UNIT_SIZE * scale) // 2
-                gap = int(UNIT_SIZE * scale) + max(1, int(UNIT_GAP * scale))
-                self._station_pos[sl] = [
-                    (start_x + i * gap, by) for i in range(n)
-                ]
+            if bus_lbl not in self._bus_pos:
+                continue
+            bx, by = self._bus_pos[bus_lbl]
+            pos = station_positions.get(sl)
+            if pos is not None:
+                ax, ay = int(pos[0] * scale), int(pos[1] * scale)
+            else:
+                ax, ay = bx, by - int(20 * scale)
+            n = len(sunits)
+            total_w = n * int(UNIT_SIZE * scale) + (n - 1) * max(1, int(UNIT_GAP * scale))
+            start_x = ax - total_w // 2 + int(UNIT_SIZE * scale) // 2
+            gap = int(UNIT_SIZE * scale) + max(1, int(UNIT_GAP * scale))
+            self._station_pos[sl] = [
+                (start_x + i * gap, ay) for i in range(n)
+            ]
 
         # Bus → connected line labels
         self._bus_lines = {b.label: [] for b in buses}

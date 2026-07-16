@@ -278,6 +278,12 @@ def main() -> None:
     speed     = SPEED_NORMAL
     sim_accum = 0.0
 
+    sim = grid = renderer = None
+    state = None
+    _designer = None   # GridDesigner instance — set below if booting straight
+                        # into it, or lazily on entry to the DESIGNER state
+    shift = 10   # default for SHIFT_SPECS.get(shift) below regardless of boot path
+
     if _const.DEBUG_SCENARIO_ACTIVE:
         sim, grid = make_debug_sim(DEBUG_SCENARIO)
         renderer  = Renderer(display_surf, shift=DEBUG_SCENARIO.shift_number,
@@ -288,13 +294,17 @@ def main() -> None:
         _spec      = SHIFT_SPECS.get(shift)
         briefing_lines = build_briefing_lines(_spec) if _spec else []
         briefing_chars = 0.0
+        state = sim.get_state()
     else:
-        shift      = 10
-        difficulty = 'standard'
-        sim, grid, renderer = _make_sim_and_renderer(display_surf, shift, difficulty)
-        game_state = GameState.BRIEFING if _const.DEV_SKIP_INTRO else GameState.SPLASH
-
-    state = sim.get_state()
+        # Boot directly into the Grid Designer (development-phase default —
+        # revert to the SPLASH/BRIEFING campaign boot once content is ready
+        # for end-to-end playtesting again). sim/grid/renderer/state stay
+        # None; every other game state already tolerates this. _designer
+        # itself stays None here too — the DESIGNER state handler's own
+        # lazy-init (`if _designer is None: ...`) creates it on first frame
+        # and wires on_test_request; pre-creating it here would skip that
+        # wiring and silently break TEST SAVED GRID from a boot-time session.
+        game_state = GameState.DESIGNER
 
     # ── Splash state ─────────────────────────────────────────────────────────
     splash_timer  = 0.0
@@ -315,7 +325,6 @@ def main() -> None:
         ('', None),
         _raw[4],
     ]
-    _designer = None   # GridDesigner instance, created on entry to DESIGNER state
 
     # ── Designer test state ──────────────────────────────────────────────────
     _designer_test_sim:      object    = None

@@ -12,7 +12,7 @@ See CLAUDE.md Rule 1.
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
 DEBUG_SIMULATION: bool = False
-DEBUG_DISPLAY:    bool = False
+DEBUG_DISPLAY:    bool = True
 DEBUG_PERF:       bool = False  # per-frame render timing breakdown — see PERF_DEBUG_LOG
 DEBUG_EVENTS:     bool = True
 EDITOR_MODE:      bool = False
@@ -64,6 +64,8 @@ F_TRIP_ISLAND_HIGH: float = 50.5  # Over-frequency relay trip for isolated islan
 F_TRIP_ISLAND_LOW:  float = 49.5  # Under-frequency relay trip for isolated islands
 F_IN_BOUNDS_TOL:  float = 0.2   # Tolerance for frequency_in_bounds_pct scoring
 F_STABLE_TOL:     float = 0.005 # Hz — threshold for STABLE vs RISING/FALLING trend
+
+FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the frequency trend plot
 
 # ─────────────────────────────────────────────
 # DROOP / GOVERNOR
@@ -246,11 +248,11 @@ PANEL_FREQ_W:     int = 240
 PANEL_POWER_X:    int = 240
 PANEL_POWER_W:    int = 240
 PANEL_DISPATCH_X:  int = 480
-PANEL_DISPATCH_W:  int = 280
-PANEL_FORECAST_X:  int = 760
-PANEL_FORECAST_W:  int = 360
-PANEL_GENMIX_X:    int = 1120
-PANEL_GENMIX_W:    int = 260
+PANEL_DISPATCH_W:  int = 590
+PANEL_FORECAST_X:  int = 1070
+PANEL_FORECAST_W:  int = 180
+PANEL_GENMIX_X:    int = 1250
+PANEL_GENMIX_W:    int = 130
 PANEL_ALARM_X:     int = 1380
 PANEL_ALARM_W:     int = 540
 

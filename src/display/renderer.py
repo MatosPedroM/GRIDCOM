@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections import deque
 
 import pygame
 import pygame.freetype
@@ -57,6 +58,7 @@ from simulation.constants import (
     TEXT_SCREEN_FONT_SIZE, TEXT_SCREEN_TOP_MARGIN, TEXT_SCREEN_ROW_H,
     MENU_FONT_SIZE, MENU_ROW_H, MENU_TOP_MARGIN,
     PERF_DEBUG_LOG, PERF_LOG_INTERVAL_S,
+    TARGET_FPS, FREQ_HISTORY_WINDOW_S,
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
@@ -140,8 +142,11 @@ class Renderer:
         self._blink_2hz_on:    bool  = True
 
         # Panel scroll offsets
-        self._dispatch_scroll: int = 0
-        self._alarm_scroll:    int = 0
+        self._alarm_scroll: int = 0
+
+        # Frequency history — sampled once per rendered frame, display-only concern
+        _freq_hist_len = max(1, int(FREQ_HISTORY_WINDOW_S * TARGET_FPS))
+        self._freq_history: deque[float] = deque(maxlen=_freq_hist_len)
 
         # Panel surface cache: converted to display pixel format for fast blits.
         _sc = self._scale
@@ -213,13 +218,11 @@ class Renderer:
         )
 
     def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:
-        """Route mouse wheel to dispatch or alarm panel based on native-space position."""
+        """Route mouse wheel to the alarm panel based on native-space position."""
         if pos[1] < self._scaled_canvas_h:
             return
         nx = pos[0]
-        if PANEL_DISPATCH_X <= nx < PANEL_DISPATCH_X + PANEL_DISPATCH_W:
-            self._dispatch_scroll = max(0, self._dispatch_scroll - delta)
-        elif PANEL_ALARM_X <= nx < PANEL_ALARM_X + PANEL_ALARM_W:
+        if PANEL_ALARM_X <= nx < PANEL_ALARM_X + PANEL_ALARM_W:
             self._alarm_scroll = max(0, self._alarm_scroll - delta)
 
     def clear_selection(self) -> None:
@@ -659,12 +662,19 @@ class Renderer:
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
         paused = (speed_mult == 0.0)
 
+        # Sample frequency history once per rendered frame (display-only concern —
+        # simulation.py holds no history of its own, see FREQ_HISTORY_WINDOW_S).
+        if state:
+            self._freq_history.append(state.frequency_hz)
+
         # Dirty keys: tuples of values visible in each panel, rounded to display precision
         freq_key = (
             round(state.frequency_hz, 2) if state else None,
             state.frequency_trend        if state else None,
             int(state.sim_hour * 60)     if state else None,
             paused,
+            len(self._freq_history),
+            round(self._freq_history[0], 2) if self._freq_history else None,
         )
         power_key = (
             round(state.total_generation_mw)  if state else None,
@@ -678,7 +688,6 @@ class Renderer:
             ''.join(v[:1] for _, v in sorted(state.unit_states.items())) if state else None,
             round(sum(state.unit_outputs_mw.values()))                    if state else None,
             round(sum(state.unit_start_progress.values()) * 100)          if state else None,
-            self._dispatch_scroll,
         )
         forecast_key = (
             len(state.demand_forecast_mw) if state else 0,
@@ -708,7 +717,7 @@ class Renderer:
         if freq_key != self._panel_keys['freq']:
             draw_frequency_panel(
                 self._panel_cache['freq'], self._font, self._blink_on, state,
-                paused=paused, font_scale=_fs)
+                paused=paused, freq_history=self._freq_history, font_scale=_fs)
             self._panel_keys['freq'] = freq_key
             panel_changed = True
 
@@ -721,7 +730,7 @@ class Renderer:
         if dispatch_key != self._panel_keys['dispatch']:
             draw_dispatch_panel(
                 self._panel_cache['dispatch'], self._font, self._blink_on,
-                state, self._grid, self._dispatch_scroll, font_scale=_fs)
+                state, self._grid, font_scale=_fs)
             self._panel_keys['dispatch'] = dispatch_key
             panel_changed = True
 

@@ -39,6 +39,8 @@ import logging
 from simulation.constants import (
     MIN_OUTPUT_FRACTION,
     DEBUG_SIMULATION,
+    DROOP_R,
+    F_NOMINAL,
 )
 import simulation.constants as _sim_const
 from data.fleet import GenerationUnit
@@ -46,8 +48,9 @@ from data.fleet import GenerationUnit
 # Unit types that are non-dispatchable (renewables — output set externally).
 _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
 
-# Unit types eligible for AGC dispatch (fast-response units only).
-_AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'HYDRO_ROR', 'HYDRO_PUMP', 'CCGT'})
+# Unit types eligible for AGC dispatch (fast-response, reservoir-backed units only —
+# run-of-river has no stored head to draw on and pumped storage is excluded by design).
+_AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'CCGT'})
 
 # Technical minimum fraction per unit type — used by AGC lower-bound and regulation indicator.
 _TECH_MIN_FRAC: dict[str, float] = {
@@ -232,6 +235,31 @@ class UnitModel:
             min(self._spec.rated_mw, float(target_mw))
         )
         return True
+
+    def apply_droop_delta(self, delta_mw: float) -> float:
+        """
+        Apply an immediate governor droop correction. Only valid when ONLINE
+        and non-renewable. Unlike set_target(), this is not ramp-limited —
+        droop is a fast governor response, not a dispatch command — so it
+        moves current_mw directly and re-anchors target_mw to match.
+
+        Args:
+            delta_mw: Requested change in output (MW). Positive = raise.
+                      Clamped to available headroom (min_mw..rated_mw).
+
+        Returns:
+            The actual applied delta (MW). 0.0 if not ONLINE or renewable.
+        """
+        if self._state != 'ONLINE' or self._is_renewable:
+            return 0.0
+        new_mw = max(
+            self._spec.min_mw,
+            min(self._spec.rated_mw, self._current_mw + float(delta_mw))
+        )
+        applied = new_mw - self._current_mw
+        self._current_mw = new_mw
+        self._target_mw = new_mw
+        return applied
 
     def set_q_target(self, q_mvar: float) -> bool:
         """
@@ -437,7 +465,7 @@ class FleetModel:
     def apply_agc_signal(self, delta_mw: float) -> dict[str, float]:
         """
         Distribute an AGC raise/lower signal among fast-response ONLINE units
-        (HYDRO, HYDRO_ROR, CCGT), proportional to available headroom (raise)
+        (HYDRO, CCGT), proportional to available headroom (raise)
         or regulating range above min_mw (lower).
         Calls set_target() so ramp rate limits apply on the next tick.
 
@@ -470,6 +498,31 @@ class FleetModel:
             new_target = unit.target_mw + share
             unit.set_target(new_target)
             assignments[unit.label] = new_target
+        return assignments
+
+    def apply_droop_response(self, delta_f_hz: float) -> dict[str, float]:
+        """
+        Apply governor droop response to every ONLINE, non-renewable unit
+        (all synchronized units, regardless of AGC eligibility — this is the
+        primary, universal frequency-correction mechanism that runs ahead of
+        and independent from AGC).
+
+        ΔP_droop = -(Δf / F_NOMINAL) × (1/DROOP_R) × rated_mw, clamped to the
+        unit's available headroom. Applied immediately (not ramp-limited) via
+        UnitModel.apply_droop_delta().
+
+        Returns:
+            {unit_label: applied_delta_mw} for every unit that moved.
+            Empty dict if no ONLINE synchronous units.
+        """
+        assignments: dict[str, float] = {}
+        for unit in self._units.values():
+            if unit.state != 'ONLINE' or unit.is_renewable:
+                continue
+            raw_delta = -(delta_f_hz / F_NOMINAL) * (1.0 / DROOP_R) * unit._spec.rated_mw
+            applied = unit.apply_droop_delta(raw_delta)
+            if applied != 0.0:
+                assignments[unit.label] = applied
         return assignments
 
     def agc_regulation_state(self) -> tuple[float, float, float]:

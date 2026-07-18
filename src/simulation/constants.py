@@ -75,7 +75,7 @@ DROOP_R: float = 0.04           # 4% droop setting (per-unit on machine base)
 # ─────────────────────────────────────────────
 # AUTOMATIC GENERATION CONTROL (AGC)
 # ─────────────────────────────────────────────
-AGC_ENABLED:       bool  = False  # Toggled at runtime via Ctrl+A; starts disabled
+AGC_ENABLED:       bool  = True  # Toggled at runtime via Ctrl+A; starts disabled
 AGC_KP:            float = 100.0    # Proportional gain (MW per Hz of error)
 AGC_KI:            float = 0.01   # Integral gain (MW per Hz·sim-second of error)
 AGC_KD:            float = 1000.0   # Derivative gain (MW per Hz/sim-second of error)

@@ -95,16 +95,17 @@ INITIAL_SCHEDULE: dict[str, float] = {
 }
 
 
-# ── Condition helpers ──────────────────────────────────────────────────────────
+# ── Conditions (declarative — see src/data/shift_io.py for the schema) ────────
 
-def _ashg1_below_250mw(fleet) -> bool:
-    """True when ASHG-1 output is still below 250 MW at the 30-min warning."""
-    return fleet.get_output_mw('ASHG-1') < 250.0
-
-
-def _l15_high_load(grid) -> bool:
-    """True when L15 loading exceeds 85% immediately after L09 opens."""
-    return grid.get_line_loading_pct('L15') > 85.0
+_ASHG1_BELOW_250MW: dict = {
+    'metric': 'UNIT_OUTPUT_MW', 'target': 'ASHG-1', 'op': '<', 'value': 250.0,
+}
+_L15_HIGH_LOAD: dict = {
+    'metric': 'LINE_LOADING', 'target': 'L15', 'op': '>', 'value': 85.0,
+}
+_L15_NOT_HIGH_LOAD: dict = {
+    'metric': 'LINE_LOADING', 'target': 'L15', 'op': '<=', 'value': 85.0,
+}
 
 
 # ── Scripted events ────────────────────────────────────────────────────────────
@@ -148,7 +149,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'locally at ASHF. Each additional 100 MW at ASHG-1 '
                         'reduces ring loading by approximately 12% post-outage.'),
         'element':     'ASHG-1',
-        'condition':   _ashg1_below_250mw,
+        'condition':   _ASHG1_BELOW_250MW,
     },
     {
         # T+120 (16:00) — open L09 for maintenance
@@ -175,7 +176,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'ramp will push the ring over 100% within the hour if '
                         'you do not act.'),
         'element':     'L15',
-        'condition':   _l15_high_load,
+        'condition':   _L15_HIGH_LOAD,
     },
     {
         # T+120 (16:00) — nominal branch: player prepared correctly
@@ -186,7 +187,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'L15 and L16 within normal limits. The grid is operating '
                         'N-1 secure. L09 returns at 19:00.'),
         'element':     'L09',
-        'condition':   lambda grid: not _l15_high_load(grid),
+        'condition':   _L15_NOT_HIGH_LOAD,
     },
     {
         # T+300 (19:00) — restore L09

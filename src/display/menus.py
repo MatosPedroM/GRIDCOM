@@ -90,6 +90,7 @@ def build_main_menu_items() -> list:
         ('CONTINUE',      False),   # disabled — no save system yet
         ('GRID DESIGNER', True),
         ('TEST GRID',     True),
+        ('SHIFT BUILDER', True),
         ('QUIT',          True),
     ]
 
@@ -99,6 +100,13 @@ def build_grid_test_select_items(grid_names: list[str]) -> list:
     if not grid_names:
         return [('NO SAVED GRIDS', False)]
     return [(name, True) for name in grid_names]
+
+
+def build_shift_json_select_items(shift_names: list[str]) -> list:
+    """Returns list of (label, enabled) for the CONTINUOUS-mode authored-shift picker."""
+    if not shift_names:
+        return [('NO AUTHORED SHIFTS — USE SHIFT BUILDER', False)]
+    return [(name, True) for name in shift_names]
 
 
 def build_mode_select_items() -> list:
@@ -115,23 +123,6 @@ def build_difficulty_items() -> list:
         ('TRAINEE',    'Generous reserves. Guided events.'),
         ('OPERATOR',   'Standard reserves. Normal events.'),
         ('DISPATCHER', 'Thin reserves. Full event suite.'),
-    ]
-
-
-# ─── Continuous mode placeholder ──────────────────────────────────────────────
-
-def build_continuous_placeholder_lines() -> list:
-    """Placeholder screen for CONTINUOUS mode (not yet implemented)."""
-    return [
-        (_SEP, H),
-        (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', H),
-        (' CONTINUOUS MODE', H),
-        (_SEP, H),
-        ('', B),
-        (' This mode is not yet available.', B),
-        ('', B),
-        (' Return to the menu and select CAMPAIGN to begin.', B),
-        ('', B),
     ]
 
 

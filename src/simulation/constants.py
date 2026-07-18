@@ -309,3 +309,14 @@ DESIGNER_LINE_HIT_PX:        int   = 8      # px — perpendicular distance thre
 DESIGNER_FONT_SIZE:          int   = 12     # px — designer sidebar and overlay font size
 DESIGNER_FONT_SIZE_LARGE:    int   = 22     # px — status messages on canvas
 DESIGNER_UNDO_MAX:           int   = 50     # maximum undo stack depth
+
+# ─────────────────────────────────────────────
+# SHIFT BUILDER MODE
+# ─────────────────────────────────────────────
+SHIFT_BUILDER_FONT_SIZE:        int   = 14    # px — body text
+SHIFT_BUILDER_FONT_SIZE_LARGE:  int   = 20    # px — section headings
+SHIFT_BUILDER_ROW_H:            int   = 24    # px — list row height
+SHIFT_BUILDER_LEFT_MARGIN:      int   = 40    # px — left content margin
+SHIFT_BUILDER_TOP_MARGIN:       int   = 40    # px — top content margin
+SHIFT_BUILDER_STATUS_DISPLAY_S: float = 3.0   # seconds to show status messages
+SHIFT_BUILDER_DEFAULT_DURATION_H: float = 8.0 # default duration for a new shift

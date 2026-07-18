@@ -224,28 +224,18 @@ INITIAL_SCHEDULE: dict[str, float] = {
 }
 
 
-# ── Condition helpers ──────────────────────────────────────────────────────────
-# Scripted-event conditions receive the live FleetModel (see
-# GridSimulation._process_scripted_events — conditions are called as
-# cond(fleet), never with the Grid object).
+# ── Conditions (declarative — see src/data/shift_io.py for the schema) ────────
 
-def _reserve_below_600mw(fleet) -> bool:
-    """True when spinning reserve has fallen below 600 MW ahead of the wind lull."""
-    return fleet.spinning_reserve_mw() < 600.0
-
-
-def _reserve_at_or_above_600mw(fleet) -> bool:
-    """True when spinning reserve is at or above 600 MW — player staged correctly."""
-    return not _reserve_below_600mw(fleet)
-
-
-def _ccgt_below_1000mw(fleet) -> bool:
-    """True when combined CCGT output is still below 1000 MW ahead of the evening peak."""
-    total = 0.0
-    for label in ('ASHG-1', 'ASHG-2', 'WRNG-1', 'WRNG-2'):
-        if fleet.has_unit(label):
-            total += fleet.get_unit(label).current_mw
-    return total < 1000.0
+_RESERVE_BELOW_600MW: dict = {
+    'metric': 'SPINNING_RESERVE_MW', 'op': '<', 'value': 600.0,
+}
+_RESERVE_AT_OR_ABOVE_600MW: dict = {
+    'metric': 'SPINNING_RESERVE_MW', 'op': '>=', 'value': 600.0,
+}
+_CCGT_BELOW_1000MW: dict = {
+    'metric': 'UNIT_OUTPUT_MW_SUM', 'targets': ['ASHG-1', 'ASHG-2', 'WRNG-1', 'WRNG-2'],
+    'op': '<', 'value': 1000.0,
+}
 
 
 # ── Scripted events ────────────────────────────────────────────────────────────
@@ -290,7 +280,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'units up toward their regulation band now — this is the '
                         'last comfortable window to stage before the swing hits.'),
         'element':     'WNCN',
-        'condition':   _reserve_below_600mw,
+        'condition':   _RESERVE_BELOW_600MW,
     },
     {
         # T+270 (10:30) — nominal branch: player staged correctly
@@ -301,7 +291,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'begins to fall. The grid is well positioned for the net-load '
                         'swing.'),
         'element':     'WNCN',
-        'condition':   _reserve_at_or_above_600mw,
+        'condition':   _RESERVE_AT_OR_ABOVE_600MW,
     },
     {
         # T+330 (11:30) — L03 opens for scheduled inspection (N-1 test)
@@ -337,7 +327,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'pumped storage online — firm capacity is thin against this '
                         'evening\'s peak.'),
         'element':     None,
-        'condition':   _ccgt_below_1000mw,
+        'condition':   _CCGT_BELOW_1000MW,
     },
     {
         # T+660 (17:00) — peak window info

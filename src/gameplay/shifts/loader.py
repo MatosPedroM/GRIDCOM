@@ -3,6 +3,13 @@ src/gameplay/shifts/loader.py
 
 Reads per-shift configuration from the appropriate shift_NN.py module.
 Each shift file is the single source of truth for its own config.
+
+load_shift_config_from_json() reads the same configuration shape from a
+Shift Builder JSON file (src/assets/shifts/<name>.json) instead, for
+authored/Continuous-mode shifts. Both paths produce a dict GridSimulation
+can consume identically; the JSON path additionally returns
+'scripted_events' and 'grid' (the campaign loader omits events, since
+shift_NN.py's SCRIPTED_EVENTS is read separately by simulation.py).
 """
 
 from __future__ import annotations
@@ -35,3 +42,23 @@ def load_shift_config(shift_number: int) -> dict:
         'agc_enabled':        getattr(mod, 'AGC_ENABLED',        False),
         'substation_load_mw': getattr(mod, 'SUBSTATION_LOAD_MW', {}),
     }
+
+
+def load_shift_config_from_json(name: str) -> dict:
+    """
+    Load configuration for an authored shift from src/assets/shifts/<name>.json.
+
+    Returns everything load_shift_config() returns, plus:
+        grid              str        — saved designer grid name (assets/designer_grids/<grid>.json)
+        start_hour        float
+        duration_hours    float
+        scripted_events   list[dict] — raw event dicts (fired-flag added by GridSimulation)
+    """
+    from data.shift_io import load_shift_named, shift_def_to_config
+
+    shift_def = load_shift_named(name)
+    cfg = shift_def_to_config(shift_def)
+    cfg['grid'] = shift_def.grid
+    cfg['start_hour'] = shift_def.start_hour
+    cfg['duration_hours'] = shift_def.duration_hours
+    return cfg

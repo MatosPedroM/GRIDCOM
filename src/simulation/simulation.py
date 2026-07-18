@@ -4,7 +4,7 @@ src/simulation/simulation.py
 Master simulation loop and SimulationState snapshot for GRIDCOM.
 
 GridSimulation orchestrates all physics modules each tick:
-  demand → fleet → frequency+droop → load flow → voltage → overloads
+  demand → fleet → frequency+AGC → load flow → voltage → overloads
   → cascade → islands → alarms → state snapshot
 
 SimulationState is the complete snapshot transferred to the renderer
@@ -207,14 +207,18 @@ class GridSimulation:
         maintenance_units: set | None = None,
         maintenance_lines: set | None = None,
         substation_load_mw: dict | None = None,
+        scripted_events: list[dict] | None = None,
+        start_hour: float | None = None,
+        duration_hours: float | None = None,
     ) -> None:
         self._grid         = grid
         self._shift_number = shift_number
         self._difficulty   = difficulty
 
         spec = SHIFT_SPECS[shift_number]
-        self._start_hour        = spec.start_hour
-        self._duration_minutes  = spec.duration_hours * 60.0
+        self._start_hour        = start_hour if start_hour is not None else spec.start_hour
+        self._duration_minutes  = (duration_hours * 60.0 if duration_hours is not None
+                                    else spec.duration_hours * 60.0)
 
         # Resolve substation load table: prefer explicit arg, fall back to shift file.
         if substation_load_mw is None:
@@ -308,10 +312,15 @@ class GridSimulation:
         # Cached state snapshot (built in _solve_and_snapshot)
         self._state: SimulationState | None = None
 
-        # Scripted events — loaded from gameplay/shifts/shift_NN.py if it exists.
+        # Scripted events — explicit list takes precedence (Shift Builder /
+        # JSON-authored shifts); otherwise loaded from shift_NN.py.
         # Each entry is a dict with keys: trigger_min, priority, message, detail,
-        # element, condition (callable|None), fired (bool, mutable).
-        self._scripted_events: list[dict] = _load_scripted_events(shift_number)
+        # element, condition (declarative dict|None), action (declarative dict|None),
+        # fired (bool, mutable).
+        if scripted_events is not None:
+            self._scripted_events: list[dict] = [dict(e, fired=False) for e in scripted_events]
+        else:
+            self._scripted_events = _load_scripted_events(shift_number)
 
         # Build initial state snapshot
         self._solve_and_snapshot()
@@ -327,7 +336,7 @@ class GridSimulation:
           2.  Update demand
           3.  Update renewable outputs → inject into fleet
           4.  Tick unit state machines (ramp, cold start)
-          5.  Frequency update + droop response
+          5.  Frequency update (swing equation) + AGC secondary response
           6.  Build P/Q injection vectors
           7.  Solve DC load flow
           8.  Solve voltage
@@ -366,10 +375,6 @@ class GridSimulation:
             p_load_mw=self._demand.total_load_mw,
             online_unit_types=self._fleet.online_unit_types(),
         )
-
-        # 5a. Governor droop response (primary, fast, all synchronous units)
-        delta_f = self._frequency.frequency_hz - F_NOMINAL
-        self._fleet.apply_droop_response(delta_f)
 
         # 5b. AGC secondary frequency response
         if _sim_const.AGC_ENABLED:
@@ -897,6 +902,58 @@ class GridSimulation:
             detail=detail,
         ))
 
+    def _eval_condition(self, condition: dict) -> bool:
+        """
+        Evaluate a declarative scripted-event condition against live
+        simulation state. See src/data/shift_io.py module docstring for
+        the condition schema.
+        """
+        metric = condition['metric']
+        op     = condition['op']
+        value  = condition['value']
+        target = condition.get('target')
+
+        if metric == 'LINE_LOADING':
+            current = self._state.line_loading_pct.get(target, 0.0) if self._state else 0.0
+        elif metric == 'UNIT_OUTPUT_MW':
+            current = self._fleet.get_unit(target).current_mw if self._fleet.has_unit(target) else 0.0
+        elif metric == 'UNIT_OUTPUT_MW_SUM':
+            current = sum(
+                self._fleet.get_unit(lbl).current_mw
+                for lbl in condition['targets'] if self._fleet.has_unit(lbl)
+            )
+        elif metric == 'UNIT_ONLINE':
+            current = 1.0 if (self._fleet.has_unit(target)
+                               and self._fleet.get_unit(target).state == 'ONLINE') else 0.0
+        elif metric == 'SPINNING_RESERVE_MW':
+            current = self._fleet.spinning_reserve_mw()
+        elif metric == 'FREQUENCY_HZ':
+            current = self._frequency.frequency_hz
+        elif metric == 'TIME_MIN':
+            current = self._sim_time_min
+        else:
+            raise ValueError(f"Unknown condition metric: {metric!r}")
+
+        if op == '<':   return current <  value
+        if op == '<=':  return current <= value
+        if op == '>':   return current >  value
+        if op == '>=':  return current >= value
+        if op == '==':  return current == value
+        if op == '!=':  return current != value
+        raise ValueError(f"Unknown condition op: {op!r}")
+
+    def _execute_action(self, action: dict) -> None:
+        """Execute a declarative scripted-event action. See shift_io.py."""
+        action_type = action['type']
+        if action_type == 'LINE_OPEN':
+            self.trip_line(action['line'])
+        elif action_type == 'LINE_CLOSE':
+            self.close_line(action['line'])
+        elif action_type == 'UNIT_TRIP':
+            label = action['unit']
+            if self._fleet.has_unit(label):
+                self._fleet.get_unit(label).trip()
+
     def _process_scripted_events(self) -> None:
         """Fire any scripted events whose trigger time has been reached."""
         for evt in self._scripted_events:
@@ -905,7 +962,7 @@ class GridSimulation:
             if self._sim_time_min < evt['trigger_min']:
                 continue
             cond = evt.get('condition')
-            if cond is not None and not cond(self._fleet):
+            if cond is not None and not self._eval_condition(cond):
                 evt['fired'] = True  # condition not met — skip, don't retry
                 continue
             self._raise_alarm(
@@ -914,6 +971,9 @@ class GridSimulation:
                 element_label=evt.get('element'),
                 detail=evt.get('detail', ''),
             )
+            action = evt.get('action')
+            if action is not None:
+                self._execute_action(action)
             evt['fired'] = True
 
     def _update_loading_alarms(self, loading: dict) -> None:

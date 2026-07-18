@@ -43,7 +43,6 @@ from display.menus import (
     build_main_menu_items,
     build_mode_select_items,
     build_difficulty_items,
-    build_continuous_placeholder_lines,
     build_campaign_intro_screens,
     build_campaign_end_lines,
     build_menu_title_art,
@@ -72,7 +71,6 @@ class GameState(Enum):
     MAIN_MENU         = 'main_menu'
     MODE_SELECT       = 'mode_select'
     DIFFICULTY_SELECT = 'difficulty_select'
-    CONTINUOUS_STUB   = 'continuous_stub'
     CAMPAIGN_INTRO    = 'campaign_intro'
     BRIEFING          = 'briefing'
     PLAYING           = 'playing'
@@ -82,6 +80,8 @@ class GameState(Enum):
     DESIGNER          = 'designer'
     DESIGNER_TEST     = 'designer_test'
     GRID_TEST_SELECT  = 'grid_test_select'
+    SHIFT_BUILDER     = 'shift_builder'
+    SHIFT_SELECT_JSON = 'shift_select_json'
 
 
 _SEP = '═' * 64
@@ -251,6 +251,45 @@ def _make_designer_test(
     return sim, designer_grid, renderer
 
 
+def _make_shift_test(
+    display_surf: pygame.Surface,
+    shift_name: str,
+):
+    """Build sim + renderer for an authored Shift Builder JSON test session."""
+    from data.designer_io import load_designer_grid_named
+    from simulation.designer_grid import DesignerGrid
+    from gameplay.shifts.loader import load_shift_config_from_json
+
+    cfg = load_shift_config_from_json(shift_name)
+    buses, lines, units = load_designer_grid_named(cfg['grid'])
+    designer_grid = DesignerGrid(buses, lines, units)
+
+    initial_schedule = cfg['initial_schedule'] or {
+        u.label: (u.start_mw if u.start_mw >= 0 else u.rated_mw * 0.5)
+        for u in units
+    }
+    maintenance_units = set(cfg['maintenance_units']) | {
+        u.label for u in units if not u.in_service
+    }
+    sim = GridSimulation(
+        grid=designer_grid,
+        shift_number=0,
+        difficulty='standard',
+        initial_schedule=initial_schedule,
+        maintenance_units=maintenance_units,
+        maintenance_lines=set(cfg['maintenance_lines']),
+        substation_load_mw=cfg['substation_load_mw'],
+        scripted_events=cfg['scripted_events'],
+        start_hour=cfg['start_hour'],
+        duration_hours=cfg['duration_hours'],
+    )
+    renderer = Renderer(display_surf, shift=1,
+                        display_size=display_surf.get_size())
+    renderer.set_designer_grid(designer_grid)
+    _const.AGC_ENABLED = cfg['agc_enabled']
+    return sim, designer_grid, renderer
+
+
 def _total_chars(lines: list) -> int:
     return sum(len(text) for text, _ in lines)
 
@@ -289,6 +328,8 @@ def main() -> None:
     state = None
     _designer = None   # GridDesigner instance — set below if booting straight
                         # into it, or lazily on entry to the DESIGNER state
+    _shift_builder = None   # ShiftBuilder instance — lazily created on entry
+                            # to the SHIFT_BUILDER state
     shift = 10   # default for SHIFT_SPECS.get(shift) below regardless of boot path
 
     if _const.DEBUG_SCENARIO_ACTIVE:
@@ -303,15 +344,9 @@ def main() -> None:
         briefing_chars = 0.0
         state = sim.get_state()
     else:
-        # Boot directly into the Grid Designer (development-phase default —
-        # revert to the SPLASH/BRIEFING campaign boot once content is ready
-        # for end-to-end playtesting again). sim/grid/renderer/state stay
-        # None; every other game state already tolerates this. _designer
-        # itself stays None here too — the DESIGNER state handler's own
-        # lazy-init (`if _designer is None: ...`) creates it on first frame
-        # and wires on_test_request; pre-creating it here would skip that
-        # wiring and silently break TEST SAVED GRID from a boot-time session.
-        game_state = GameState.DESIGNER
+        renderer   = Renderer(display_surf, shift=1,
+                              display_size=display_surf.get_size())
+        game_state = GameState.MAIN_MENU
 
     # ── Splash state ─────────────────────────────────────────────────────────
     splash_timer  = 0.0
@@ -320,7 +355,7 @@ def main() -> None:
 
     # ── Menu state ───────────────────────────────────────────────────────────
     menu_selected = 0
-    _raw = build_main_menu_items()   # [NEW GAME, CONTINUE, GRID DESIGNER, TEST GRID, QUIT]
+    _raw = build_main_menu_items()   # [NEW GAME, CONTINUE, GRID DESIGNER, TEST GRID, SHIFT BUILDER, QUIT]
     main_menu_items = [
         _raw[0],
         ('', None),
@@ -331,6 +366,8 @@ def main() -> None:
         _raw[3],
         ('', None),
         _raw[4],
+        ('', None),
+        _raw[5],
     ]
 
     # ── Designer test state ──────────────────────────────────────────────────
@@ -339,16 +376,13 @@ def main() -> None:
     _designer_test_renderer: object    = None
     _designer_test_origin:   GameState = GameState.DESIGNER
     _grid_test_items:        list      = []
+    _shift_json_items:       list      = []
     mode_select_items   = build_mode_select_items()
     difficulty_items    = build_difficulty_items()
     menu_title          = _menu_title_lines()
     shift_grades:  dict = {}
     shift_select_items  = build_shift_select_items(shift_grades)
     shift_select_idx    = 0
-
-    # ── Continuous stub ──────────────────────────────────────────────────────
-    continuous_lines = build_continuous_placeholder_lines()
-    continuous_chars = 0.0
 
     # ── Campaign intro ───────────────────────────────────────────────────────
     intro_screens    = build_campaign_intro_screens()
@@ -417,7 +451,11 @@ def main() -> None:
                             _grid_test_items = build_grid_test_select_items(list_designer_grids())
                             menu_selected    = 0
                             game_state       = GameState.GRID_TEST_SELECT
-                        elif idx == 8: # QUIT
+                        elif idx == 8: # SHIFT BUILDER
+                            from display.shift_builder import ShiftBuilder
+                            _shift_builder = ShiftBuilder(display_surf)
+                            game_state     = GameState.SHIFT_BUILDER
+                        elif idx == 10: # QUIT
                             running = False
                     elif event.key == pygame.K_ESCAPE:
                         pass   # already at top level
@@ -478,8 +516,11 @@ def main() -> None:
                             game_state    = GameState.DIFFICULTY_SELECT
                             menu_selected = 1    # default OPERATOR
                         elif menu_selected == 1: # CONTINUOUS
-                            game_state       = GameState.CONTINUOUS_STUB
-                            continuous_chars = 0.0
+                            from data.shift_io import list_shift_names
+                            from display.menus import build_shift_json_select_items
+                            _shift_json_items = build_shift_json_select_items(list_shift_names())
+                            menu_selected     = 0
+                            game_state        = GameState.SHIFT_SELECT_JSON
                     elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MAIN_MENU
                         menu_selected = 0
@@ -530,22 +571,38 @@ def main() -> None:
                 selected_idx=menu_selected,
             )
 
-        # ── CONTINUOUS STUB ───────────────────────────────────────────────────
-        elif game_state == GameState.CONTINUOUS_STUB:
-            total = _total_chars(continuous_lines)
+        # ── SHIFT SELECT (JSON — CONTINUOUS mode) ──────────────────────────────
+        elif game_state == GameState.SHIFT_SELECT_JSON:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
-                    if int(continuous_chars) < total:
-                        continuous_chars = float(total)
-                    else:
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        menu_selected = _next_enabled(_shift_json_items, menu_selected, -1)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        menu_selected = _next_enabled(_shift_json_items, menu_selected, +1)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        if _shift_json_items and _shift_json_items[menu_selected][1]:
+                            shift_name = _shift_json_items[menu_selected][0]
+                            try:
+                                _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
+                                    _make_shift_test(display_surf, shift_name)
+                                sim_accum             = 0.0
+                                _designer_test_origin = GameState.SHIFT_SELECT_JSON
+                                game_state            = GameState.DESIGNER_TEST
+                            except Exception:
+                                pass   # stay on list
+                    elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MODE_SELECT
                         menu_selected = 1   # keep CONTINUOUS highlighted
 
-            continuous_chars = min(continuous_chars + TYPEWRITER_CHARS_PER_SEC * dt,
-                                   float(total) + 1)
-            renderer.tick_text_screen(dt, continuous_lines, int(continuous_chars))
+            renderer.tick_menu_screen(
+                dt,
+                title_lines=menu_title,
+                items=_shift_json_items,
+                selected_idx=menu_selected,
+                footer_hint='[UP / DOWN]  Select    [ENTER]  Play    [ESC]  Back',
+            )
 
         # ── CAMPAIGN INTRO ────────────────────────────────────────────────────
         elif game_state == GameState.CAMPAIGN_INTRO:
@@ -873,6 +930,56 @@ def main() -> None:
 
             _designer.tick(dt, display_surf)
 
+        # ── SHIFT BUILDER ─────────────────────────────────────────────────────
+        elif game_state == GameState.SHIFT_BUILDER:
+            if _shift_builder is None:
+                from display.shift_builder import ShiftBuilder
+                _shift_builder = ShiftBuilder(display_surf)
+
+            if _shift_builder.on_test_request is None:
+                def _on_shift_test_request(shift_name: str) -> None:
+                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin
+                    try:
+                        _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
+                            _make_shift_test(display_surf, shift_name)
+                        sim_accum             = 0.0
+                        _designer_test_origin = GameState.SHIFT_BUILDER
+                        game_state             = GameState.DESIGNER_TEST
+                    except Exception as e:
+                        _shift_builder._set_status(f'Test failed: {e}',
+                                                   (255, 100, 0))
+
+                _shift_builder.on_test_request = _on_shift_test_request
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if not _shift_builder.on_key(event):
+                            game_state    = GameState.MAIN_MENU
+                            menu_selected = 0
+                    else:
+                        _shift_builder.on_key(event)
+
+                elif event.type == pygame.MOUSEMOTION:
+                    _shift_builder.on_mouse_move(
+                        _shift_builder.to_native(event.pos))
+
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        native = _shift_builder.to_native(event.pos)
+                        _shift_builder.on_mouse_down(native)
+                        _shift_builder.on_click(native)
+
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        _shift_builder.on_mouse_up(
+                            _shift_builder.to_native(event.pos))
+
+            _shift_builder.tick(dt, display_surf)
+
         # ── DESIGNER TEST ─────────────────────────────────────────────────────
         elif game_state == GameState.DESIGNER_TEST:
             _sim   = _designer_test_sim
@@ -900,6 +1007,8 @@ def main() -> None:
                             _grid_test_items = build_grid_test_select_items(list_designer_grids())
                             menu_selected    = 0
                             game_state       = GameState.GRID_TEST_SELECT
+                        elif dest == GameState.SHIFT_BUILDER:
+                            game_state = GameState.SHIFT_BUILDER
                         else:
                             game_state = GameState.DESIGNER
 

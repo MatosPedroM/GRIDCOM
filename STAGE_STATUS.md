@@ -6,13 +6,37 @@
 
 ## Current Stage
 
-**STAGE 29 — Regional Topology Restructuring (Spine-Only Inter-Region Ties) + Obstacle-Avoiding Line Router**
+**STAGE 30 — Shift Builder (player-authorable shift definitions)**
 
 ## Current Status
 
-**PARTIAL** — Topology, fleet, and profiles fully redesigned (36 buses, 50 lines, 47 units, Portuguese-grid-inspired structure, full size at Shift 8). Shifts 1-3 scenario files re-tuned and playable. Shift 10 is the campaign finale on a capacity-expanded, N-1-secure, decluttered, and now **regionally-zoned** grid (see Sessions 31, 33, 34, 35, and 36): the network reads as a 400kV spine (WEST-MDBY-STHW-CNTR-NRTH-EAST) connecting 5 regions (CAP, WEST, SOUTH-MESH, EAST-POCKET, EAST-MESH) that only reach each other via the spine — no direct lower-voltage tie bypasses it. Each region hosts exactly one consolidated load substation, dual-fed from that region's own spine-anchor buses (CAP additionally has a 3rd spine tap for N-1 margin — see Session 36). All schematic lines route through a general obstacle-avoiding router instead of a blind single bend, so no line crosses an unrelated substation. Every load substation and cascade-hydro bus has a proper place name. **Shifts 4-9 scenario files remain stale** — same issue as before (written for the old topology, per-bus peak MW values don't match `peak_demand_mw` targets) — and inherit both the flat-rating change from Session 31 and the STAN/BRCK/FLDN/CO01 voltage promotion from Session 36, neither re-tuned for them. **Shift 3's N-1 lesson is confirmed at risk of regression** — see Known Issues. **Shifts 7-9 have a disconnected island** (EAST-MESH) — see Known Issues. 9/9 automated tests pass.
+**PARTIAL** — Session 45 added a Shift Builder: shift definitions (grid reference + initial conditions + demand curves + scripted events) are now a serializable JSON format (`src/data/shift_io.py`, `src/assets/shifts/*.json`) authored via a new in-game tool (`src/display/shift_builder.py` + `shift_builder_panels.py`, `GameState.SHIFT_BUILDER` from the main menu) and playable both from the builder (Ctrl+T) and from the CONTINUOUS mode picker, which now lists and plays authored shifts instead of showing the old placeholder stub. The scripted-event engine was fixed and extended alongside this: conditions are now declarative dicts evaluated by `GridSimulation._eval_condition()` (fixing the pre-existing `shift_03.py` crash — see Known Issues) and the `action` field (`LINE_OPEN`/`LINE_CLOSE`/`UNIT_TRIP`) is now actually executed instead of being inert. Topology/fleet/profiles work from prior sessions (regional zoning, obstacle-avoiding router, capacity-expanded Shift 10) is unchanged. **Shifts 4-9 scenario files remain stale** — see prior session notes. **Shifts 7-9 have a disconnected island** (EAST-MESH) — see Known Issues. 9/9 automated tests pass.
 
 ## Session Log
+
+### Session 45 (Shift Builder — player-authorable shift definitions + scripted-event engine fix)
+
+- **User request**: after the Grid Designer, the user wants to assign a saved grid to a specific campaign shift and, eventually, let players design their own shifts for the Continuous game. Scoped into: (1) a JSON shift-definition format bundling a saved grid reference + initial conditions + demand curves + scripted events, (2) a new Shift Builder in-game tool to author it, (3) wiring it into a playable session, and (4) fixing the scripted-event engine's known bugs along the way since the builder's event authoring depends on them working correctly.
+- **New data format**: `src/data/shift_io.py` — `ShiftDefinition`/`ShiftEvent` dataclasses, JSON save/load to `src/assets/shifts/<name>.json` (mirrors `designer_io.py`'s pattern), and `shift_def_to_config()` which returns the exact same dict shape `gameplay.shifts.loader.load_shift_config()` produces, so authored and hardcoded shifts feed `GridSimulation` identically. Event conditions are declarative JSON-safe dicts (e.g. `{"metric": "LINE_LOADING", "target": "L15", "op": ">=", "value": 90.0}`) instead of Python callables, so they serialize.
+- **Scripted-event engine fixed and extended** (`src/simulation/simulation.py`): `GridSimulation.__init__` gained `scripted_events`, `start_hour`, and `duration_hours` constructor args (all optional, default preserves prior campaign behaviour exactly). Added `_eval_condition()`, which evaluates a condition against whichever of fleet/grid-state/frequency/sim-time the metric needs (`LINE_LOADING`, `UNIT_OUTPUT_MW`, `UNIT_OUTPUT_MW_SUM`, `UNIT_ONLINE`, `SPINNING_RESERVE_MW`, `FREQUENCY_HZ`, `TIME_MIN`) — this fixes the long-standing `shift_03.py` crash (its conditions expected a `grid` argument the engine never passed, and called a nonexistent `fleet.get_output_mw()`). Added `_execute_action()`, which actually runs an event's `action` field (`LINE_OPEN`→`trip_line()`, `LINE_CLOSE`→`close_line()`, `UNIT_TRIP`→unit trip) — previously `action` was parsed into shift files but never executed, so scripted line trips/closes were cosmetic alarm text only.
+- **Migrated `shift_03.py` and `shift_10.py`** off callable conditions onto the new declarative dicts (`_ASHG1_BELOW_250MW`, `_L15_HIGH_LOAD`, `_L15_NOT_HIGH_LOAD`, `_RESERVE_BELOW_600MW`, `_RESERVE_AT_OR_ABOVE_600MW`, `_CCGT_BELOW_1000MW` using the new `UNIT_OUTPUT_MW_SUM` metric for the 4-unit CCGT sum). No behavioural change to these shifts' event *timing/messages* — only the condition-evaluation mechanism changed.
+- **New Shift Builder UI**: `src/display/shift_builder.py` (`ShiftBuilder` class) + `src/display/shift_builder_panels.py` (drawing). A tabbed form editor (META / GRID / SCHEDULE / DEMAND / EVENTS) — deliberately not a canvas/drag editor like the Grid Designer, since the grid itself is picked by reference (Ctrl+G browses `src/assets/designer_grids/`), not edited spatially here. Reuses the designer's text-buffer-dialog interaction pattern (save/load browsers, field-edit overlay). Entered via a new **SHIFT BUILDER** main-menu item and `GameState.SHIFT_BUILDER`; Ctrl+T launches a live test session through a new `main._make_shift_test()` (parallel to the existing `_make_designer_test()`), reusing the same `DesignerGrid`/`GridSimulation`/`Renderer`/`DESIGNER_TEST` plumbing, extended to pass the shift's own `initial_schedule`, `maintenance_lines`, `agc_enabled`, `scripted_events`, `start_hour`, and `duration_hours` instead of the designer's generic profiled defaults.
+- **CONTINUOUS mode rewired**: replaced the `CONTINUOUS_STUB` placeholder screen with `GameState.SHIFT_SELECT_JSON`, a menu-screen list (mirrors `GRID_TEST_SELECT`) of `data.shift_io.list_shift_names()` that plays the selected shift live via `_make_shift_test`. Removed the now-dead `CONTINUOUS_STUB` state, `build_continuous_placeholder_lines()`, and the `continuous_lines`/`continuous_chars` typewriter state.
+- **New constants**: `SHIFT_BUILDER_*` block in `constants.py` (font sizes, row height, margins, status display duration, default duration) per Rule 1 — no hardcoded numbers in the new UI code. No new palette colours were needed — the builder reuses existing designer/text colours (`COL_TEXT_*`, `COL_DESIGNER_*`).
+- **Validation fixture**: `src/assets/shifts/shift1_fixture.json`, an authored shift referencing a `shift1` designer grid (built via the existing `import_shift_as_designer_grid(1, 'shift1')` utility) that replicates campaign Shift 1's exact initial conditions (DUND-1 online at 16 MW, DUND-2 on maintenance, LD01's hourly load table, 4.0h start/3.0h duration) plus one scripted test event.
+- **Verified**: (1) round-trip — save→load reproduces an identical `ShiftDefinition` (`dataclasses.asdict` equality). (2) Fixture parity — `main._make_shift_test('shift1_fixture')` produces a live `GridSimulation` matching campaign Shift 1's starting state exactly (start_hour/duration, frequency nominal, DUND-1/DUND-2 dispatch state) and the fixture's scripted event fires correctly at its trigger time. (3) Shift 3 driven tick-by-tick past T+90 and T+120 (the previously-crashing window) with no exception; the `LINE_OPEN` action on the T+120 event actually opens L09, and the branching nominal/alarm conditions on L15 loading evaluate correctly. (4) Shift 10 driven through its full event timeline (T+0 to T+700) with no exception; the T+330 `LINE_OPEN`/T+390 `LINE_CLOSE` pair on L03 both fire and the line state matches. (5) `python -m pytest tests/test_simulation.py` — 9/9 pass, unchanged from before this session, confirming the new constructor args and event-engine changes are fully backward compatible with the existing campaign path.
+- **Not built this session** (documented as follow-up, not started): a graphical demand-curve editor (the DEMAND tab is a numeric 24-value table, not a drag-curve UI); UI-driven condition/action target validation (the builder lets you type any line/unit label into a condition or action without checking it exists in the referenced grid — a bad label will simply no-op at runtime rather than erroring in the builder); no automated test coverage added for `shift_io.py` or the new `_eval_condition`/`_execute_action` methods (verified manually this session per the checks above, but nothing was added to `tests/test_simulation.py`).
+- Edited: `src/simulation/simulation.py`, `src/gameplay/shifts/loader.py`, `src/gameplay/shifts/shift_03.py`, `src/gameplay/shifts/shift_10.py`, `src/main.py`, `src/display/menus.py`, `src/simulation/constants.py`.
+- Created: `src/data/shift_io.py`, `src/display/shift_builder.py`, `src/display/shift_builder_panels.py`, `src/assets/shifts/shift1_fixture.json`, `src/assets/designer_grids/shift1.json`.
+
+### Session 44 (Simulation — Governor Droop Response Removed, AGC-Only Frequency Response)
+
+- **Problem reported**: user reported "coal and nuclear are still connected to the AGC" after Session 43. Direct re-inspection of `_AGC_UNIT_TYPES` (`units.py`) confirmed it was still correctly `{HYDRO, CCGT}` and `apply_agc_signal()` could not touch coal/nuclear — the AGC path itself was never wrong. The actual cause: Session 43's new governor **droop** response (a separate mechanism from AGC) was deliberately applied to *all* synchronous units including COAL/NUCLEAR, so their output was visibly moving in response to frequency deviation — just via droop, not AGC. After discussion, user determined the underlying physics reasoning doesn't hold for this game's simplified model ("the inertia of those machines is too big to respond in that way") and, rather than narrowing droop's eligible-unit set to match AGC's, decided to remove the droop mechanism entirely: **"Remove (droop) frequency response from synchronous machines altogether, keep only AGC connected units."**
+- **Session 43's droop feature fully reverted**: removed `FleetModel.apply_droop_response()` and `UnitModel.apply_droop_delta()` (`units.py`) and their call site in `GridSimulation.tick()` (`simulation.py`, step 5a). Removed the now-unused `DROOP_R`/`F_NOMINAL` imports added to `units.py` for droop (confirmed via grep neither was used elsewhere in that file; `F_NOMINAL` stays imported in `simulation.py` since it's used independently by several other features there — alarms, event log, frequency-in-bounds scoring). Restored `tick()`'s docstring step list and the module-level pipeline summary (`demand → fleet → frequency+droop → ...`) to no longer reference droop, now reading `frequency+AGC`.
+- **Net effect**: the only automatic frequency-correction mechanism remaining is the pre-existing PID-based AGC controller (`simulation.py:_apply_agc`), gated to `_AGC_UNIT_TYPES = {HYDRO, CCGT}` (unchanged from Session 43's correct narrowing, which excluded HYDRO_ROR/HYDRO_PUMP — that fix stands). COAL, NUCLEAR, HYDRO_ROR, and HYDRO_PUMP now have zero automatic frequency response of any kind, matching the user's stated design intent. `DROOP_R` remains defined in `constants.py` and `frequency.py`'s docstring formula is untouched — droop was never implemented in `frequency.py` in the first place (confirmed two sessions ago), so there was nothing to revert there.
+- Edited: `src/simulation/units.py` (removed `apply_droop_response()`, `apply_droop_delta()`, unused `DROOP_R`/`F_NOMINAL` imports), `src/simulation/simulation.py` (removed step 5a call site, restored docstrings).
+- Removed: `tests/test_droop_response()` (`tests/test_simulation.py`, added Session 43 specifically to cover the now-removed function) and its entry in the `__main__` runner list.
+- Verified: 15/15 automated tests pass via `pytest` (was 16 with the droop test; back to the Session-42 baseline), 9/9 via the direct `python tests/test_simulation.py` script entry point. Manually confirmed via a real Shift 3 `FleetModel` (COAL, NUCLEAR, CCGT, HYDRO, HYDRO_PUMP all active) that `apply_droop_response`/`apply_droop_delta` no longer exist as attributes, and that calling `apply_agc_signal()` with a raise signal only ever assigns to HYDRO/CCGT units (DUND, ASHG, WRNG in this fleet) while COAL/NUCLEAR units' `current_mw` is provably unchanged before/after the call.
 
 ### Session 43 (Simulation — AGC Fuel-Type Fix + Governor Droop Response Implemented)
 
@@ -636,10 +660,8 @@ rewrites:
   `LINE_RATING_MW_BY_VOLTAGE` ratings (400/220/150 kV = 2250/400/175 MW), which replaced the
   old per-line/per-role ratings these shifts may have been informally tuned around.
 
-**Also required**: fix the pre-existing `shift_03.py` condition-helper bug (`_ashg1_below_250mw`
-and `_l15_high_load` call a `fleet.get_output_mw(...)` method that does not exist, and
-`_l15_high_load` expects a `grid` argument the engine never passes — see Known Issues), then
-re-verify/re-tune Shift 3's N-1 lesson thresholds against the new L09/L15/L16 ratings.
+**Also required**: the `shift_03.py` condition-helper crash is now fixed (Session 45) — remaining
+work is to re-verify/re-tune Shift 3's N-1 lesson thresholds against the new L09/L15/L16 ratings.
 
 ---
 
@@ -651,18 +673,18 @@ None at this stage. All architectural decisions are locked in the reference docu
 
 ## Known Issues
 
-**Shift 3's N-1 lesson is at risk of regression from the Session 31 line-rating normalization**
+**RESOLVED (Session 45)**: the `shift_03.py` condition-helper crash (`get_output_mw()` /
+`grid`-vs-`fleet` argument mismatch, crashed at T+90) is fixed — see Session 45 log. Scripted-event
+conditions are now declarative dicts evaluated by `GridSimulation._eval_condition()`, which reads
+from whichever of fleet/grid/frequency/time the metric needs, so the calling-convention mismatch
+that caused the crash can no longer occur by construction.
+
+**Shift 3's N-1 lesson may still need re-tuning against the Session 31 line-rating normalization**
 (see Session 31 log above for full detail). L15/L16 dropped from 800→400 MW and L09 rose from
 1200→2250 MW; the tutorial's 80/85/90% loading thresholds are unchanged but the MW flow needed
-to reach them has shifted substantially. **Blocked on a separate pre-existing bug**: `shift_03.py`'s
-own condition helpers (`_ashg1_below_250mw`, `_l15_high_load`) call a `FleetModel.get_output_mw()`
-method that does not exist (the real API is `fleet.get_unit(label).current_mw`), and
-`_l15_high_load` is written to take a `grid` argument, but `GridSimulation._process_scripted_events()`
-only ever calls `cond(self._fleet)`. This crashes Shift 3 with an `AttributeError` once sim time
-reaches minute 90 (T+90 in the shift's own event schedule) — confirmed via direct reproduction,
-not introduced this session. Shift 3 has likely been unplayable past that point since it was
-written. Fix the helper API mismatch first, then re-verify the N-1 lesson still teaches
-convincingly at the new ratings.
+to reach them has shifted substantially. The crash that previously blocked observing this is now
+fixed (confirmed Shift 3 runs cleanly through T+90/T+120 without error), so this is now purely a
+game-balance re-tuning task, not a bug.
 
 **Shift 4-9 scenario files are stale against the Stage 23 topology redesign.**
 `shift_04.py` through `shift_09.py` were written for the old 40-bus grid (full size at Shift 5).

@@ -465,6 +465,11 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         _hit_rects.append(('prop_shift_plus',  plus_r))
         y += ROW_H + 4
 
+        # Anchor
+        _label(surf, font, PAD, y,
+               f'ANCHOR:  {unit.label_anchor}  (R to rotate)', COL_TEXT_DIM)
+        y += ROW_H
+
         if designer._sidebar_mode == 'analysis':
             editing_um = (designer._editing_field == 'analysis_unit_mw')
             um_mw = designer._analysis_unit_mw.get(unit.label, unit.rated_mw)

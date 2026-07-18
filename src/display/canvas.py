@@ -316,6 +316,11 @@ class GridCanvas:
         # Fast bus lookup
         self._bus_map: dict[str, Bus] = {b.label: b for b in self._buses}
 
+        # Designer-supplied label anchors (station/bus label → 'top'/'right'/
+        # 'bottom'/'left'), set via load_designer_topology(). None outside the
+        # Designer, where labels fall back to the global layout_override system.
+        self._designer_label_anchors: dict[str, str] | None = None
+
         # Pre-compute unit layout per station (only stations active this shift)
         active_bus_labels = {b.label for b in self._buses}
         self._station_units: dict[str, list] = {}    # station → [GenerationUnit]
@@ -483,6 +488,7 @@ class GridCanvas:
         lines:  list,
         units:  list,
         station_positions: dict[str, tuple[int, int]] | None = None,
+        label_anchors: dict[str, str] | None = None,
     ) -> None:
         """
         Replace the canvas topology with designer-supplied Bus/Line/Unit lists.
@@ -492,9 +498,14 @@ class GridCanvas:
         Station position comes from station_positions (unscaled, native-space
         anchors set/dragged in the Designer); a station missing an entry falls
         back to 20px above its bus.
+        label_anchors (bus/station label → 'top'/'right'/'bottom'/'left') is
+        the Designer's own per-grid anchor data; it overrides the global
+        layout_override system used by normal gameplay while this topology is
+        loaded (see _render_anchored()).
         """
         scale = self._scale
         station_positions = station_positions or {}
+        self._designer_label_anchors = label_anchors or {}
 
         self._buses    = buses
         self._lines    = lines
@@ -852,7 +863,10 @@ class GridCanvas:
         off: int,
     ) -> None:
         """Render a 4-char label at the anchor position relative to (cx, cy)."""
-        anchor = get_label_anchor(label)
+        if self._designer_label_anchors is not None:
+            anchor = self._designer_label_anchors.get(label, 'right')
+        else:
+            anchor = get_label_anchor(label)
         rect   = font.get_rect(label, size=size)
         w, h   = rect.width, rect.height
         if anchor == 'top':

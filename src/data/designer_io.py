@@ -160,6 +160,7 @@ class DesignerUnit:
     station_y:         int = -1
     start_mw:          float = -1.0  # test-session starting dispatch, -1 = auto (rated_mw * 0.5)
     in_service:        bool = True   # test-session availability, False = starts on maintenance
+    label_anchor:      str = 'right'  # station label position, one per station_label
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -228,7 +228,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 100.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "PORT",
@@ -240,7 +240,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 100.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "MNTN",
@@ -252,19 +252,19 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "LAKE",
       "name": "LAKE",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 747,
+      "canvas_x": 748,
       "canvas_y": 772,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "GLEN",
@@ -288,7 +288,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 300.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "HOLM",
@@ -300,7 +300,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "FORD",
@@ -324,7 +324,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 300.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "PEAK",
@@ -336,7 +336,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "WICK",
@@ -348,7 +348,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "SHAW",
@@ -360,7 +360,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     }
   ],
   "lines": [
@@ -842,7 +842,8 @@
       "station_x": 829,
       "station_y": 109,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "RVSD-2",
@@ -862,7 +863,8 @@
       "station_x": 829,
       "station_y": 109,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "RVSD-3",
@@ -882,7 +884,8 @@
       "station_x": 829,
       "station_y": 109,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "THNF-1",
@@ -902,7 +905,8 @@
       "station_x": 413,
       "station_y": 248,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "THNF-2",
@@ -922,7 +926,8 @@
       "station_x": 413,
       "station_y": 248,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "ASHG-1",
@@ -942,7 +947,8 @@
       "station_x": 446,
       "station_y": 115,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "ASHG-2",
@@ -962,7 +968,8 @@
       "station_x": 446,
       "station_y": 115,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "WRNG-1",
@@ -982,7 +989,8 @@
       "station_x": 857,
       "station_y": 506,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "WRNG-2",
@@ -1002,7 +1010,8 @@
       "station_x": 857,
       "station_y": 506,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     },
     {
       "label": "HART-1",
@@ -1022,7 +1031,8 @@
       "station_x": 1325,
       "station_y": 586,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "bottom"
     },
     {
       "label": "HART-2",
@@ -1042,7 +1052,8 @@
       "station_x": 1325,
       "station_y": 586,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "bottom"
     },
     {
       "label": "BARR-1",
@@ -1062,7 +1073,8 @@
       "station_x": 636,
       "station_y": 627,
       "start_mw": -1.0,
-      "in_service": true
+      "in_service": true,
+      "label_anchor": "top"
     }
   ]
 }

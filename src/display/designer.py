@@ -405,11 +405,18 @@ class GridDesigner:
             return True
 
         if event.key == pygame.K_r and not ctrl:
-            # Rotate label anchor on selected bus
+            # Rotate label anchor on selected bus or unit/station
             if self._selected_bus is not None:
                 cur = self._selected_bus.label_anchor
                 idx = (_ANCHOR_CYCLE.index(cur) + 1) % len(_ANCHOR_CYCLE)
                 self._selected_bus.label_anchor = _ANCHOR_CYCLE[idx]
+                self._mark_dirty()
+            elif self._selected_unit is not None:
+                cur = self._selected_unit.label_anchor
+                idx = (_ANCHOR_CYCLE.index(cur) + 1) % len(_ANCHOR_CYCLE)
+                new_anchor = _ANCHOR_CYCLE[idx]
+                for u in self._units_at_station(self._selected_unit.station_label):
+                    u.label_anchor = new_anchor
                 self._mark_dirty()
             elif self._selected_line is not None:
                 if self._rotating_line_end is None:
@@ -1298,13 +1305,17 @@ class GridDesigner:
             if u.station_x != -1 and u.station_y != -1:
                 station_positions[u.station_label] = (u.station_x, u.station_y)
 
+        label_anchors: dict[str, str] = {b.label: b.label_anchor for b in self._buses}
+        for u in self._units:
+            label_anchors.setdefault(u.station_label, u.label_anchor)
+
         if self._canvas is None:
             # shift=0 sentinel — never actually used; load_designer_topology()
             # immediately replaces everything __init__ would have populated
             # from get_buses_by_shift(0).
             self._canvas = GridCanvas(shift=0, font=self._font, scale=1.0)
         self._canvas.load_designer_topology(real_buses, real_lines, real_units,
-                                            station_positions)
+                                            station_positions, label_anchors)
         self._canvas_dirty = False
 
     def _draw_canvas(self, surf: pygame.Surface) -> None:

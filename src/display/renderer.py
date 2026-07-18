@@ -186,6 +186,8 @@ class Renderer:
             buses=grid.get_active_buses(),
             lines=grid.get_active_lines(),
             units=grid.get_active_units(),
+            station_positions=grid.get_station_positions(),
+            label_anchors=grid.get_label_anchors(),
         )
 
     def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:

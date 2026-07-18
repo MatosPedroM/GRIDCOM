@@ -19,8 +19,8 @@
       "name": "CNTR",
       "voltage_kv": 400.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 829,
-      "canvas_y": 151,
+      "canvas_x": 806,
+      "canvas_y": 160,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
@@ -31,12 +31,12 @@
       "name": "NRTH",
       "voltage_kv": 400.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 829,
-      "canvas_y": 546,
+      "canvas_x": 792,
+      "canvas_y": 554,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "EAST",
@@ -55,8 +55,8 @@
       "name": "WEST",
       "voltage_kv": 400.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 1395,
-      "canvas_y": 139,
+      "canvas_x": 1366,
+      "canvas_y": 147,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
@@ -91,36 +91,36 @@
       "name": "WRNT",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 933,
-      "canvas_y": 279,
+      "canvas_x": 944,
+      "canvas_y": 361,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "RDST",
       "name": "RDST",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 933,
-      "canvas_y": 150,
+      "canvas_x": 931,
+      "canvas_y": 179,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "top"
     },
     {
       "label": "FAIR",
       "name": "FAIR",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 815,
-      "canvas_y": 646,
+      "canvas_x": 763,
+      "canvas_y": 656,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "left"
     },
     {
       "label": "COAL",
@@ -144,7 +144,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "top"
     },
     {
       "label": "BRCK",
@@ -156,7 +156,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "top"
     },
     {
       "label": "STAN",
@@ -192,7 +192,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "VALE",
@@ -211,7 +211,7 @@
       "name": "CRES",
       "voltage_kv": 150.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 568,
+      "canvas_x": 532,
       "canvas_y": 342,
       "active_from_shift": 1,
       "is_slack": false,
@@ -223,8 +223,8 @@
       "name": "HRBR",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 362,
-      "canvas_y": 559,
+      "canvas_x": 278,
+      "canvas_y": 422,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 100.0,
@@ -235,8 +235,8 @@
       "name": "PORT",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 582,
-      "canvas_y": 420,
+      "canvas_x": 533,
+      "canvas_y": 471,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 100.0,
@@ -247,8 +247,8 @@
       "name": "MNTN",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 594,
-      "canvas_y": 769,
+      "canvas_x": 587,
+      "canvas_y": 698,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
@@ -259,8 +259,8 @@
       "name": "LAKE",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 748,
-      "canvas_y": 772,
+      "canvas_x": 628,
+      "canvas_y": 799,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
@@ -271,12 +271,12 @@
       "name": "GLEN",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 906,
-      "canvas_y": 766,
+      "canvas_x": 722,
+      "canvas_y": 702,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "bottom"
+      "label_anchor": "top"
     },
     {
       "label": "MOOR",
@@ -343,8 +343,8 @@
       "name": "WICK",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 261,
-      "canvas_y": 472,
+      "canvas_x": 406,
+      "canvas_y": 407,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
@@ -355,11 +355,359 @@
       "name": "SHAW",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 484,
-      "canvas_y": 516,
+      "canvas_x": 422,
+      "canvas_y": 467,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "BRID",
+      "name": "BRID",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 816,
+      "canvas_y": 800,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 100.0,
+      "label_anchor": "right"
+    },
+    {
+      "label": "COVE",
+      "name": "COVE",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 867,
+      "canvas_y": 697,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 150.0,
+      "label_anchor": "right"
+    },
+    {
+      "label": "HOLT",
+      "name": "HOLT",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 630,
+      "canvas_y": 738,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "left"
+    },
+    {
+      "label": "FELD",
+      "name": "FELD",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 722,
+      "canvas_y": 739,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "right"
+    },
+    {
+      "label": "GATE",
+      "name": "GATE",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 817,
+      "canvas_y": 740,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "right"
+    },
+    {
+      "label": "MERE",
+      "name": "MERE",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1476,
+      "canvas_y": 387,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 100.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "BURN",
+      "name": "BURN",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1661,
+      "canvas_y": 391,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 150.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "HALE",
+      "name": "HALE",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1568,
+      "canvas_y": 388,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 300.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "ROOK",
+      "name": "ROOK",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1630,
+      "canvas_y": 200,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 300.0,
+      "label_anchor": "right"
+    },
+    {
+      "label": "WOLD",
+      "name": "WOLD",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1520,
+      "canvas_y": 327,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "left"
+    },
+    {
+      "label": "AVEN",
+      "name": "AVEN",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1625,
+      "canvas_y": 328,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "right"
+    },
+    {
+      "label": "TARN",
+      "name": "TARN",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1630,
+      "canvas_y": 144,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "SCAR",
+      "name": "SCAR",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1101,
+      "canvas_y": 145,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 300.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "KNOB",
+      "name": "KNOB",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1103,
+      "canvas_y": 235,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 300.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "FELL",
+      "name": "FELL",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1107,
+      "canvas_y": 326,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 300.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "CRAG",
+      "name": "CRAG",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1003,
+      "canvas_y": 444,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 300.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "DENE",
+      "name": "DENE",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1015,
+      "canvas_y": 144,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "BURY",
+      "name": "BURY",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1009,
+      "canvas_y": 238,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "CLEY",
+      "name": "CLEY",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1106,
+      "canvas_y": 397,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "WREN",
+      "name": "WREN",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1003,
+      "canvas_y": 329,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "B050",
+      "name": "B050",
+      "voltage_kv": 220.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1263,
+      "canvas_y": 181,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "B051",
+      "name": "B051",
+      "voltage_kv": 220.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1262,
+      "canvas_y": 359,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "B052",
+      "name": "B052",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1200,
+      "canvas_y": 146,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "B053",
+      "name": "B053",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1194,
+      "canvas_y": 238,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "B054",
+      "name": "B054",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1204,
+      "canvas_y": 327,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "B055",
+      "name": "B055",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 1202,
+      "canvas_y": 446,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 300.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "B056",
+      "name": "B056",
+      "voltage_kv": 400.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1094,
+      "canvas_y": 510,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "top"
+    },
+    {
+      "label": "B057",
+      "name": "B057",
+      "voltage_kv": 220.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 931,
+      "canvas_y": 506,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "B058",
+      "name": "B058",
+      "voltage_kv": 220.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 1262,
+      "canvas_y": 503,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
       "label_anchor": "bottom"
     }
   ],
@@ -387,20 +735,10 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L03",
-      "from_bus": "NRTH",
-      "to_bus": "EAST",
-      "reactance_pu": 0.1412,
-      "rating_mw": 2250.0,
-      "voltage_kv": 400.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
+      "from_port_override": [
+        "W",
+        1
+      ],
       "to_port_override": null
     },
     {
@@ -414,7 +752,10 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": [
+        "S",
+        1
+      ]
     },
     {
       "label": "L05",
@@ -452,7 +793,10 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
+      "from_port_override": [
+        "W",
+        0
+      ],
       "to_port_override": null
     },
     {
@@ -465,8 +809,14 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
+      "from_port_override": [
+        "S",
+        0
+      ],
+      "to_port_override": [
+        "W",
+        1
+      ]
     },
     {
       "label": "L09",
@@ -491,7 +841,10 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
+      "from_port_override": [
+        "E",
+        1
+      ],
       "to_port_override": null
     },
     {
@@ -518,7 +871,10 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": [
+        "N",
+        1
+      ]
     },
     {
       "label": "L13",
@@ -531,7 +887,10 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": [
+        "W",
+        1
+      ]
     },
     {
       "label": "L14",
@@ -556,7 +915,10 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
+      "from_port_override": [
+        "N",
+        1
+      ],
       "to_port_override": null
     },
     {
@@ -583,61 +945,6 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L26",
-      "from_bus": "COAL",
-      "to_bus": "LAKE",
-      "reactance_pu": 0.037,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L27",
-      "from_bus": "FAIR",
-      "to_bus": "LAKE",
-      "reactance_pu": 0.0362,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L29",
-      "from_bus": "COAL",
-      "to_bus": "MNTN",
-      "reactance_pu": 0.0352,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L30",
-      "from_bus": "FAIR",
-      "to_bus": "GLEN",
-      "reactance_pu": 0.0446,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "S",
-        1
-      ],
       "to_port_override": null
     },
     {
@@ -742,7 +1049,10 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": [
+        "N",
+        0
+      ]
     },
     {
       "label": "L15",
@@ -793,7 +1103,10 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
+      "from_port_override": [
+        "S",
+        1
+      ],
       "to_port_override": null
     },
     {
@@ -814,6 +1127,975 @@
       "from_bus": "RIVR",
       "to_bus": "SHAW",
       "reactance_pu": 0.0351,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L23",
+      "from_bus": "CRES",
+      "to_bus": "WICK",
+      "reactance_pu": 0.0868,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "S",
+        0
+      ],
+      "to_port_override": [
+        "N",
+        0
+      ]
+    },
+    {
+      "label": "L25",
+      "from_bus": "COAL",
+      "to_bus": "HOLT",
+      "reactance_pu": 0.0234,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L26",
+      "from_bus": "FAIR",
+      "to_bus": "GATE",
+      "reactance_pu": 0.0258,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L27",
+      "from_bus": "COAL",
+      "to_bus": "FELD",
+      "reactance_pu": 0.0249,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L28",
+      "from_bus": "FAIR",
+      "to_bus": "FELD",
+      "reactance_pu": 0.0242,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L29",
+      "from_bus": "HOLT",
+      "to_bus": "MNTN",
+      "reactance_pu": 0.0208,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L30",
+      "from_bus": "HOLT",
+      "to_bus": "LAKE",
+      "reactance_pu": 0.016,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L39",
+      "from_bus": "FELD",
+      "to_bus": "GLEN",
+      "reactance_pu": 0.0206,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L40",
+      "from_bus": "FELD",
+      "to_bus": "LAKE",
+      "reactance_pu": 0.0322,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "S",
+        0
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L41",
+      "from_bus": "FELD",
+      "to_bus": "BRID",
+      "reactance_pu": 0.0303,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "S",
+        1
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L42",
+      "from_bus": "GATE",
+      "to_bus": "BRID",
+      "reactance_pu": 0.0151,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L43",
+      "from_bus": "GATE",
+      "to_bus": "COVE",
+      "reactance_pu": 0.0146,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L44",
+      "from_bus": "GATE",
+      "to_bus": "HOLT",
+      "reactance_pu": 0.0505,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L45",
+      "from_bus": "DUNM",
+      "to_bus": "TARN",
+      "reactance_pu": 0.0292,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L46",
+      "from_bus": "BRCK",
+      "to_bus": "WOLD",
+      "reactance_pu": 0.0219,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "S",
+        1
+      ],
+      "to_port_override": [
+        "N",
+        1
+      ]
+    },
+    {
+      "label": "L47",
+      "from_bus": "BRCK",
+      "to_bus": "AVEN",
+      "reactance_pu": 0.0352,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "N",
+        1
+      ]
+    },
+    {
+      "label": "L48",
+      "from_bus": "WOLD",
+      "to_bus": "MERE",
+      "reactance_pu": 0.0191,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "E",
+        0
+      ]
+    },
+    {
+      "label": "L49",
+      "from_bus": "AVEN",
+      "to_bus": "BURN",
+      "reactance_pu": 0.0198,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L50",
+      "from_bus": "AVEN",
+      "to_bus": "HALE",
+      "reactance_pu": 0.0148,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "E",
+        0
+      ]
+    },
+    {
+      "label": "L51",
+      "from_bus": "WOLD",
+      "to_bus": "HALE",
+      "reactance_pu": 0.0395,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "W",
+        0
+      ]
+    },
+    {
+      "label": "L52",
+      "from_bus": "DUNM",
+      "to_bus": "TARN",
+      "reactance_pu": 0.0292,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L53",
+      "from_bus": "TARN",
+      "to_bus": "ROOK",
+      "reactance_pu": 0.022,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "N",
+        0
+      ]
+    },
+    {
+      "label": "L54",
+      "from_bus": "TARN",
+      "to_bus": "ROOK",
+      "reactance_pu": 0.0146,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L55",
+      "from_bus": "BRCK",
+      "to_bus": "WOLD",
+      "reactance_pu": 0.0219,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L56",
+      "from_bus": "AVEN",
+      "to_bus": "BRCK",
+      "reactance_pu": 0.0356,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "N",
+        0
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L57",
+      "from_bus": "WEST",
+      "to_bus": "B050",
+      "reactance_pu": 0.0364,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "W",
+        1
+      ],
+      "to_port_override": [
+        "E",
+        1
+      ]
+    },
+    {
+      "label": "L58",
+      "from_bus": "B051",
+      "to_bus": "WEST",
+      "reactance_pu": 0.0491,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "E",
+        0
+      ],
+      "to_port_override": [
+        "W",
+        1
+      ]
+    },
+    {
+      "label": "L59",
+      "from_bus": "B050",
+      "to_bus": "B052",
+      "reactance_pu": 0.0187,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L60",
+      "from_bus": "B051",
+      "to_bus": "B054",
+      "reactance_pu": 0.0161,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "N",
+        0
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L61",
+      "from_bus": "B050",
+      "to_bus": "B053",
+      "reactance_pu": 0.0323,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L62",
+      "from_bus": "B051",
+      "to_bus": "B053",
+      "reactance_pu": 0.0361,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L63",
+      "from_bus": "RDST",
+      "to_bus": "B050",
+      "reactance_pu": 0.0883,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "E",
+        0
+      ],
+      "to_port_override": [
+        "W",
+        0
+      ]
+    },
+    {
+      "label": "L64",
+      "from_bus": "RDST",
+      "to_bus": "DENE",
+      "reactance_pu": 0.0228,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "N",
+        1
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L65",
+      "from_bus": "DENE",
+      "to_bus": "SCAR",
+      "reactance_pu": 0.024,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L66",
+      "from_bus": "B052",
+      "to_bus": "SCAR",
+      "reactance_pu": 0.0243,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L67",
+      "from_bus": "DENE",
+      "to_bus": "SCAR",
+      "reactance_pu": 0.024,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L68",
+      "from_bus": "SCAR",
+      "to_bus": "B052",
+      "reactance_pu": 0.0243,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L69",
+      "from_bus": "RDST",
+      "to_bus": "BURY",
+      "reactance_pu": 0.0326,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "S",
+        1
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L70",
+      "from_bus": "WREN",
+      "to_bus": "WRNT",
+      "reactance_pu": 0.0177,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "W",
+        1
+      ],
+      "to_port_override": [
+        "E",
+        0
+      ]
+    },
+    {
+      "label": "L71",
+      "from_bus": "WREN",
+      "to_bus": "CRAG",
+      "reactance_pu": 0.0299,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L72",
+      "from_bus": "B055",
+      "to_bus": "B054",
+      "reactance_pu": 0.0309,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L73",
+      "from_bus": "CLEY",
+      "to_bus": "WREN",
+      "reactance_pu": 0.0321,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L74",
+      "from_bus": "CLEY",
+      "to_bus": "B054",
+      "reactance_pu": 0.0312,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L75",
+      "from_bus": "BURY",
+      "to_bus": "WRNT",
+      "reactance_pu": 0.0364,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L76",
+      "from_bus": "BURY",
+      "to_bus": "KNOB",
+      "reactance_pu": 0.0245,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L77",
+      "from_bus": "B053",
+      "to_bus": "KNOB",
+      "reactance_pu": 0.0237,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L78",
+      "from_bus": "BURY",
+      "to_bus": "KNOB",
+      "reactance_pu": 0.0245,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L79",
+      "from_bus": "KNOB",
+      "to_bus": "B053",
+      "reactance_pu": 0.0237,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L80",
+      "from_bus": "FELL",
+      "to_bus": "WREN",
+      "reactance_pu": 0.0266,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L81",
+      "from_bus": "FELL",
+      "to_bus": "B054",
+      "reactance_pu": 0.0255,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L82",
+      "from_bus": "WREN",
+      "to_bus": "FELL",
+      "reactance_pu": 0.0266,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L83",
+      "from_bus": "FELL",
+      "to_bus": "B054",
+      "reactance_pu": 0.0255,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L84",
+      "from_bus": "CLEY",
+      "to_bus": "CRAG",
+      "reactance_pu": 0.0295,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L85",
+      "from_bus": "CLEY",
+      "to_bus": "B055",
+      "reactance_pu": 0.0281,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "W",
+        0
+      ]
+    },
+    {
+      "label": "L86",
+      "from_bus": "CNTR",
+      "to_bus": "RDST",
+      "reactance_pu": 0.0282,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "E",
+        1
+      ],
+      "to_port_override": [
+        "W",
+        1
+      ]
+    },
+    {
+      "label": "L87",
+      "from_bus": "CNTR",
+      "to_bus": "WRNT",
+      "reactance_pu": 0.0622,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "W",
+        0
+      ]
+    },
+    {
+      "label": "L88",
+      "from_bus": "B050",
+      "to_bus": "WEST",
+      "reactance_pu": 0.0286,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "N",
+        1
+      ],
+      "to_port_override": [
+        "W",
+        0
+      ]
+    },
+    {
+      "label": "L89",
+      "from_bus": "WEST",
+      "to_bus": "B051",
+      "reactance_pu": 0.0618,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": [
+        "E",
+        1
+      ]
+    },
+    {
+      "label": "L90",
+      "from_bus": "WRNT",
+      "to_bus": "WREN",
+      "reactance_pu": 0.0177,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "N",
+        1
+      ],
+      "to_port_override": [
+        "W",
+        0
+      ]
+    },
+    {
+      "label": "L91",
+      "from_bus": "B051",
+      "to_bus": "B054",
+      "reactance_pu": 0.0173,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "W",
+        0
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L03",
+      "from_bus": "NRTH",
+      "to_bus": "B056",
+      "reactance_pu": 0.076,
+      "rating_mw": 2250.0,
+      "voltage_kv": 400.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L92",
+      "from_bus": "B056",
+      "to_bus": "EAST",
+      "reactance_pu": 0.0737,
+      "rating_mw": 2250.0,
+      "voltage_kv": 400.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "E",
+        1
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L93",
+      "from_bus": "B056",
+      "to_bus": "B057",
+      "reactance_pu": 0.0277,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "W",
+        0
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L94",
+      "from_bus": "B058",
+      "to_bus": "B056",
+      "reactance_pu": 0.0347,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "W",
+        0
+      ],
+      "to_port_override": [
+        "N",
+        1
+      ]
+    },
+    {
+      "label": "L95",
+      "from_bus": "B057",
+      "to_bus": "CLEY",
+      "reactance_pu": 0.0537,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L96",
+      "from_bus": "B058",
+      "to_bus": "CLEY",
+      "reactance_pu": 0.0491,
       "rating_mw": 175.0,
       "voltage_kv": 150.0,
       "active_from_shift": 1,
@@ -986,8 +2268,8 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "WRNG HYDRO unit 1",
-      "station_x": 857,
-      "station_y": 506,
+      "station_x": 730,
+      "station_y": 500,
       "start_mw": -1.0,
       "in_service": true,
       "label_anchor": "top"
@@ -1007,8 +2289,8 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "WRNG HYDRO unit 2",
-      "station_x": 857,
-      "station_y": 506,
+      "station_x": 730,
+      "station_y": 500,
       "start_mw": -1.0,
       "in_service": true,
       "label_anchor": "top"
@@ -1075,6 +2357,216 @@
       "start_mw": -1.0,
       "in_service": true,
       "label_anchor": "top"
+    },
+    {
+      "label": "KELM-1",
+      "station_label": "KELM",
+      "bus_label": "FAIR",
+      "unit_type": "SOLAR",
+      "rated_mw": 400.0,
+      "min_mw": 0.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 0.0,
+      "cold_start_min": 0.0,
+      "q_max_mvar": 0.0,
+      "q_min_mvar": 0.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "KELM SOLAR unit 1",
+      "station_x": 808,
+      "station_y": 618,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right"
+    },
+    {
+      "label": "DUNH-1",
+      "station_label": "DUNH",
+      "bus_label": "WEST",
+      "unit_type": "NUCLEAR",
+      "rated_mw": 700.0,
+      "min_mw": 420.0,
+      "ramp_pct_per_min": 1.0,
+      "inertia_h": 6.0,
+      "cold_start_min": 480.0,
+      "q_max_mvar": 300.0,
+      "q_min_mvar": -100.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "DUNH NUCLEAR unit 1",
+      "station_x": 1371,
+      "station_y": 99,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "top"
+    },
+    {
+      "label": "DUNH-2",
+      "station_label": "DUNH",
+      "bus_label": "WEST",
+      "unit_type": "NUCLEAR",
+      "rated_mw": 700.0,
+      "min_mw": 420.0,
+      "ramp_pct_per_min": 1.0,
+      "inertia_h": 6.0,
+      "cold_start_min": 480.0,
+      "q_max_mvar": 300.0,
+      "q_min_mvar": -100.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "DUNH NUCLEAR unit 2",
+      "station_x": 1371,
+      "station_y": 99,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "top"
+    },
+    {
+      "label": "BARD-1",
+      "station_label": "BARD",
+      "bus_label": "B056",
+      "unit_type": "CCGT",
+      "rated_mw": 400.0,
+      "min_mw": 100.0,
+      "ramp_pct_per_min": 8.0,
+      "inertia_h": 4.0,
+      "cold_start_min": 60.0,
+      "q_max_mvar": 180.0,
+      "q_min_mvar": -60.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "BARD CCGT unit 1",
+      "station_x": 1092,
+      "station_y": 598,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "BARD-2",
+      "station_label": "BARD",
+      "bus_label": "B056",
+      "unit_type": "CCGT",
+      "rated_mw": 400.0,
+      "min_mw": 100.0,
+      "ramp_pct_per_min": 8.0,
+      "inertia_h": 4.0,
+      "cold_start_min": 60.0,
+      "q_max_mvar": 180.0,
+      "q_min_mvar": -60.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "BARD CCGT unit 2",
+      "station_x": 1092,
+      "station_y": 598,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "BARD-3",
+      "station_label": "BARD",
+      "bus_label": "B056",
+      "unit_type": "CCGT",
+      "rated_mw": 400.0,
+      "min_mw": 100.0,
+      "ramp_pct_per_min": 8.0,
+      "inertia_h": 4.0,
+      "cold_start_min": 60.0,
+      "q_max_mvar": 180.0,
+      "q_min_mvar": -60.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "BARD CCGT unit 3",
+      "station_x": 1092,
+      "station_y": 598,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "bottom"
+    },
+    {
+      "label": "WNCN-1",
+      "station_label": "WNCN",
+      "bus_label": "FLDN",
+      "unit_type": "WIND",
+      "rated_mw": 300.0,
+      "min_mw": 0.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 0.0,
+      "cold_start_min": 0.0,
+      "q_max_mvar": 0.0,
+      "q_min_mvar": 0.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "WNCN WIND unit 1",
+      "station_x": 1478,
+      "station_y": 603,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "top"
+    },
+    {
+      "label": "WNBR-1",
+      "station_label": "WNBR",
+      "bus_label": "BRCK",
+      "unit_type": "HYDRO",
+      "rated_mw": 250.0,
+      "min_mw": 25.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 3.0,
+      "cold_start_min": 5.0,
+      "q_max_mvar": 120.0,
+      "q_min_mvar": -40.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "WNBR HYDRO unit 1",
+      "station_x": 1438,
+      "station_y": 284,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right"
+    },
+    {
+      "label": "WNBR-2",
+      "station_label": "WNBR",
+      "bus_label": "BRCK",
+      "unit_type": "HYDRO",
+      "rated_mw": 250.0,
+      "min_mw": 25.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 3.0,
+      "cold_start_min": 5.0,
+      "q_max_mvar": 120.0,
+      "q_min_mvar": -40.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "WNBR HYDRO unit 2",
+      "station_x": 1438,
+      "station_y": 284,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right"
+    },
+    {
+      "label": "SLST-1",
+      "station_label": "SLST",
+      "bus_label": "TARN",
+      "unit_type": "SOLAR",
+      "rated_mw": 400.0,
+      "min_mw": 0.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 0.0,
+      "cold_start_min": 0.0,
+      "q_max_mvar": 0.0,
+      "q_min_mvar": 0.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "SLST SOLAR unit 1",
+      "station_x": 1685,
+      "station_y": 123,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right"
     }
   ]
 }

@@ -299,7 +299,7 @@
       "canvas_y": 644,
       "active_from_shift": 1,
       "is_slack": false,
-      "peak_load_mw": 200.0,
+      "peak_load_mw": 150.0,
       "label_anchor": "bottom"
     },
     {
@@ -335,7 +335,7 @@
       "canvas_y": 646,
       "active_from_shift": 1,
       "is_slack": false,
-      "peak_load_mw": 200.0,
+      "peak_load_mw": 150.0,
       "label_anchor": "bottom"
     },
     {
@@ -551,7 +551,7 @@
       "canvas_y": 444,
       "active_from_shift": 1,
       "is_slack": false,
-      "peak_load_mw": 300.0,
+      "peak_load_mw": 200.0,
       "label_anchor": "bottom"
     },
     {
@@ -671,7 +671,7 @@
       "canvas_y": 446,
       "active_from_shift": 1,
       "is_slack": false,
-      "peak_load_mw": 300.0,
+      "peak_load_mw": 200.0,
       "label_anchor": "bottom"
     },
     {
@@ -691,8 +691,8 @@
       "name": "B057",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 931,
-      "canvas_y": 506,
+      "canvas_x": 916,
+      "canvas_y": 510,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
@@ -703,8 +703,8 @@
       "name": "B058",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 1262,
-      "canvas_y": 503,
+      "canvas_x": 1263,
+      "canvas_y": 511,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
@@ -1925,7 +1925,7 @@
       ],
       "to_port_override": [
         "W",
-        1
+        0
       ]
     },
     {
@@ -2071,10 +2071,10 @@
       "parallel": 0,
       "from_port_override": [
         "W",
-        0
+        1
       ],
       "to_port_override": [
-        "N",
+        "E",
         1
       ]
     },
@@ -2102,6 +2102,122 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L97",
+      "from_bus": "STAN",
+      "to_bus": "MOOR",
+      "reactance_pu": 0.0281,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L98",
+      "from_bus": "FLDN",
+      "to_bus": "DALE",
+      "reactance_pu": 0.0308,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L99",
+      "from_bus": "RDST",
+      "to_bus": "DENE",
+      "reactance_pu": 0.0237,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L100",
+      "from_bus": "B052",
+      "to_bus": "B050",
+      "reactance_pu": 0.0188,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L101",
+      "from_bus": "B057",
+      "to_bus": "RDST",
+      "reactance_pu": 0.0852,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "W",
+        0
+      ],
+      "to_port_override": [
+        "W",
+        1
+      ]
+    },
+    {
+      "label": "L102",
+      "from_bus": "B057",
+      "to_bus": "WRNT",
+      "reactance_pu": 0.0379,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "N",
+        1
+      ],
+      "to_port_override": null
+    },
+    {
+      "label": "L103",
+      "from_bus": "B058",
+      "to_bus": "B051",
+      "reactance_pu": 0.0375,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
+    },
+    {
+      "label": "L104",
+      "from_bus": "B058",
+      "to_bus": "B050",
+      "reactance_pu": 0.0839,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "E",
+        1
+      ],
       "to_port_override": null
     }
   ],

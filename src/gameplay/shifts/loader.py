@@ -30,6 +30,10 @@ def load_shift_config(shift_number: int) -> dict:
         maintenance_lines   set[str]                  — lines that start the shift electrically open
         agc_enabled         bool                      — whether AGC is active at shift start
         substation_load_mw  dict[str, dict[float, float]] — per-bus hourly load table (MW)
+        grid_source         str | None                — saved Grid Designer grid name
+                                                          (assets/designer_grids/<grid_source>.json)
+                                                          to use instead of topology.py/fleet.py,
+                                                          or None for the normal campaign topology
     """
     mod = importlib.import_module(f'gameplay.shifts.shift_{shift_number:02d}')
     return {
@@ -41,6 +45,7 @@ def load_shift_config(shift_number: int) -> dict:
         'maintenance_lines':  getattr(mod, 'MAINTENANCE_LINES',  set()),
         'agc_enabled':        getattr(mod, 'AGC_ENABLED',        False),
         'substation_load_mw': getattr(mod, 'SUBSTATION_LOAD_MW', {}),
+        'grid_source':        getattr(mod, 'GRID_SOURCE',        None),
     }
 
 

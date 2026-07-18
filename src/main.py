@@ -193,16 +193,39 @@ def _make_sim_and_renderer(
     display_surf: pygame.Surface,
     shift: int,
     difficulty: str = 'standard',
-) -> tuple[GridSimulation, Grid, Renderer]:
-    cfg      = load_shift_config(shift)
-    grid     = Grid(shift)
-    sim      = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
-                              initial_schedule=cfg['initial_schedule'],
-                              maintenance_units=cfg['maintenance_units'],
-                              maintenance_lines=cfg['maintenance_lines'])
+):
+    """
+    Build sim + renderer for a campaign shift.
+
+    Normally topology/fleet come from Grid(shift) (topology.py/fleet.py,
+    filtered by shift number). If the shift's own shift_NN.py declares
+    GRID_SOURCE, topology instead comes from that named Grid Designer grid
+    (assets/designer_grids/<name>.json) via DesignerGrid — shift_number is
+    still passed through unchanged so briefing/debrief/HUD/scripted-events
+    continue to key off the real shift number either way.
+    """
+    cfg         = load_shift_config(shift)
+    grid_source = cfg.get('grid_source')
+
+    if grid_source:
+        from data.designer_io import load_designer_grid_named
+        from simulation.designer_grid import DesignerGrid
+        buses, lines, units = load_designer_grid_named(grid_source)
+        grid = DesignerGrid(buses, lines, units)
+    else:
+        grid = Grid(shift)
+
+    sim = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
+                         initial_schedule=cfg['initial_schedule'],
+                         maintenance_units=cfg['maintenance_units'],
+                         maintenance_lines=cfg['maintenance_lines'],
+                         substation_load_mw=cfg['substation_load_mw'] or None)
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
-    renderer.set_grid(grid)
+    if grid_source:
+        renderer.set_designer_grid(grid)
+    else:
+        renderer.set_grid(grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
     return sim, grid, renderer
 

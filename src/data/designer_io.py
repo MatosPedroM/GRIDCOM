@@ -10,11 +10,20 @@ JSON schema version 1:
     "buses": [ { label, name, voltage_kv, bus_type, canvas_x, canvas_y,
                  active_from_shift, is_slack, peak_load_mw } ],
     "lines": [ { label, from_bus, to_bus, reactance_pu, rating_mw,
-                 active_from_shift, active_until_shift, voltage_kv, parallel } ],
+                 active_from_shift, active_until_shift, voltage_kv, parallel,
+                 from_port_override, to_port_override } ],
     "units": [ { label, station_label, bus_label, unit_type, rated_mw, min_mw,
                  ramp_pct_per_min, inertia_h, cold_start_min,
-                 q_max_mvar, q_min_mvar, can_pump, active_from_shift, description } ]
+                 q_max_mvar, q_min_mvar, can_pump, active_from_shift, description,
+                 station_x, station_y, start_mw, in_service } ]
   }
+
+  start_mw: test-session starting dispatch, MW. -1.0 (default) means "not
+  explicitly set" — test-session launch falls back to rated_mw * 0.5.
+  in_service: whether the unit is available at test-session start (False
+  behaves like being placed on that session's maintenance list). Both
+  fields are consumed only by the Grid Designer's "test in shift" launch
+  path, not by campaign topology/fleet data.
 """
 
 from __future__ import annotations
@@ -113,6 +122,22 @@ class DesignerLine:
     active_from_shift:  int = 1
     active_until_shift: int = 99
     parallel:           int = 0   # double-circuit draw offset (+1/-1/0), display-only
+    # Manual attachment-port override, set via the designer's line-rotate (R)
+    # feature — (side, slot) e.g. ('N', 0), or None for the automatic
+    # bearing-derived port. Cosmetic only; never affects topology/solving.
+    from_port_override: tuple[str, int] | None = None
+    to_port_override:   tuple[str, int] | None = None
+
+
+def _normalise_line_dict(d: dict) -> dict:
+    """JSON round-trips tuples as lists — restore the (side, slot) tuple
+    shape for the port-override fields before constructing a DesignerLine."""
+    d = dict(d)
+    for key in ('from_port_override', 'to_port_override'):
+        val = d.get(key)
+        if val is not None:
+            d[key] = tuple(val)
+    return d
 
 
 @dataclass
@@ -133,6 +158,8 @@ class DesignerUnit:
     description:       str
     station_x:         int = -1   # canvas position, -1 = not yet set, derive from bus
     station_y:         int = -1
+    start_mw:          float = -1.0  # test-session starting dispatch, -1 = auto (rated_mw * 0.5)
+    in_service:        bool = True   # test-session availability, False = starts on maintenance
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,7 +194,7 @@ def load_designer_grid(
         data = json.load(f)
 
     buses = [DesignerBus(**b) for b in data.get('buses', [])]
-    lines = [DesignerLine(**l) for l in data.get('lines', [])]
+    lines = [DesignerLine(**_normalise_line_dict(l)) for l in data.get('lines', [])]
     units = [DesignerUnit(**u) for u in data.get('units', [])]
     return buses, lines, units
 
@@ -214,7 +241,7 @@ def load_designer_grid_named(
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     buses = [DesignerBus(**b) for b in data.get('buses', [])]
-    lines = [DesignerLine(**l) for l in data.get('lines', [])]
+    lines = [DesignerLine(**_normalise_line_dict(l)) for l in data.get('lines', [])]
     units = [DesignerUnit(**u) for u in data.get('units', [])]
     return buses, lines, units
 
@@ -263,6 +290,8 @@ def designer_lines_to_topology(lines: list[DesignerLine]):
             voltage_kv=l.voltage_kv,
             active_until_shift=l.active_until_shift,
             parallel=l.parallel,
+            from_port_override=l.from_port_override,
+            to_port_override=l.to_port_override,
         ))
     return result
 

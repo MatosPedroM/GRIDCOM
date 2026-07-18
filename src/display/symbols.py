@@ -11,14 +11,21 @@ See GRID_TOPOLOGY_AND_DISPLAY.md sections 3 and 4 for visual specification.
 See display/palette.py for all colour constants.
 """
 
+import math
+
 import pygame
 
-from simulation.constants import FONT_SIZE_OVERLAY
+from simulation.constants import (
+    FONT_SIZE_OVERLAY,
+    LOAD_TRIANGLE_PCT_1, LOAD_TRIANGLE_PCT_2, LOAD_TRIANGLE_PCT_3,
+    LOAD_TRIANGLE_SIZE,
+)
 from display.palette import (
     COL_BACKGROUND,
     COL_BUS_BLACKED, COL_BUS_SELECTED,
     COL_VVIEW_400KV, COL_VVIEW_220KV, COL_VVIEW_150KV, COL_VVIEW_60KV,
-    COL_LINE_ENERGISED, COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
+    COL_LINE_ENERGISED, COL_LINE_TRIPPED,
+    COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_HYDRO_PUMP, COL_UNIT_WIND, COL_UNIT_SOLAR,
     COL_UNIT_ONLINE, COL_UNIT_OFFLINE, COL_UNIT_STARTING,
@@ -184,11 +191,35 @@ _VOLTAGE_COLOUR: dict[float, tuple] = {
 
 # ─────── TRANSMISSION SUBSTATION ─────────────────────────────────────────────
 
+def _fill_tier_square(surf: pygame.Surface, x: int, y: int, sz: int,
+                       connected_tiers: tuple) -> tuple:
+    """
+    Fill a bus square by the voltage tier(s) of its connected lines: solid if
+    one tier, split diagonally in two if two-or-more (extra tiers beyond the
+    top two are dropped — not expected at current grid scale). Returns the
+    single/primary colour, used for the border when nothing else overrides it.
+    """
+    if len(connected_tiers) <= 1:
+        tier = connected_tiers[0] if connected_tiers else 0.0
+        col = _VOLTAGE_COLOUR.get(tier, COL_LINE_ENERGISED)
+        pygame.draw.rect(surf, col, (x, y, sz, sz))
+        return col
+
+    col_a = _VOLTAGE_COLOUR.get(connected_tiers[0], COL_LINE_ENERGISED)
+    col_b = _VOLTAGE_COLOUR.get(connected_tiers[1], COL_LINE_ENERGISED)
+    # Split along the top-left/bottom-right diagonal: higher tier gets the
+    # upper-left triangle, deterministic regardless of dict/set ordering.
+    pygame.draw.polygon(surf, col_a, [(x, y), (x + sz, y), (x, y + sz)])
+    pygame.draw.polygon(surf, col_b, [(x + sz, y), (x + sz, y + sz), (x, y + sz)])
+    return col_a
+
+
 def draw_substation(
     surf: pygame.Surface,
     cx: int,
     cy: int,
     voltage_kv: float = 0.0,
+    connected_tiers: tuple = (),
     loading_pct: float = 0.0,
     blacked: bool = False,
     selected: bool = False,
@@ -199,36 +230,45 @@ def draw_substation(
     Draw a transmission substation symbol: plain square with filled interior.
 
     Args:
-        surf:         Target surface (canvas).
-        cx, cy:       Centre position of the symbol (already scaled).
-        voltage_kv:   Bus voltage tier — determines colour when voltage_view is True.
-        loading_pct:  Max loading % of connected lines — determines colour otherwise.
-        blacked:      True if bus is in a blackout zone.
-        selected:     True if this element is selected.
-        scale:        Display scale factor (applied to symbol sizes).
-        voltage_view: If True, colour by voltage tier instead of loading.
+        surf:            Target surface (canvas).
+        cx, cy:          Centre position of the symbol (already scaled).
+        voltage_kv:      Bus voltage tier — unused directly (kept for API
+                         symmetry with connected_tiers's single-tier case).
+        connected_tiers: Distinct voltage tiers (kV) of lines connected to this
+                         bus, descending — fill colour when voltage_view is
+                         True: solid if one tier, split diagonally if two.
+        loading_pct:     Max loading % of connected lines — fill colour when
+                         voltage_view is False.
+        blacked:         True if bus is in a blackout zone.
+        selected:        True if this element is selected.
+        scale:           Display scale factor (applied to symbol sizes).
+        voltage_view:    'L' toggle — if True, colour by connected voltage
+                         tier(s) instead of loading.
     """
-    if blacked:
-        col = COL_BUS_BLACKED
-    elif voltage_view:
-        col = _VOLTAGE_COLOUR.get(voltage_kv, COL_LINE_ENERGISED)
-    elif loading_pct >= 95.0:
-        col = COL_LOAD_CRIT
-    elif loading_pct >= 80.0:
-        col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
-    elif loading_pct >= 60.0:
-        col = _blend(COL_LINE_ENERGISED, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
-    else:
-        col = COL_LINE_ENERGISED
-    border_col = COL_SELECTION if selected else col
-
     sz     = max(4, int(BUS_SIZE * scale))
     half   = sz // 2
     border = max(1, int(1 * scale))
     x = cx - half
     y = cy - half
 
-    pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
+    if blacked:
+        pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
+        border_col = COL_SELECTION if selected else COL_BUS_BLACKED
+    elif voltage_view:
+        col = _fill_tier_square(surf, x, y, sz, connected_tiers)
+        border_col = COL_SELECTION if selected else col
+    else:
+        if loading_pct >= 95.0:
+            col = COL_LOAD_CRIT
+        elif loading_pct >= 80.0:
+            col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
+        elif loading_pct >= 60.0:
+            col = _blend(COL_LINE_ENERGISED, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
+        else:
+            col = COL_LINE_ENERGISED
+        pygame.draw.rect(surf, col, (x, y, sz, sz))
+        border_col = COL_SELECTION if selected else col
+
     pygame.draw.rect(surf, border_col, (x, y, sz, sz), border)
 
 
@@ -237,6 +277,7 @@ def draw_load_substation(
     cx: int,
     cy: int,
     voltage_kv: float = 0.0,
+    connected_tiers: tuple = (),
     loading_pct: float = 0.0,
     blacked: bool = False,
     selected: bool = False,
@@ -245,29 +286,18 @@ def draw_load_substation(
 ) -> None:
     """
     Draw a load substation symbol: square with downward triangle inside.
-    Coloured by load state of connected feeder lines, unless voltage_view is
-    True, in which case coloured by voltage tier.
+    Always filled plain black (load substations are single-tier 150kV feeder
+    nodes, so tier/loading colouring the square adds no information) — only
+    the yellow triangle marks it as a load substation.
     """
-    if blacked:
-        col = COL_BUS_BLACKED
-    elif voltage_view:
-        col = _VOLTAGE_COLOUR.get(voltage_kv, COL_LINE_ENERGISED)
-    elif loading_pct >= 95.0:
-        col = COL_LOAD_CRIT
-    elif loading_pct >= 80.0:
-        col = _blend(COL_LOAD_WARN, COL_LOAD_HIGH, (loading_pct - 80.0) / 15.0)
-    elif loading_pct >= 60.0:
-        col = _blend(COL_LINE_ENERGISED, COL_LOAD_WARN, (loading_pct - 60.0) / 20.0)
-    else:
-        col = COL_LINE_ENERGISED
-    border_col = COL_SELECTION if selected else col
-
     sz   = max(4, int(BUS_SIZE * scale))
     half = sz // 2
     x = cx - half
     y = cy - half
 
     pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
+    border_col = COL_SELECTION if selected else COL_BUS_BLACKED
+
     pygame.draw.rect(surf, border_col, (x, y, sz, sz), 1)
 
     if not blacked:
@@ -538,6 +568,87 @@ def draw_transmission_line(
 
     for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
         _draw_line_segment(surf, x1, y1, x2, y2, voltage_kv, col, scale)
+
+
+def _draw_arrow_triangle(
+    surf: pygame.Surface,
+    cx: float, cy: float,
+    dx: float, dy: float,
+    size: int,
+    col: tuple,
+) -> None:
+    """
+    Draw one triangle centred at (cx, cy), tip pointing along unit direction
+    vector (dx, dy), base perpendicular to it.
+    """
+    half = size / 2.0
+    tip    = (cx + dx * half,       cy + dy * half)
+    base_l = (cx - dx * half - dy * half, cy - dy * half + dx * half)
+    base_r = (cx - dx * half + dy * half, cy - dy * half - dx * half)
+    pygame.draw.polygon(surf, col, [tip, base_l, base_r])
+
+
+def draw_load_triangles(
+    surf: pygame.Surface,
+    state,
+    lines: list,
+    line_waypoints: dict,
+) -> None:
+    """
+    Draw a static per-line load indicator: for each routed segment of an
+    in-service line, a row of 1-4 small arrow-triangles evenly spaced along
+    that segment, pointing in the flow direction. Count and colour are
+    bucketed by loading % (grey/green/yellow/red for 0-25/25-50/50-75/75%+)
+    and computed once per line, then repeated identically on every segment.
+
+    Args:
+        surf:           Canvas surface.
+        state:          Current SimulationState (skipped entirely if None).
+        lines:          list[Line] — active lines for this shift.
+        line_waypoints: dict[line_label -> [(x,y), ...]] — GridCanvas's
+                        routed waypoint path per line.
+    """
+    if state is None:
+        return
+
+    for line in lines:
+        lbl = line.label
+        if state.line_status.get(lbl, 'IN_SERVICE') != 'IN_SERVICE':
+            continue
+        waypoints = line_waypoints.get(lbl)
+        if not waypoints or len(waypoints) < 2:
+            continue
+
+        pct = abs(state.line_loading_pct.get(lbl, 0.0))
+        if pct < LOAD_TRIANGLE_PCT_1:
+            count, col = 1, COL_LINE_TRIPPED
+        elif pct < LOAD_TRIANGLE_PCT_2:
+            count, col = 2, COL_LINE_ENERGISED
+        elif pct < LOAD_TRIANGLE_PCT_3:
+            count, col = 3, COL_LOAD_WARN
+        else:
+            count, col = 4, COL_LOAD_CRIT
+
+        # Positive flow_mw: from_bus -> to_bus, i.e. along the waypoints in
+        # their stored order (same convention as context.py's ▶/◀ arrow).
+        forward = state.line_flows_mw.get(lbl, 0.0) >= 0.0
+        sz = LOAD_TRIANGLE_SIZE
+
+        for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
+            if not forward:
+                (x1, y1), (x2, y2) = (x2, y2), (x1, y1)
+            seg_dx, seg_dy = x2 - x1, y2 - y1
+            length = math.hypot(seg_dx, seg_dy)
+            if length < 1e-6:
+                continue
+            dx, dy = seg_dx / length, seg_dy / length
+
+            spacing = length / count
+            for i in range(count):
+                t = spacing * (i + 0.5)
+                cx = x1 + dx * t
+                cy = y1 + dy * t
+                _draw_arrow_triangle(surf, cx, cy, dx, dy, sz, col)
 
 
 def _draw_line_segment(

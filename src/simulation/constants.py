@@ -276,12 +276,12 @@ ALARM_RECENT_FADE_S:   float = 10.0         # Acknowledged alarms shown for 10s 
 ALARM_MESSAGE_MAX_LEN: int   = 60           # Max characters in alarm message
 
 # ─────────────────────────────────────────────
-# FLOW MARKER ANIMATION
+# LINE LOAD TRIANGLE INDICATOR
 # ─────────────────────────────────────────────
-FLOW_MARKER_SIZE:      int   = 3            # px — square marker side length
-FLOW_MARKER_SPACING:   float = 20.0         # px — spacing between markers on a line
-FLOW_SPEED_BASE:       float = 30.0         # px/s at 50% loading
-FLOW_SPEED_MAX:        float = 120.0        # px/s at 100%+ loading
+LOAD_TRIANGLE_PCT_1: float = 25.0  # 1 triangle below this loading %
+LOAD_TRIANGLE_PCT_2: float = 50.0  # 2 triangles below this loading %
+LOAD_TRIANGLE_PCT_3: float = 75.0  # 3 triangles below this loading %, else 4
+LOAD_TRIANGLE_SIZE:  int   = 6     # px — side length of each load-indicator triangle
 
 # ─────────────────────────────────────────────
 # DEBUG OVERLAY

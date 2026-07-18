@@ -23,6 +23,7 @@ from typing import Callable
 import pygame
 import pygame.freetype
 
+import simulation.constants as _const
 from data.designer_io import (
     DesignerBus, DesignerLine, DesignerUnit,
     save_designer_grid_named, load_designer_grid_named,
@@ -86,6 +87,13 @@ _UNIT_TYPE_COLOUR: dict[str, tuple] = {
 
 _ANCHOR_CYCLE = ('top', 'right', 'bottom', 'left')
 
+# The 8 fixed bus attachment ports, in cycling order, for the line-rotate
+# feature (R while a line endpoint is picked) — matches display.symbols.PORT_OFFSETS.
+_PORT_CYCLE: list[tuple[str, int]] = [
+    ('N', 0), ('N', 1), ('E', 0), ('E', 1),
+    ('S', 0), ('S', 1), ('W', 0), ('W', 1),
+]
+
 
 class GridDesigner:
     """
@@ -146,6 +154,10 @@ class GridDesigner:
 
         # Line-draw state
         self._line_first_bus: DesignerBus | None = None
+
+        # Line-port rotation state — 'from'/'to' once an endpoint bus has
+        # been picked for the selected line, else None.
+        self._rotating_line_end: str | None = None
 
         # Drag state (bus drag)
         self._dragging_bus:  DesignerBus | None = None
@@ -370,6 +382,14 @@ class GridDesigner:
             self._open_analysis()
             return True
 
+        if ctrl and event.key == pygame.K_l:
+            _const.VOLTAGE_COLOUR_VIEW = not _const.VOLTAGE_COLOUR_VIEW
+            self._mark_dirty()
+            self._set_status(
+                'Line colour view: ON' if _const.VOLTAGE_COLOUR_VIEW else 'Line colour view: OFF',
+                COL_DESIGNER_STATUS_INFO)
+            return True
+
         if event.key == pygame.K_l:
             self._palette_mode = MODE_LINE
             self._line_first_bus = None
@@ -391,6 +411,13 @@ class GridDesigner:
                 idx = (_ANCHOR_CYCLE.index(cur) + 1) % len(_ANCHOR_CYCLE)
                 self._selected_bus.label_anchor = _ANCHOR_CYCLE[idx]
                 self._mark_dirty()
+            elif self._selected_line is not None:
+                if self._rotating_line_end is None:
+                    self._set_status(
+                        'Click the origin or destination bus to rotate its port',
+                        COL_DESIGNER_STATUS_INFO)
+                else:
+                    self._cycle_line_port(self._selected_line, self._rotating_line_end)
             return True
 
         if event.key == pygame.K_e and not ctrl:
@@ -414,6 +441,7 @@ class GridDesigner:
         self._selected_bus  = None
         self._selected_line = None
         self._selected_unit = None
+        self._rotating_line_end = None
         self._editing_field = None
         self._edit_buffer   = ''
 
@@ -694,6 +722,9 @@ class GridDesigner:
                 best = sl
         return best
 
+    def _units_at_station(self, station_label: str) -> list[DesignerUnit]:
+        return [u for u in self._units if u.station_label == station_label]
+
     # ─── Placement ───────────────────────────────────────────────────────────
 
     def _do_place_bus(self, x: int, y: int) -> None:
@@ -814,6 +845,11 @@ class GridDesigner:
         self._edit_buffer   = ''
         bus = self._hit_bus(pos)
         if bus is not None:
+            if (self._selected_line is not None and
+                    bus.label in (self._selected_line.from_bus, self._selected_line.to_bus)):
+                self._rotating_line_end = (
+                    'from' if bus.label == self._selected_line.from_bus else 'to')
+                return
             if self._selected_bus is bus:
                 self._clear_selection()
             else:
@@ -821,11 +857,24 @@ class GridDesigner:
                 self._selected_line = None
                 self._selected_unit = None
             return
+        station = self._hit_station(pos)
+        if station is not None:
+            units = self._units_at_station(station)
+            if units:
+                unit = units[0]
+                if self._selected_unit is unit:
+                    self._clear_selection()
+                else:
+                    self._selected_unit = unit
+                    self._selected_bus  = None
+                    self._selected_line = None
+                return
         line = self._hit_line(pos)
         if line is not None:
             self._selected_line = line
             self._selected_bus  = None
             self._selected_unit = None
+            self._rotating_line_end = None
             return
         self._clear_selection()
 
@@ -836,6 +885,11 @@ class GridDesigner:
         if bus is not None:
             self._push_undo()
             self._remove_bus(bus)
+            return
+        station_label = self._hit_station(pos)
+        if station_label is not None:
+            self._push_undo()
+            self._remove_station(station_label)
             return
         line = self._hit_line(pos)
         if line is not None:
@@ -855,6 +909,9 @@ class GridDesigner:
             self._used_line_labels.discard(self._selected_line.label)
             self._selected_line = None
             self._mark_dirty()
+        elif self._selected_unit is not None:
+            self._push_undo()
+            self._remove_station(self._selected_unit.station_label)
 
     def _remove_bus(self, bus: DesignerBus) -> None:
         lbl = bus.label
@@ -864,6 +921,11 @@ class GridDesigner:
         self._units  = [u for u in self._units  if u.bus_label != lbl]
         self._used_bus_labels.discard(lbl)
         self._used_line_labels = {l.label for l in self._lines}
+        self._clear_selection()
+        self._mark_dirty()
+
+    def _remove_station(self, station_label: str) -> None:
+        self._units = [u for u in self._units if u.station_label != station_label]
         self._clear_selection()
         self._mark_dirty()
 
@@ -971,6 +1033,35 @@ class GridDesigner:
             if self._selected_line is not None:
                 self._start_edit('reactance_pu', f'{self._selected_line.reactance_pu:.4f}')
 
+        elif action == 'edit_peak_load_mw':
+            if self._selected_bus is not None:
+                self._start_edit('peak_load_mw', f'{self._selected_bus.peak_load_mw:.0f}')
+
+        elif action == 'prop_unit_cycle_next':
+            if self._selected_unit is not None:
+                sibs = self._units_at_station(self._selected_unit.station_label)
+                if len(sibs) > 1:
+                    idx = sibs.index(self._selected_unit)
+                    self._selected_unit = sibs[(idx + 1) % len(sibs)]
+
+        elif action == 'prop_unit_cycle_prev':
+            if self._selected_unit is not None:
+                sibs = self._units_at_station(self._selected_unit.station_label)
+                if len(sibs) > 1:
+                    idx = sibs.index(self._selected_unit)
+                    self._selected_unit = sibs[(idx - 1) % len(sibs)]
+
+        elif action == 'edit_start_mw':
+            if self._selected_unit is not None:
+                u = self._selected_unit
+                start_val = u.start_mw if u.start_mw >= 0 else u.rated_mw * 0.5
+                self._start_edit('start_mw', f'{start_val:.0f}')
+
+        elif action == 'prop_unit_in_service_toggle':
+            if self._selected_unit is not None:
+                self._selected_unit.in_service = not self._selected_unit.in_service
+                self._mark_dirty()
+
         elif action == 'edit_analysis_unit_mw':
             if self._selected_unit is not None:
                 mw = self._analysis_unit_mw.get(self._selected_unit.label,
@@ -1039,6 +1130,12 @@ class GridDesigner:
                 self._mark_dirty()
             except ValueError:
                 pass
+        elif self._selected_bus is not None and field == 'peak_load_mw':
+            try:
+                self._selected_bus.peak_load_mw = max(0.0, float(val))
+                self._mark_dirty()
+            except ValueError:
+                pass
         elif self._selected_unit is not None and field == 'analysis_unit_mw':
             try:
                 u  = self._selected_unit
@@ -1052,6 +1149,13 @@ class GridDesigner:
                 mw = max(0.0, float(val))
                 self._analysis_bus_load_mw[self._selected_bus.label] = mw
                 self._analysis_result = None
+            except ValueError:
+                pass
+        elif self._selected_unit is not None and field == 'start_mw':
+            try:
+                u = self._selected_unit
+                u.start_mw = max(0.0, min(u.rated_mw, float(val)))
+                self._mark_dirty()
             except ValueError:
                 pass
         self._editing_field = None
@@ -1070,6 +1174,18 @@ class GridDesigner:
             self._selected_unit.active_from_shift = max(1, min(10,
                 self._selected_unit.active_from_shift + delta))
             self._mark_dirty()
+
+    def _cycle_line_port(self, line: DesignerLine, end: str) -> None:
+        """Advance one endpoint of a line to the next of its bus's 8 fixed
+        attachment ports (cosmetic — does not change from_bus/to_bus)."""
+        override = line.from_port_override if end == 'from' else line.to_port_override
+        idx = (_PORT_CYCLE.index(override) + 1) % len(_PORT_CYCLE) if override else 0
+        new_port = _PORT_CYCLE[idx]
+        if end == 'from':
+            line.from_port_override = new_port
+        else:
+            line.to_port_override = new_port
+        self._mark_dirty()
 
     # ─── Dialog handling ─────────────────────────────────────────────────────
 

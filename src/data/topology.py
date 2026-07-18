@@ -120,6 +120,12 @@ class Line:
         parallel:          Perpendicular draw offset direction for double-circuit
                            pairs (+1 / -1); 0 for single-circuit lines. Display
                            only — has no electrical meaning.
+        from_port_override: Manual attachment-port override for the from_bus
+                           end, (side, slot) e.g. ('N', 0), or None for the
+                           automatic bearing-derived port. Display only — has
+                           no electrical meaning. Set via the Grid Designer's
+                           line-rotate feature.
+        to_port_override:  Same as from_port_override, for the to_bus end.
     """
     label:              str
     from_bus:           str
@@ -130,6 +136,8 @@ class Line:
     voltage_kv:         float
     active_until_shift: int = 99
     parallel:           int = 0
+    from_port_override: tuple[str, int] | None = None
+    to_port_override:   tuple[str, int] | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

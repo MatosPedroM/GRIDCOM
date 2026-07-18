@@ -281,9 +281,18 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         _label(surf, font, PAD, y, f'TYPE:    {bus.bus_type}', COL_TEXT_SECONDARY)
         y += ROW_H
         if bus.bus_type == 'LOAD':
-            _label(surf, font, PAD, y, f'PK LOAD: {bus.peak_load_mw:.0f} MW',
-                   COL_TEXT_SECONDARY)
-            y += ROW_H
+            editing_pk = (designer._editing_field == 'peak_load_mw')
+            pk_disp = designer._edit_buffer if editing_pk else f'{bus.peak_load_mw:.0f}'
+            field_col = COL_DESIGNER_FIELD_ACTIVE if editing_pk else COL_PANEL_BORDER
+            _label(surf, font, PAD, y, 'PK LOAD:', COL_TEXT_SECONDARY)
+            pk_rect = pygame.Rect(80, y - 2, 90, ROW_H + 2)
+            pygame.draw.rect(surf, (0, 0, 0), pk_rect)
+            pygame.draw.rect(surf, field_col, pk_rect, 1)
+            _label(surf, font, 84, y,
+                   (pk_disp + '_') if editing_pk else (pk_disp + ' MW'), COL_TEXT_VALUE)
+            if not editing_pk:
+                _hit_rects.append(('edit_peak_load_mw', pk_rect))
+            y += ROW_H + 2
 
             if designer._sidebar_mode == 'analysis':
                 editing_al = (designer._editing_field == 'analysis_bus_load_mw')
@@ -398,6 +407,50 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         y += ROW_H
         _label(surf, font, PAD, y, f'MIN:     {unit.min_mw:.0f} MW',   COL_TEXT_SECONDARY)
         y += ROW_H
+
+        sibs = designer._units_at_station(unit.station_label)
+        if len(sibs) > 1:
+            idx = sibs.index(unit)
+            _label(surf, font, PAD, y, f'UNIT {idx + 1}/{len(sibs)}', COL_TEXT_SECONDARY)
+            prev_r = pygame.Rect(150, y - 2, 22, ROW_H)
+            next_r = pygame.Rect(176, y - 2, 22, ROW_H)
+            pygame.draw.rect(surf, (30, 30, 30), prev_r)
+            pygame.draw.rect(surf, COL_PANEL_BORDER, prev_r, 1)
+            pygame.draw.rect(surf, (30, 30, 30), next_r)
+            pygame.draw.rect(surf, COL_PANEL_BORDER, next_r, 1)
+            _label(surf, font, prev_r.x + 6, prev_r.y + 2, '<', COL_TEXT_PRIMARY)
+            _label(surf, font, next_r.x + 6, next_r.y + 2, '>', COL_TEXT_PRIMARY)
+            _hit_rects.append(('prop_unit_cycle_prev', prev_r))
+            _hit_rects.append(('prop_unit_cycle_next', next_r))
+            y += ROW_H + 2
+
+        # Editable starting dispatch (test-session default)
+        editing_sm = (designer._editing_field == 'start_mw')
+        sm_disp = designer._edit_buffer if editing_sm else (
+            f'{unit.start_mw:.0f}' if unit.start_mw >= 0 else '(auto: 50%)')
+        field_col = COL_DESIGNER_FIELD_ACTIVE if editing_sm else COL_PANEL_BORDER
+        _label(surf, font, PAD, y, 'START MW:', COL_TEXT_SECONDARY)
+        y += ROW_H
+        sm_rect = pygame.Rect(PAD, y - 2, 100, ROW_H + 2)
+        pygame.draw.rect(surf, (0, 0, 0), sm_rect)
+        pygame.draw.rect(surf, field_col, sm_rect, 1)
+        _label(surf, font, PAD + 4, y,
+               (sm_disp + '_') if editing_sm else sm_disp, COL_TEXT_VALUE)
+        if not editing_sm:
+            _hit_rects.append(('edit_start_mw', sm_rect))
+        y += ROW_H + 2
+
+        # In-service toggle (test-session availability, persisted)
+        insvc = unit.in_service
+        insvc_col = COL_TEXT_GOOD if insvc else COL_TEXT_CRIT
+        insvc_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, ROW_H + 2)
+        pygame.draw.rect(surf, (0, 0, 0), insvc_rect)
+        pygame.draw.rect(surf, insvc_col, insvc_rect, 1)
+        _label(surf, font, PAD + 4, y + 2,
+               'IN SERVICE' if insvc else 'OUT OF SERVICE', insvc_col)
+        _hit_rects.append(('prop_unit_in_service_toggle', insvc_rect))
+        y += ROW_H + 4
+
         _label(surf, font, PAD, y, f'SHIFT FROM: {unit.active_from_shift}',
                COL_TEXT_SECONDARY)
         minus_r = pygame.Rect(150, y - 2, 22, ROW_H)
@@ -664,7 +717,9 @@ def _draw_load_browser(surf, font, font_bold, designer, test_mode: bool = False)
 
 def _draw_footer(surf, font, designer, y0: int) -> None:
     _label(surf, font, PAD, y0,
-           'ESC: deselect/exit  DEL: delete  E: edit label  R: rotate anchor',
+           'ESC: deselect/exit  DEL: delete  E: edit label  '
+           'R: rotate anchor / line port (select endpoint bus first)  '
+           'Ctrl+L: line colour view',
            COL_TEXT_DIM)
 
 

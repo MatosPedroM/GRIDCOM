@@ -28,7 +28,7 @@ from display.canvas import GridCanvas
 from display.geometry import point_segment_dist
 from display.context import draw_unit_context, draw_bus_context, draw_line_context
 from display.editor import GridEditor
-from display.animation import FlowAnimator
+from display.symbols import draw_load_triangles
 from display.panels import (
     draw_frequency_panel, draw_power_panel,
     draw_dispatch_panel, draw_alarm_panel,
@@ -50,7 +50,6 @@ from simulation.constants import (
     PANEL_FORECAST_X, PANEL_FORECAST_W,
     PANEL_GENMIX_X, PANEL_GENMIX_W,
     PANEL_ALARM_X, PANEL_ALARM_W,
-    FLOW_ANIMATION,
     TEXT_SCREEN_FONT_SIZE, TEXT_SCREEN_TOP_MARGIN, TEXT_SCREEN_ROW_H,
     MENU_FONT_SIZE, MENU_ROW_H, MENU_TOP_MARGIN,
 )
@@ -124,7 +123,6 @@ class Renderer:
             f'SHIFT {shift}  —  {_difficulty_label.upper()}'
             if _difficulty_label else f'SHIFT {shift}'
         )
-        self._flow   = FlowAnimator()
 
         # Grid reference for dispatch panel (set by main via set_grid)
         self._grid = None
@@ -576,7 +574,7 @@ class Renderer:
         Args:
             dt_real_s:  Real-time delta in seconds since last frame.
             state:      Current SimulationState, or None for static view.
-            speed_mult: Current simulation speed multiplier (for flow markers).
+            speed_mult: Current simulation speed multiplier.
         """
         # Track whether the blink phase changed this frame — drives display dirty.
         prev_blink_on    = self._blink_on
@@ -615,11 +613,10 @@ class Renderer:
         if self._canvas._canvas_key != prev_canvas_key:
             native_changed = True
 
-        # ── Flow markers (drawn on top of canvas) ─────────────────────────────
-        if state is not None and FLOW_ANIMATION:
-            self._flow.update(dt_real_s, speed_mult)
-            self._flow.draw(self._canvas_surf, state,
-                            self._canvas._line_waypoints, self._canvas._lines)
+        # ── Line load triangles (drawn on top of canvas) ──────────────────────
+        if state is not None:
+            draw_load_triangles(self._canvas_surf, state,
+                                self._canvas._lines, self._canvas._line_waypoints)
             native_changed = True
 
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─

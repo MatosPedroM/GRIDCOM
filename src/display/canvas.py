@@ -115,6 +115,14 @@ def assign_line_ports(
     the shipped topology (max bus degree is 7) but degrades to cosmetic
     overlap rather than raising if it ever does.
 
+    A line may carry a manual per-end override (Grid Designer's line-rotate
+    feature: `from_port_override` / `to_port_override`, each a (side, slot)
+    tuple or None) — when set for an end, that end's port is taken directly
+    instead of being derived from bearing, and is reserved so no auto-assigned
+    line on the same bus/side collides with it. Only DesignerLine carries
+    these attributes; the production Line dataclass does not, so getattr()
+    with a None default keeps this safe for both.
+
     Returns:
         dict[line_label, (fx, fy, tx, ty)] — resolved port for from_bus and
         to_bus respectively.
@@ -122,14 +130,27 @@ def assign_line_ports(
     bus_map = {b.label: b for b in buses}
     line_map = {l.label: l for l in lines}
 
-    # bus_label -> list of (line_label, other_dx, other_dy)
+    def _override_for(line, bus_label: str):
+        if line.from_bus == bus_label:
+            return getattr(line, 'from_port_override', None)
+        return getattr(line, 'to_port_override', None)
+
+    # bus_label -> list of (line_label, other_dx, other_dy), auto-assigned
+    # lines only — overridden ends are handled separately below.
     per_bus: dict[str, list[tuple[str, int, int]]] = {}
+    # bus_label -> line_label -> (side, slot), pre-seeded with overrides.
+    port_slot: dict[str, dict[str, tuple[str, int]]] = {}
     for bus in buses:
         cx, cy = bus_pos[bus.label]
         entries = []
+        slots: dict[str, tuple[str, int]] = {}
         for lbl in bus_lines.get(bus.label, []):
             line = line_map.get(lbl)
             if line is None:
+                continue
+            override = _override_for(line, bus.label)
+            if override is not None:
+                slots[lbl] = tuple(override)
                 continue
             other_lbl = line.to_bus if line.from_bus == bus.label else line.from_bus
             if other_lbl not in bus_pos:
@@ -137,10 +158,10 @@ def assign_line_ports(
             ox, oy = bus_pos[other_lbl]
             entries.append((lbl, ox - cx, oy - cy))
         per_bus[bus.label] = entries
+        port_slot[bus.label] = slots
 
-    # bus_label -> line_label -> (side, slot)
-    port_slot: dict[str, dict[str, tuple[str, int]]] = {}
     for bus_label, entries in per_bus.items():
+        reserved = set(port_slot[bus_label].values())
         sides: dict[str, list[tuple[str, int]]] = {'N': [], 'S': [], 'E': [], 'W': []}
         for lbl, dx, dy in entries:
             if abs(dx) > abs(dy):
@@ -151,13 +172,16 @@ def assign_line_ports(
                 secondary = dx
             sides[side].append((lbl, secondary))
 
-        slots: dict[str, tuple[str, int]] = {}
+        slots = port_slot[bus_label]
         for side, members in sides.items():
             members.sort(key=lambda m: (m[1], m[0]))
+            free_slots = [s for s in (0, 1) if (side, s) not in reserved]
             for i, (lbl, _secondary) in enumerate(members):
-                slot = 0 if i == 0 else 1  # overflow (i >= 2) stacks on slot 1
+                if free_slots:
+                    slot = free_slots[0] if i == 0 else free_slots[-1]
+                else:
+                    slot = 1  # both slots reserved by overrides — cosmetic overlap
                 slots[lbl] = (side, slot)
-        port_slot[bus_label] = slots
 
     line_ports: dict[str, tuple[int, int, int, int]] = {}
     for line in lines:
@@ -437,6 +461,21 @@ class GridCanvas:
             if state.line_status.get(lbl) == 'IN_SERVICE':
                 best = max(best, state.line_loading_pct.get(lbl, 0.0))
         return best
+
+    def _bus_connected_tiers(self, bus_label: str) -> tuple[float, ...]:
+        """
+        Return the distinct voltage tiers of lines connected to a bus, sorted
+        descending by kV. Used to fill the substation symbol by voltage tier
+        instead of loading when the 'L' (voltage_view) toggle is on — see
+        draw_substation()/draw_load_substation().
+        """
+        line_map = {l.label: l for l in self._lines}
+        tiers: set[float] = set()
+        for lbl in self._bus_lines.get(bus_label, []):
+            line = line_map.get(lbl)
+            if line is not None:
+                tiers.add(line.voltage_kv)
+        return tuple(sorted(tiers, reverse=True))
 
     def load_designer_topology(
         self,
@@ -737,9 +776,11 @@ class GridCanvas:
             blacked  = bus_blacked.get(bus.label, False)
             selected = (selected_label == bus.label)
             loading  = self._bus_max_loading(bus.label, state)
+            tiers    = self._bus_connected_tiers(bus.label)
             if bus.bus_type == 'LOAD':
                 draw_load_substation(target, bx, by,
                                      voltage_kv=bus.voltage_kv,
+                                     connected_tiers=tiers,
                                      loading_pct=loading,
                                      blacked=blacked, selected=selected,
                                      scale=self._scale,
@@ -747,6 +788,7 @@ class GridCanvas:
             else:
                 draw_substation(target, bx, by,
                                 voltage_kv=bus.voltage_kv,
+                                connected_tiers=tiers,
                                 loading_pct=loading,
                                 blacked=blacked, selected=selected,
                                 scale=self._scale,

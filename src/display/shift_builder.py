@@ -69,9 +69,12 @@ class ShiftBuilder:
         self._letterbox = pygame.Rect(ox, oy,
                                       int(NATIVE_WIDTH * self._scale),
                                       int(NATIVE_HEIGHT * self._scale))
-        self._native = pygame.Surface((NATIVE_WIDTH, NATIVE_HEIGHT))
+        # Native surface, sized to the real (scaled) display resolution so
+        # text is rasterized directly at final pixel size instead of being
+        # bitmap-stretched afterward (matches Renderer's approach).
+        self._native = pygame.Surface((self._letterbox.width, self._letterbox.height)).convert()
 
-        _font_path = resource_path('assets/fonts/IBMPlexMono-Regular.ttf')
+        _font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
         try:
             self._font       = pygame.freetype.Font(_font_path, SHIFT_BUILDER_FONT_SIZE)
             self._font_large = pygame.freetype.Font(_font_path, SHIFT_BUILDER_FONT_SIZE_LARGE)
@@ -206,10 +209,9 @@ class ShiftBuilder:
         if self._status_timer > 0.0:
             self._status_timer -= dt
         self._draw()
-        scaled = pygame.transform.smoothscale(
-            self._native, (self._letterbox.width, self._letterbox.height))
+        # self._native is already sized at display resolution — blit 1:1, no resize.
         display_surf.fill(COL_BACKGROUND)
-        display_surf.blit(scaled, self._letterbox.topleft)
+        display_surf.blit(self._native, self._letterbox.topleft)
 
     # ─── Status / dirty helpers ────────────────────────────────────────────
 
@@ -573,4 +575,4 @@ class ShiftBuilder:
     def _draw(self) -> None:
         from display.shift_builder_panels import draw_shift_builder
         self._native.fill(COL_BACKGROUND)
-        draw_shift_builder(self._native, self, self._font, self._font_large)
+        draw_shift_builder(self._native, self, self._font, self._font_large, self._scale)

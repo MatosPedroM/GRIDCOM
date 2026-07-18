@@ -113,11 +113,13 @@ class GridDesigner:
                                       int(NATIVE_WIDTH  * self._scale),
                                       int(NATIVE_HEIGHT * self._scale))
 
-        # Native surface (1920×1080)
-        self._native = pygame.Surface((NATIVE_WIDTH, NATIVE_HEIGHT))
+        # Native surface, sized to the real (scaled) display resolution so
+        # text is rasterized directly at final pixel size instead of being
+        # bitmap-stretched afterward (matches Renderer's approach).
+        self._native = pygame.Surface((self._letterbox.width, self._letterbox.height)).convert()
 
-        # Fonts — use the same IBMPlexMono as the main renderer
-        _font_path = resource_path('assets/fonts/IBMPlexMono-Regular.ttf')
+        # Fonts — same JetBrains Mono as the in-game renderer
+        _font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
         try:
             self._font       = pygame.freetype.Font(_font_path, DESIGNER_FONT_SIZE)
             self._font_bold  = pygame.freetype.Font(_font_path, DESIGNER_FONT_SIZE)
@@ -1260,11 +1262,9 @@ class GridDesigner:
         # Update status timer
         # (caller must track dt; status drawn as long as text is set)
 
-        # Blit scaled to display
-        scaled = pygame.transform.scale(surf,
-                                        (self._letterbox.width, self._letterbox.height))
+        # surf is already sized at display resolution — blit 1:1, no resize.
         display_surf.fill((0, 0, 0))
-        display_surf.blit(scaled, self._letterbox.topleft)
+        display_surf.blit(surf, self._letterbox.topleft)
 
     def tick(self, dt: float, display_surf: pygame.Surface) -> None:
         """Update timers and draw."""
@@ -1313,14 +1313,16 @@ class GridDesigner:
             # shift=0 sentinel — never actually used; load_designer_topology()
             # immediately replaces everything __init__ would have populated
             # from get_buses_by_shift(0).
-            self._canvas = GridCanvas(shift=0, font=self._font, scale=1.0)
+            self._canvas = GridCanvas(shift=0, font=self._font, scale=self._scale)
         self._canvas.load_designer_topology(real_buses, real_lines, real_units,
                                             station_positions, label_anchors)
         self._canvas_dirty = False
 
     def _draw_canvas(self, surf: pygame.Surface) -> None:
         # Canvas clip region — occupies the right side, sidebar is on the left
-        canvas_rect = pygame.Rect(DESIGNER_SIDEBAR_W, 0, DESIGNER_CANVAS_W, CANVAS_HEIGHT)
+        sc = self._scale
+        canvas_rect = pygame.Rect(int(DESIGNER_SIDEBAR_W * sc), 0,
+                                  int(DESIGNER_CANVAS_W * sc), int(CANVAS_HEIGHT * sc))
         pygame.draw.rect(surf, (10, 10, 10), canvas_rect)
 
         if self._canvas_dirty:
@@ -1342,12 +1344,15 @@ class GridDesigner:
         Designer-only chrome drawn on top of GridCanvas's blit: selected-line
         highlight, ghost line while drawing, delete-mode cursor, mode hint,
         and (when in analysis mode) loading-% labels / out-of-service marks.
+
+        All positions here originate from logical native-space (bus
+        canvas_x/y, mouse_pos, GridCanvas waypoints are all in real display
+        pixels since GridCanvas itself draws at self._scale) — everything
+        computed from logical dataclass fields must be scaled by sc before
+        drawing onto surf, which is sized at display resolution.
         """
-        # While actively dragging a bus, GridCanvas's last-synced routing is
-        # stale (a full resync is deferred to drag-end for performance — see
-        # on_mouse_move). Cover the dragged bus's own lines with a cheap
-        # straight-line ghost that tracks the live position, so the display
-        # doesn't visibly lag behind the mouse.
+        sc = self._scale
+
         if self._dragging_bus is not None:
             dx, dy = self._dragging_bus.canvas_x, self._dragging_bus.canvas_y
             for l in self._lines:
@@ -1362,8 +1367,8 @@ class GridDesigner:
                 if other is None:
                     continue
                 col = _VOLT_LINE_COLOUR.get(l.voltage_kv, COL_LINE_NORMAL)
-                pygame.draw.line(surf, col, (dx, dy),
-                                 (other.canvas_x, other.canvas_y), 1)
+                pygame.draw.line(surf, col, (int(dx * sc), int(dy * sc)),
+                                 (int(other.canvas_x * sc), int(other.canvas_y * sc)), 1)
 
         # Same deferred-resync trick for a dragged station: draw a cheap
         # collector-line ghost to its bus plus an outline marker at the
@@ -1375,14 +1380,14 @@ class GridDesigner:
             if station_units:
                 bus = self._bus_by_label(station_units[0].bus_label)
                 if bus is not None:
-                    pygame.draw.line(surf, COL_LINE_NORMAL, (sx, sy),
-                                     (bus.canvas_x, bus.canvas_y), 1)
+                    pygame.draw.line(surf, COL_LINE_NORMAL, (int(sx * sc), int(sy * sc)),
+                                     (int(bus.canvas_x * sc), int(bus.canvas_y * sc)), 1)
                 pygame.draw.rect(surf, COL_SELECTION,
-                                 pygame.Rect(sx - 8, sy - 8, 16, 16), 1)
+                                 pygame.Rect(int((sx - 8) * sc), int((sy - 8) * sc),
+                                            int(16 * sc), int(16 * sc)), 1)
 
-        # Selected-line highlight — GridCanvas has no line-selection concept
-        # of its own (production gameplay only has click-to-trip), so redraw
-        # a highlight stroke along the line's already-computed waypoints.
+        # Selected-line highlight — waypoints come from GridCanvas, which
+        # already draws at self._scale, so they're already in display pixels.
         if self._selected_line is not None and self._canvas is not None:
             waypoints = self._canvas._line_waypoints.get(self._selected_line.label)
             if waypoints:
@@ -1416,7 +1421,8 @@ class GridDesigner:
                 mx, my = waypoints[max(0, mid_idx - 1)]
                 mx2, my2 = waypoints[min(len(waypoints) - 1, mid_idx)]
                 lx, ly = (mx + mx2) // 2, (my + my2) // 2
-                self._font.render_to(surf, (lx - 8, ly - 4), f'{pct:.0f}%', pcol)
+                self._font.render_to(surf, (lx - int(8 * sc), ly - int(4 * sc)),
+                                     f'{pct:.0f}%', pcol, size=int(DESIGNER_FONT_SIZE * sc))
 
         # Ghost line while in LINE mode and first bus chosen — not yet a
         # real line with ports/routing (no second endpoint exists yet), so a
@@ -1427,14 +1433,15 @@ class GridDesigner:
             mx, my = self._mouse_pos
             if mx >= DESIGNER_SIDEBAR_W:
                 pygame.draw.line(surf, COL_DESIGNER_LINE_DRAW,
-                                 (fx, fy), (mx, my), 1)
+                                 (int(fx * sc), int(fy * sc)), (int(mx * sc), int(my * sc)), 1)
 
         # Delete cursor hint
         if self._palette_mode == MODE_DELETE:
             mx, my = self._mouse_pos
             if mx >= DESIGNER_SIDEBAR_W:
                 pygame.draw.circle(surf, COL_DESIGNER_DELETE_CURSOR,
-                                   (mx, my), DESIGNER_HIT_RADIUS, 1)
+                                   (int(mx * sc), int(my * sc)),
+                                   int(DESIGNER_HIT_RADIUS * sc), 1)
 
         # Mode hint bottom-left of canvas
         bus_hint = (f'PLACE BUS  150kV LOAD  (click canvas)' if self._palette_load_toggle
@@ -1449,14 +1456,16 @@ class GridDesigner:
         }
         hint = hint_map.get(self._palette_mode, '')
         if hint:
-            self._font.render_to(surf, (DESIGNER_SIDEBAR_W + 8, CANVAS_HEIGHT - 20), hint,
-                                 COL_DESIGNER_STATUS_INFO)
+            self._font.render_to(surf,
+                                 (int((DESIGNER_SIDEBAR_W + 8) * sc), int((CANVAS_HEIGHT - 20) * sc)),
+                                 hint, COL_DESIGNER_STATUS_INFO, size=int(DESIGNER_FONT_SIZE * sc))
 
     def _draw_sidebar(self, surf: pygame.Surface) -> None:
         from display.designer_panels import draw_sidebar
+        sc = self._scale
         sidebar_surf = surf.subsurface(
-            (0, 0, DESIGNER_SIDEBAR_W, NATIVE_HEIGHT))
-        draw_sidebar(sidebar_surf, self, self._font, self._font_bold)
+            (0, 0, int(DESIGNER_SIDEBAR_W * sc), int(NATIVE_HEIGHT * sc)))
+        draw_sidebar(sidebar_surf, self, self._font, self._font_bold, sc)
 
     def get_sidebar_mode(self) -> str:
         return self._sidebar_mode
@@ -1464,33 +1473,37 @@ class GridDesigner:
     def _draw_dialog(self, surf: pygame.Surface) -> None:
         if not self._dialog_active:
             return
+        sc = self._scale
         # Modal dialog box centred on the canvas region (right of the sidebar)
-        dw, dh = 500, 90
-        dx = DESIGNER_SIDEBAR_W + (DESIGNER_CANVAS_W - dw) // 2
-        dy = (CANVAS_HEIGHT     - dh) // 2
+        dw, dh = int(500 * sc), int(90 * sc)
+        dx = int(DESIGNER_SIDEBAR_W * sc) + (int(DESIGNER_CANVAS_W * sc) - dw) // 2
+        dy = (int(CANVAS_HEIGHT * sc) - dh) // 2
+        fsz = int(DESIGNER_FONT_SIZE * sc)
         pygame.draw.rect(surf, (0, 0, 0), (dx, dy, dw, dh))
         pygame.draw.rect(surf, COL_PANEL_BORDER, (dx, dy, dw, dh), 1)
-        self._font.render_to(surf, (dx + 10, dy + 12), self._dialog_prompt,
-                             COL_TEXT_PRIMARY)
+        self._font.render_to(surf, (dx + int(10 * sc), dy + int(12 * sc)),
+                             self._dialog_prompt, COL_TEXT_PRIMARY, size=fsz)
         # Input field
-        field_rect = pygame.Rect(dx + 10, dy + 40, dw - 20, 28)
+        field_rect = pygame.Rect(dx + int(10 * sc), dy + int(40 * sc),
+                                 dw - int(20 * sc), int(28 * sc))
         pygame.draw.rect(surf, (0, 40, 0), field_rect)
         pygame.draw.rect(surf, COL_PANEL_BORDER, field_rect, 1)
-        self._font.render_to(surf, (dx + 14, dy + 46),
-                             self._dialog_buffer + '_', COL_TEXT_VALUE)
+        self._font.render_to(surf, (dx + int(14 * sc), dy + int(46 * sc)),
+                             self._dialog_buffer + '_', COL_TEXT_VALUE, size=fsz)
 
     def _draw_status(self, surf: pygame.Surface) -> None:
         if not self._status_text or self._status_timer <= 0.0:
             return
-        w, _ = surf.get_size()
-        r, g, bb = self._status_colour
-        rect_w = min(700, len(self._status_text) * 9 + 16)
-        rect_x = DESIGNER_SIDEBAR_W + (DESIGNER_CANVAS_W - rect_w) // 2
-        rect_y = CANVAS_HEIGHT - 50
-        pygame.draw.rect(surf, (0, 0, 0), (rect_x, rect_y, rect_w, 28))
-        pygame.draw.rect(surf, self._status_colour, (rect_x, rect_y, rect_w, 28), 1)
-        self._font.render_to(surf, (rect_x + 8, rect_y + 6),
-                             self._status_text, self._status_colour)
+        sc = self._scale
+        rect_w = min(int(700 * sc), int((len(self._status_text) * 9 + 16) * sc))
+        rect_x = int(DESIGNER_SIDEBAR_W * sc) + (int(DESIGNER_CANVAS_W * sc) - rect_w) // 2
+        rect_y = int((CANVAS_HEIGHT - 50) * sc)
+        rect_h = int(28 * sc)
+        pygame.draw.rect(surf, (0, 0, 0), (rect_x, rect_y, rect_w, rect_h))
+        pygame.draw.rect(surf, self._status_colour, (rect_x, rect_y, rect_w, rect_h), 1)
+        self._font.render_to(surf, (rect_x + int(8 * sc), rect_y + int(6 * sc)),
+                             self._status_text, self._status_colour,
+                             size=int(DESIGNER_FONT_SIZE * sc))
 
     # ─── Save-unsaved state ──────────────────────────────────────────────────
 

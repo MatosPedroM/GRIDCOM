@@ -5,8 +5,13 @@ Drawing for ShiftBuilder — a single full-screen form panel, tab-switched
 between META / GRID / SCHEDULE / DEMAND / EVENTS. No canvas; the grid is
 referenced by name only (edited spatially in the Grid Designer instead).
 
-All drawing is done to the native 1920×1080 surface passed by
-ShiftBuilder.tick().
+All drawing coordinates in this file (SHIFT_BUILDER_*, TAB_W, and every
+literal passed to _label()/_rect() below) are expressed in LOGICAL
+(unscaled) 1920×1080 native-space pixels — the same space ShiftBuilder's
+hit-testing (on_click, to_native) operates in. _label()/_rect() are the
+only two places that convert to the surf's actual (scaled) pixel space,
+at the point of drawing — surf itself is sized at real display resolution
+(see ShiftBuilder.tick()).
 """
 
 from __future__ import annotations
@@ -28,9 +33,32 @@ from simulation.constants import (
 
 TAB_W = 160
 
+_scale: float = 1.0
 
-def draw_shift_builder(surf: pygame.Surface, builder, font, font_large) -> None:
+
+def _label(surf, font, x, y, text, colour) -> None:
+    sc = _scale
+    font.render_to(surf, (int(x * sc), int(y * sc)), text, colour,
+                   size=int(font.size * sc))
+
+
+def _rect(surf, colour, x, y, w, h, width: int = 0) -> None:
+    sc = _scale
+    pygame.draw.rect(surf, colour,
+                     (int(x * sc), int(y * sc), int(w * sc), int(h * sc)), width)
+
+
+def _line(surf, colour, p1, p2, width: int = 1) -> None:
+    sc = _scale
+    pygame.draw.line(surf, colour,
+                     (int(p1[0] * sc), int(p1[1] * sc)),
+                     (int(p2[0] * sc), int(p2[1] * sc)), width)
+
+
+def draw_shift_builder(surf: pygame.Surface, builder, font, font_large, scale: float = 1.0) -> None:
     from display.shift_builder import TABS
+    global _scale
+    _scale = scale
 
     _draw_tab_bar(surf, builder, font, TABS)
     _draw_shift_header(surf, builder, font)
@@ -67,11 +95,9 @@ def _draw_tab_bar(surf, builder, font, tabs) -> None:
     for i, name in enumerate(tabs):
         colour = COL_TEXT_HEADING if i == builder._tab_idx else COL_TEXT_SECONDARY
         prefix = '> ' if i == builder._tab_idx else '  '
-        font.render_to(surf, (x, y), f'{prefix}{name}', colour, size=font.size)
+        _label(surf, font, x, y, f'{prefix}{name}', colour)
         x += TAB_W
-    pygame.draw.line(surf, COL_PANEL_BORDER,
-                     (SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H),
-                     (NATIVE_WIDTH - SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H), 1)
+    _line(surf, COL_PANEL_BORDER, (SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H), (NATIVE_WIDTH - SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H), 1)
 
 
 def _draw_shift_header(surf, builder, font) -> None:
@@ -81,17 +107,16 @@ def _draw_shift_header(surf, builder, font) -> None:
     dirty = ' *' if builder._dirty else ''
     grid = shift.grid or '(none)'
     text = f'SHIFT: {name}{dirty}    GRID: {grid}    {shift.start_hour:.1f}h + {shift.duration_hours:.1f}h'
-    font.render_to(surf, (SHIFT_BUILDER_LEFT_MARGIN, y), text, COL_TEXT_VALUE, size=font.size)
+    _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y, text, COL_TEXT_VALUE)
 
 
 def _draw_footer(surf, builder, font) -> None:
     y = NATIVE_HEIGHT - 60
     hint = ('[TAB/←→] Tabs  [Ctrl+G] Grid  [Ctrl+S] Save  [Ctrl+O] Load  '
             '[Ctrl+T] Test  [ESC] Exit')
-    font.render_to(surf, (SHIFT_BUILDER_LEFT_MARGIN, y), hint, COL_TEXT_DIM, size=font.size)
+    _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y, hint, COL_TEXT_DIM)
     if builder._status_timer > 0.0 and builder._status_text:
-        font.render_to(surf, (SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H),
-                       builder._status_text, builder._status_colour, size=font.size)
+        _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H, builder._status_text, builder._status_colour)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,17 +136,17 @@ def _draw_meta_tab(surf, builder, font, y0) -> None:
         ('6', 'Add handover note', ''),
     ]
     for key, label, value in rows:
-        font.render_to(surf, (x, y), f'[{key}]', COL_TEXT_DIM, size=font.size)
-        font.render_to(surf, (x + 40, y), label, COL_TEXT_SECONDARY, size=font.size)
+        _label(surf, font, x, y, f'[{key}]', COL_TEXT_DIM)
+        _label(surf, font, x + 40, y, label, COL_TEXT_SECONDARY)
         if value:
-            font.render_to(surf, (x + 280, y), value, COL_TEXT_VALUE, size=font.size)
+            _label(surf, font, x + 280, y, value, COL_TEXT_VALUE)
         y += SHIFT_BUILDER_ROW_H
 
     y += SHIFT_BUILDER_ROW_H // 2
-    font.render_to(surf, (x, y), 'HANDOVER NOTES  (Backspace removes last):', COL_TEXT_HEADING, size=font.size)
+    _label(surf, font, x, y, 'HANDOVER NOTES  (Backspace removes last):', COL_TEXT_HEADING)
     y += SHIFT_BUILDER_ROW_H
     for note in shift.handover_notes:
-        font.render_to(surf, (x + 20, y), f'- {note}', COL_TEXT_PRIMARY, size=font.size)
+        _label(surf, font, x + 20, y, f'- {note}', COL_TEXT_PRIMARY)
         y += SHIFT_BUILDER_ROW_H
 
 
@@ -133,17 +158,16 @@ def _draw_grid_tab(surf, builder, font, y0) -> None:
     x = SHIFT_BUILDER_LEFT_MARGIN
     y = y0
     shift = builder._shift
-    font.render_to(surf, (x, y), f'GRID: {shift.grid or "(none — press G to select)"}',
-                   COL_TEXT_HEADING, size=font.size)
+    _label(surf, font, x, y, f'GRID: {shift.grid or "(none — press G to select)"}',
+                   COL_TEXT_HEADING)
     y += SHIFT_BUILDER_ROW_H * 2
 
     if not builder._grid_units:
-        font.render_to(surf, (x, y), '(no grid loaded)', COL_TEXT_DIM, size=font.size)
+        _label(surf, font, x, y, '(no grid loaded)', COL_TEXT_DIM)
         return
 
-    font.render_to(surf, (x, y),
-                   'MAINTENANCE UNITS  [SPACE] toggle  (units on maintenance start OFFLINE and locked):',
-                   COL_TEXT_SECONDARY, size=font.size)
+    _label(surf, font, x, y, 'MAINTENANCE UNITS  [SPACE] toggle  (units on maintenance start OFFLINE and locked):',
+                   COL_TEXT_SECONDARY)
     y += SHIFT_BUILDER_ROW_H
 
     visible_rows = 24
@@ -154,8 +178,8 @@ def _draw_grid_tab(surf, builder, font, y0) -> None:
         colour = COL_SELECTION if selected else (COL_TEXT_WARN if on_maint else COL_TEXT_PRIMARY)
         prefix = '> ' if selected else '  '
         status = '[MAINTENANCE]' if on_maint else ''
-        font.render_to(surf, (x + 20, y), f'{prefix}{unit.label:<10} {unit.unit_type:<10} {status}',
-                       colour, size=font.size)
+        _label(surf, font, x + 20, y, f'{prefix}{unit.label:<10} {unit.unit_type:<10} {status}',
+                       colour)
         y += SHIFT_BUILDER_ROW_H
 
 
@@ -169,12 +193,11 @@ def _draw_schedule_tab(surf, builder, font, y0) -> None:
     shift = builder._shift
 
     if not builder._grid_units:
-        font.render_to(surf, (x, y), '(select a grid first — GRID tab)', COL_TEXT_DIM, size=font.size)
+        _label(surf, font, x, y, '(select a grid first — GRID tab)', COL_TEXT_DIM)
         return
 
-    font.render_to(surf, (x, y),
-                   'INITIAL DISPATCH  [ENTER] set MW  [Backspace] clear (unit starts OFFLINE):',
-                   COL_TEXT_SECONDARY, size=font.size)
+    _label(surf, font, x, y, 'INITIAL DISPATCH  [ENTER] set MW  [Backspace] clear (unit starts OFFLINE):',
+                   COL_TEXT_SECONDARY)
     y += SHIFT_BUILDER_ROW_H
 
     visible_rows = 24
@@ -185,9 +208,8 @@ def _draw_schedule_tab(surf, builder, font, y0) -> None:
         state_str = f'{mw:.1f} MW' if mw is not None else 'OFFLINE'
         colour = COL_SELECTION if selected else (COL_TEXT_VALUE if mw is not None else COL_TEXT_DIM)
         prefix = '> ' if selected else '  '
-        font.render_to(surf, (x + 20, y),
-                       f'{prefix}{unit.label:<10} rated {unit.rated_mw:6.1f} MW   {state_str}',
-                       colour, size=font.size)
+        _label(surf, font, x + 20, y, f'{prefix}{unit.label:<10} rated {unit.rated_mw:6.1f} MW   {state_str}',
+                       colour)
         y += SHIFT_BUILDER_ROW_H
 
 
@@ -202,20 +224,19 @@ def _draw_demand_tab(surf, builder, font, y0) -> None:
     load_buses = builder._load_buses()
 
     if not load_buses:
-        font.render_to(surf, (x, y), '(select a grid with LOAD buses first)', COL_TEXT_DIM, size=font.size)
+        _label(surf, font, x, y, '(select a grid with LOAD buses first)', COL_TEXT_DIM)
         return
 
-    font.render_to(surf, (x, y),
-                   'HOURLY DEMAND (MW)  [Up/Down] bus  [PgUp/PgDn] hour  [ENTER] set:',
-                   COL_TEXT_SECONDARY, size=font.size)
+    _label(surf, font, x, y, 'HOURLY DEMAND (MW)  [Up/Down] bus  [PgUp/PgDn] hour  [ENTER] set:',
+                   COL_TEXT_SECONDARY)
     y += SHIFT_BUILDER_ROW_H
 
     bus = load_buses[builder._demand_bus_cursor]
     hour = builder._demand_hour_cursor
     hourly = shift.substation_load_mw.get(bus.label, {})
 
-    font.render_to(surf, (x, y), f'BUS: {bus.label}  (peak {bus.peak_load_mw:.0f} MW)',
-                   COL_TEXT_HEADING, size=font.size)
+    _label(surf, font, x, y, f'BUS: {bus.label}  (peak {bus.peak_load_mw:.0f} MW)',
+                   COL_TEXT_HEADING)
     y += SHIFT_BUILDER_ROW_H * 2
 
     cols = 6
@@ -230,7 +251,7 @@ def _draw_demand_tab(surf, builder, font, y0) -> None:
         colour = COL_SELECTION if selected else (COL_TEXT_VALUE if mw is not None else COL_TEXT_DIM)
         val_str = f'{mw:.0f}' if mw is not None else '--'
         prefix = '>' if selected else ' '
-        font.render_to(surf, (cx, cy), f'{prefix}{h:02d}h: {val_str:>6}', colour, size=font.size)
+        _label(surf, font, cx, cy, f'{prefix}{h:02d}h: {val_str:>6}', colour)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -242,9 +263,8 @@ def _draw_events_tab(surf, builder, font, y0) -> None:
     y = y0
     events = builder._shift.events
 
-    font.render_to(surf, (x, y),
-                   'EVENTS  [N] new  [Del] remove  [Up/Down] select:',
-                   COL_TEXT_SECONDARY, size=font.size)
+    _label(surf, font, x, y, 'EVENTS  [N] new  [Del] remove  [Up/Down] select:',
+                   COL_TEXT_SECONDARY)
     y += SHIFT_BUILDER_ROW_H
 
     list_y = y
@@ -252,19 +272,18 @@ def _draw_events_tab(surf, builder, font, y0) -> None:
         selected = (i == builder._events_cursor)
         colour = COL_SELECTION if selected else COL_TEXT_PRIMARY
         prefix = '> ' if selected else '  '
-        font.render_to(surf, (x + 20, list_y),
-                       f'{prefix}T+{evt.trigger_min:>6.1f}min  {evt.priority:<11} {evt.message[:50]}',
-                       colour, size=font.size)
+        _label(surf, font, x + 20, list_y, f'{prefix}T+{evt.trigger_min:>6.1f}min  {evt.priority:<11} {evt.message[:50]}',
+                       colour)
         list_y += SHIFT_BUILDER_ROW_H
 
     if not events:
-        font.render_to(surf, (x + 20, list_y), '(no events)', COL_TEXT_DIM, size=font.size)
+        _label(surf, font, x + 20, list_y, '(no events)', COL_TEXT_DIM)
         return
 
     # Detail editor for the selected event
     detail_y = y0 + SHIFT_BUILDER_ROW_H * 15
     evt = events[builder._events_cursor]
-    pygame.draw.line(surf, COL_PANEL_BORDER, (x, detail_y - 8), (NATIVE_WIDTH - x, detail_y - 8), 1)
+    _line(surf, COL_PANEL_BORDER, (x, detail_y - 8), (NATIVE_WIDTH - x, detail_y - 8), 1)
 
     cond_str = 'none'
     if evt.condition:
@@ -287,9 +306,9 @@ def _draw_events_tab(surf, builder, font, y0) -> None:
     ]
     dy = detail_y
     for key, label, value in detail_rows:
-        font.render_to(surf, (x, dy), f'[{key}]', COL_TEXT_DIM, size=font.size)
-        font.render_to(surf, (x + 40, dy), label, COL_TEXT_SECONDARY, size=font.size)
-        font.render_to(surf, (x + 340, dy), str(value), COL_TEXT_VALUE, size=font.size)
+        _label(surf, font, x, dy, f'[{key}]', COL_TEXT_DIM)
+        _label(surf, font, x + 40, dy, label, COL_TEXT_SECONDARY)
+        _label(surf, font, x + 340, dy, str(value), COL_TEXT_VALUE)
         dy += SHIFT_BUILDER_ROW_H
 
 
@@ -301,35 +320,35 @@ def _draw_text_dialog(surf, font, prompt, buf) -> None:
     w, h = 600, 120
     x = (NATIVE_WIDTH - w) // 2
     y = (NATIVE_HEIGHT - h) // 2
-    pygame.draw.rect(surf, (0, 0, 0), (x, y, w, h))
-    pygame.draw.rect(surf, COL_PANEL_BORDER, (x, y, w, h), 2)
-    font.render_to(surf, (x + 20, y + 20), prompt, COL_TEXT_HEADING, size=font.size)
-    font.render_to(surf, (x + 20, y + 50), buf + '_', COL_DESIGNER_FIELD_ACTIVE, size=font.size)
-    font.render_to(surf, (x + 20, y + 80), '[ENTER] confirm   [ESC] cancel', COL_TEXT_DIM, size=font.size)
+    _rect(surf, (0, 0, 0), x, y, w, h)
+    _rect(surf, COL_PANEL_BORDER, x, y, w, h, 2)
+    _label(surf, font, x + 20, y + 20, prompt, COL_TEXT_HEADING)
+    _label(surf, font, x + 20, y + 50, buf + '_', COL_DESIGNER_FIELD_ACTIVE)
+    _label(surf, font, x + 20, y + 80, '[ENTER] confirm   [ESC] cancel', COL_TEXT_DIM)
 
 
 def _draw_browser(surf, font, title, items, idx) -> None:
     w, h = 600, 500
     x = (NATIVE_WIDTH - w) // 2
     y = (NATIVE_HEIGHT - h) // 2
-    pygame.draw.rect(surf, (0, 0, 0), (x, y, w, h))
-    pygame.draw.rect(surf, COL_PANEL_BORDER, (x, y, w, h), 2)
-    font.render_to(surf, (x + 20, y + 20), title, COL_TEXT_HEADING, size=font.size)
+    _rect(surf, (0, 0, 0), x, y, w, h)
+    _rect(surf, COL_PANEL_BORDER, x, y, w, h, 2)
+    _label(surf, font, x + 20, y + 20, title, COL_TEXT_HEADING)
     if not items:
-        font.render_to(surf, (x + 20, y + 60), '(none saved)', COL_TEXT_DIM, size=font.size)
+        _label(surf, font, x + 20, y + 60, '(none saved)', COL_TEXT_DIM)
     for i, name in enumerate(items):
         colour = COL_SELECTION if i == idx else COL_TEXT_PRIMARY
         prefix = '> ' if i == idx else '  '
-        font.render_to(surf, (x + 20, y + 60 + i * 24), f'{prefix}{name}', colour, size=font.size)
-    font.render_to(surf, (x + 20, y + h - 30), '[ENTER] select   [ESC] cancel', COL_TEXT_DIM, size=font.size)
+        _label(surf, font, x + 20, y + 60 + i * 24, f'{prefix}{name}', colour)
+    _label(surf, font, x + 20, y + h - 30, '[ENTER] select   [ESC] cancel', COL_TEXT_DIM)
 
 
 def _draw_edit_overlay(surf, font, field, buf) -> None:
     w, h = 700, 100
     x = (NATIVE_WIDTH - w) // 2
     y = (NATIVE_HEIGHT - h) // 2
-    pygame.draw.rect(surf, (0, 0, 0), (x, y, w, h))
-    pygame.draw.rect(surf, COL_PANEL_BORDER, (x, y, w, h), 2)
-    font.render_to(surf, (x + 20, y + 15), f'EDIT: {field}', COL_TEXT_HEADING, size=font.size)
-    font.render_to(surf, (x + 20, y + 45), buf + '_', COL_DESIGNER_FIELD_ACTIVE, size=font.size)
-    font.render_to(surf, (x + 20, y + 75), '[ENTER] confirm   [ESC] cancel', COL_TEXT_DIM, size=font.size)
+    _rect(surf, (0, 0, 0), x, y, w, h)
+    _rect(surf, COL_PANEL_BORDER, x, y, w, h, 2)
+    _label(surf, font, x + 20, y + 15, f'EDIT: {field}', COL_TEXT_HEADING)
+    _label(surf, font, x + 20, y + 45, buf + '_', COL_DESIGNER_FIELD_ACTIVE)
+    _label(surf, font, x + 20, y + 75, '[ENTER] confirm   [ESC] cancel', COL_TEXT_DIM)

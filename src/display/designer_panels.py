@@ -38,7 +38,7 @@ from display.palette import (
     COL_DESIGNER_FIELD_ACTIVE, COL_DESIGNER_DELETE_CURSOR,
     COL_SELECTION,
 )
-from simulation.constants import DESIGNER_SIDEBAR_W, NATIVE_HEIGHT
+from simulation.constants import DESIGNER_SIDEBAR_W, NATIVE_HEIGHT, DESIGNER_FONT_SIZE
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,15 +60,19 @@ SECTION_FOOTER_Y   = NATIVE_HEIGHT - 30
 # ─────────────────────────────────────────────────────────────────────────────
 # BUTTON REGISTRY
 # hit_rects holds (action_string, pygame.Rect) per frame; rebuilt each draw.
-# _overlay_rects same for save/load overlay.
+# _overlay_rects same for save/load overlay. Rects are stored in LOGICAL
+# (unscaled) sidebar-local pixels — same space as PAD/ROW_H/BTN_H/etc — so
+# callers must pass logical (sx, sy), matching the original contract.
+# _r() converts a logical rect to actual surf pixels only at draw time.
 # ─────────────────────────────────────────────────────────────────────────────
 
 _hit_rects:     list[tuple[str, pygame.Rect]] = []
 _overlay_rects: list[tuple[str, pygame.Rect]] = []
+_scale: float = 1.0
 
 
 def sidebar_button_at(sx: int, sy: int, designer) -> str | None:
-    """Return the action string for a click at (sx, sy) in sidebar space."""
+    """Return the action string for a click at (sx, sy) in logical sidebar space."""
     for action, rect in _hit_rects:
         if rect.collidepoint(sx, sy):
             return action
@@ -76,7 +80,7 @@ def sidebar_button_at(sx: int, sy: int, designer) -> str | None:
 
 
 def sidebar_overlay_click_at(sx: int, sy: int, designer) -> str | None:
-    """Return the action string for a click inside the save/load overlay."""
+    """Return the action string for a click inside the save/load overlay (logical space)."""
     for action, rect in _overlay_rects:
         if rect.collidepoint(sx, sy):
             return action
@@ -92,11 +96,13 @@ def draw_sidebar(
     designer,
     font: pygame.freetype.Font,
     font_bold: pygame.freetype.Font,
+    scale: float = 1.0,
 ) -> None:
-    """Draw the complete sidebar.  surf is the 320×1080 subsurface."""
-    global _hit_rects, _overlay_rects
+    """Draw the complete sidebar. surf is the scaled sidebar-width × full-height subsurface."""
+    global _hit_rects, _overlay_rects, _scale
     _hit_rects    = []
     _overlay_rects = []
+    _scale = scale
 
     surf.fill(COL_DESIGNER_SIDEBAR_BG)
 
@@ -177,9 +183,9 @@ def _draw_palette(surf, font, font_bold, designer, y0: int) -> int:
                   not designer._palette_load_toggle and
                   designer._palette_voltage == vkv)
         btn_col = col if active else COL_DESIGNER_PALETTE_BTN
-        rect = pygame.Rect(PAD, y, BTN_W, BTN_H)
-        pygame.draw.rect(surf, (0, 0, 0), rect)
-        pygame.draw.rect(surf, btn_col, rect, 1)
+        rect = _r(PAD, y, BTN_W, BTN_H)
+        _draw_rect(surf, (0, 0, 0), rect)
+        _draw_rect(surf, btn_col, rect, 1)
         _label(surf, font, PAD + 4, y + 4, lbl, btn_col)
         _hit_rects.append((action, rect))
         y += BTN_H + 3
@@ -188,9 +194,9 @@ def _draw_palette(surf, font, font_bold, designer, y0: int) -> int:
     load_active = (designer._palette_mode == MODE_BUS and
                    designer._palette_load_toggle)
     load_col = COL_150KV if load_active else COL_DESIGNER_PALETTE_BTN
-    load_rect = pygame.Rect(PAD, y, BTN_W, BTN_H)
-    pygame.draw.rect(surf, (0, 0, 0), load_rect)
-    pygame.draw.rect(surf, load_col, load_rect, 1)
+    load_rect = _r(PAD, y, BTN_W, BTN_H)
+    _draw_rect(surf, (0, 0, 0), load_rect)
+    _draw_rect(surf, load_col, load_rect, 1)
     _label(surf, font, PAD + 4, y + 4, 'LOAD (150kV)', load_col)
     _hit_rects.append(('bus_load_toggle', load_rect))
     y += BTN_H + 3
@@ -216,9 +222,9 @@ def _draw_palette(surf, font, font_bold, designer, y0: int) -> int:
         active = (designer._palette_mode == MODE_UNIT and
                   designer._palette_unit_type == utype)
         btn_col = col if active else COL_DESIGNER_PALETTE_BTN
-        rect = pygame.Rect(PAD, y, BTN_W, BTN_H)
-        pygame.draw.rect(surf, (0, 0, 0), rect)
-        pygame.draw.rect(surf, btn_col, rect, 1)
+        rect = _r(PAD, y, BTN_W, BTN_H)
+        _draw_rect(surf, (0, 0, 0), rect)
+        _draw_rect(surf, btn_col, rect, 1)
         _label(surf, font, PAD + 4, y + 4, utype, btn_col)
         _hit_rects.append((action, rect))
         y += BTN_H + 3
@@ -232,14 +238,14 @@ def _draw_palette(surf, font, font_bold, designer, y0: int) -> int:
     line_col = COL_SELECTION              if line_active else COL_DESIGNER_PALETTE_BTN
 
     half_w = (BTN_W - 4) // 2
-    del_rect  = pygame.Rect(PAD, y, half_w, BTN_H)
-    line_rect = pygame.Rect(PAD + half_w + 4, y, half_w, BTN_H)
+    del_rect  = _r(PAD, y, half_w, BTN_H)
+    line_rect = _r(PAD + half_w + 4, y, half_w, BTN_H)
     for rect, col, lbl, act in (
         (del_rect,  del_col,  'DEL (D)',  'delete'),
         (line_rect, line_col, 'LINE (L)', 'line_mode'),
     ):
-        pygame.draw.rect(surf, (0, 0, 0), rect)
-        pygame.draw.rect(surf, col, rect, 1)
+        _draw_rect(surf, (0, 0, 0), rect)
+        _draw_rect(surf, col, rect, 1)
         _label(surf, font, rect.x + 4, y + 4, lbl, col)
         _hit_rects.append((act, rect))
 
@@ -267,9 +273,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         lbl_disp = designer._edit_buffer if editing_label else bus.label
         field_col = COL_DESIGNER_FIELD_ACTIVE if editing_label else COL_PANEL_BORDER
         _label(surf, font, PAD, y, 'LABEL:', COL_TEXT_SECONDARY)
-        field_rect = pygame.Rect(80, y - 2, 100, ROW_H + 2)
-        pygame.draw.rect(surf, (0, 0, 0), field_rect)
-        pygame.draw.rect(surf, field_col, field_rect, 1)
+        field_rect = _r(80, y - 2, 100, ROW_H + 2)
+        _draw_rect(surf, (0, 0, 0), field_rect)
+        _draw_rect(surf, field_col, field_rect, 1)
         _label(surf, font, 84, y,
                (lbl_disp + '_') if editing_label else lbl_disp,
                COL_TEXT_VALUE)
@@ -285,9 +291,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
             pk_disp = designer._edit_buffer if editing_pk else f'{bus.peak_load_mw:.0f}'
             field_col = COL_DESIGNER_FIELD_ACTIVE if editing_pk else COL_PANEL_BORDER
             _label(surf, font, PAD, y, 'PK LOAD:', COL_TEXT_SECONDARY)
-            pk_rect = pygame.Rect(80, y - 2, 90, ROW_H + 2)
-            pygame.draw.rect(surf, (0, 0, 0), pk_rect)
-            pygame.draw.rect(surf, field_col, pk_rect, 1)
+            pk_rect = _r(80, y - 2, 90, ROW_H + 2)
+            _draw_rect(surf, (0, 0, 0), pk_rect)
+            _draw_rect(surf, field_col, pk_rect, 1)
             _label(surf, font, 84, y,
                    (pk_disp + '_') if editing_pk else (pk_disp + ' MW'), COL_TEXT_VALUE)
             if not editing_pk:
@@ -301,9 +307,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
                 field_col = COL_DESIGNER_FIELD_ACTIVE if editing_al else COL_PANEL_BORDER
                 _label(surf, font, PAD, y, 'ANALYSIS LOAD:', COL_TEXT_SECONDARY)
                 y += ROW_H
-                al_rect = pygame.Rect(PAD, y - 2, 90, ROW_H + 2)
-                pygame.draw.rect(surf, (0, 0, 0), al_rect)
-                pygame.draw.rect(surf, field_col, al_rect, 1)
+                al_rect = _r(PAD, y - 2, 90, ROW_H + 2)
+                _draw_rect(surf, (0, 0, 0), al_rect)
+                _draw_rect(surf, field_col, al_rect, 1)
                 _label(surf, font, PAD + 4, y,
                        (al_disp + '_') if editing_al else (al_disp + ' MW'), COL_TEXT_VALUE)
                 if not editing_al:
@@ -314,12 +320,12 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         y += 4
         _label(surf, font, PAD, y, f'SHIFT FROM: {bus.active_from_shift}', COL_TEXT_SECONDARY)
         # +/- buttons
-        minus_r = pygame.Rect(150, y - 2, 22, ROW_H)
-        plus_r  = pygame.Rect(176, y - 2, 22, ROW_H)
-        pygame.draw.rect(surf, (30, 30, 30), minus_r)
-        pygame.draw.rect(surf, COL_PANEL_BORDER, minus_r, 1)
-        pygame.draw.rect(surf, (30, 30, 30), plus_r)
-        pygame.draw.rect(surf, COL_PANEL_BORDER, plus_r, 1)
+        minus_r = _r(150, y - 2, 22, ROW_H)
+        plus_r  = _r(176, y - 2, 22, ROW_H)
+        _draw_rect(surf, (30, 30, 30), minus_r)
+        _draw_rect(surf, COL_PANEL_BORDER, minus_r, 1)
+        _draw_rect(surf, (30, 30, 30), plus_r)
+        _draw_rect(surf, COL_PANEL_BORDER, plus_r, 1)
         _label(surf, font, minus_r.x + 5, minus_r.y + 2, '-', COL_TEXT_PRIMARY)
         _label(surf, font, plus_r.x  + 5, plus_r.y  + 2, '+', COL_TEXT_PRIMARY)
         _hit_rects.append(('prop_shift_minus', minus_r))
@@ -333,9 +339,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
 
         # Slack toggle
         slack_col = COL_TEXT_GOOD if bus.is_slack else COL_TEXT_DIM
-        slack_rect = pygame.Rect(PAD, y, 120, ROW_H + 2)
-        pygame.draw.rect(surf, (0, 0, 0), slack_rect)
-        pygame.draw.rect(surf, slack_col, slack_rect, 1)
+        slack_rect = _r(PAD, y, 120, ROW_H + 2)
+        _draw_rect(surf, (0, 0, 0), slack_rect)
+        _draw_rect(surf, slack_col, slack_rect, 1)
         _label(surf, font, PAD + 4, y + 2,
                'SLACK BUS' if bus.is_slack else 'Set as slack', slack_col)
         _hit_rects.append(('prop_slack_toggle', slack_rect))
@@ -356,9 +362,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         x_disp = designer._edit_buffer if editing_x else f'{line.reactance_pu:.4f}'
         field_col = COL_DESIGNER_FIELD_ACTIVE if editing_x else COL_PANEL_BORDER
         _label(surf, font, PAD, y, 'X PU:', COL_TEXT_SECONDARY)
-        xf_rect = pygame.Rect(70, y - 2, 100, ROW_H + 2)
-        pygame.draw.rect(surf, (0, 0, 0), xf_rect)
-        pygame.draw.rect(surf, field_col, xf_rect, 1)
+        xf_rect = _r(70, y - 2, 100, ROW_H + 2)
+        _draw_rect(surf, (0, 0, 0), xf_rect)
+        _draw_rect(surf, field_col, xf_rect, 1)
         _label(surf, font, 74, y,
                (x_disp + '_') if editing_x else x_disp, COL_TEXT_VALUE)
         if not editing_x:
@@ -373,12 +379,12 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         # Shift
         _label(surf, font, PAD, y, f'SHIFT FROM: {line.active_from_shift}',
                COL_TEXT_SECONDARY)
-        minus_r = pygame.Rect(150, y - 2, 22, ROW_H)
-        plus_r  = pygame.Rect(176, y - 2, 22, ROW_H)
-        pygame.draw.rect(surf, (30, 30, 30), minus_r)
-        pygame.draw.rect(surf, COL_PANEL_BORDER, minus_r, 1)
-        pygame.draw.rect(surf, (30, 30, 30), plus_r)
-        pygame.draw.rect(surf, COL_PANEL_BORDER, plus_r, 1)
+        minus_r = _r(150, y - 2, 22, ROW_H)
+        plus_r  = _r(176, y - 2, 22, ROW_H)
+        _draw_rect(surf, (30, 30, 30), minus_r)
+        _draw_rect(surf, COL_PANEL_BORDER, minus_r, 1)
+        _draw_rect(surf, (30, 30, 30), plus_r)
+        _draw_rect(surf, COL_PANEL_BORDER, plus_r, 1)
         _label(surf, font, minus_r.x + 5, minus_r.y + 2, '-', COL_TEXT_PRIMARY)
         _label(surf, font, plus_r.x  + 5, plus_r.y  + 2, '+', COL_TEXT_PRIMARY)
         _hit_rects.append(('prop_shift_minus', minus_r))
@@ -388,9 +394,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         if designer._sidebar_mode == 'analysis':
             in_svc = designer._analysis_line_in_service.get(line.label, True)
             svc_col = COL_TEXT_GOOD if in_svc else COL_TEXT_CRIT
-            svc_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, ROW_H + 2)
-            pygame.draw.rect(surf, (0, 0, 0), svc_rect)
-            pygame.draw.rect(surf, svc_col, svc_rect, 1)
+            svc_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, ROW_H + 2)
+            _draw_rect(surf, (0, 0, 0), svc_rect)
+            _draw_rect(surf, svc_col, svc_rect, 1)
             _label(surf, font, PAD + 4, y + 2,
                    'IN SERVICE' if in_svc else 'OUT OF SERVICE', svc_col)
             _hit_rects.append(('analysis_line_toggle_service', svc_rect))
@@ -412,12 +418,12 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         if len(sibs) > 1:
             idx = sibs.index(unit)
             _label(surf, font, PAD, y, f'UNIT {idx + 1}/{len(sibs)}', COL_TEXT_SECONDARY)
-            prev_r = pygame.Rect(150, y - 2, 22, ROW_H)
-            next_r = pygame.Rect(176, y - 2, 22, ROW_H)
-            pygame.draw.rect(surf, (30, 30, 30), prev_r)
-            pygame.draw.rect(surf, COL_PANEL_BORDER, prev_r, 1)
-            pygame.draw.rect(surf, (30, 30, 30), next_r)
-            pygame.draw.rect(surf, COL_PANEL_BORDER, next_r, 1)
+            prev_r = _r(150, y - 2, 22, ROW_H)
+            next_r = _r(176, y - 2, 22, ROW_H)
+            _draw_rect(surf, (30, 30, 30), prev_r)
+            _draw_rect(surf, COL_PANEL_BORDER, prev_r, 1)
+            _draw_rect(surf, (30, 30, 30), next_r)
+            _draw_rect(surf, COL_PANEL_BORDER, next_r, 1)
             _label(surf, font, prev_r.x + 6, prev_r.y + 2, '<', COL_TEXT_PRIMARY)
             _label(surf, font, next_r.x + 6, next_r.y + 2, '>', COL_TEXT_PRIMARY)
             _hit_rects.append(('prop_unit_cycle_prev', prev_r))
@@ -431,9 +437,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         field_col = COL_DESIGNER_FIELD_ACTIVE if editing_sm else COL_PANEL_BORDER
         _label(surf, font, PAD, y, 'START MW:', COL_TEXT_SECONDARY)
         y += ROW_H
-        sm_rect = pygame.Rect(PAD, y - 2, 100, ROW_H + 2)
-        pygame.draw.rect(surf, (0, 0, 0), sm_rect)
-        pygame.draw.rect(surf, field_col, sm_rect, 1)
+        sm_rect = _r(PAD, y - 2, 100, ROW_H + 2)
+        _draw_rect(surf, (0, 0, 0), sm_rect)
+        _draw_rect(surf, field_col, sm_rect, 1)
         _label(surf, font, PAD + 4, y,
                (sm_disp + '_') if editing_sm else sm_disp, COL_TEXT_VALUE)
         if not editing_sm:
@@ -443,9 +449,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
         # In-service toggle (test-session availability, persisted)
         insvc = unit.in_service
         insvc_col = COL_TEXT_GOOD if insvc else COL_TEXT_CRIT
-        insvc_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, ROW_H + 2)
-        pygame.draw.rect(surf, (0, 0, 0), insvc_rect)
-        pygame.draw.rect(surf, insvc_col, insvc_rect, 1)
+        insvc_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, ROW_H + 2)
+        _draw_rect(surf, (0, 0, 0), insvc_rect)
+        _draw_rect(surf, insvc_col, insvc_rect, 1)
         _label(surf, font, PAD + 4, y + 2,
                'IN SERVICE' if insvc else 'OUT OF SERVICE', insvc_col)
         _hit_rects.append(('prop_unit_in_service_toggle', insvc_rect))
@@ -453,12 +459,12 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
 
         _label(surf, font, PAD, y, f'SHIFT FROM: {unit.active_from_shift}',
                COL_TEXT_SECONDARY)
-        minus_r = pygame.Rect(150, y - 2, 22, ROW_H)
-        plus_r  = pygame.Rect(176, y - 2, 22, ROW_H)
-        pygame.draw.rect(surf, (30, 30, 30), minus_r)
-        pygame.draw.rect(surf, COL_PANEL_BORDER, minus_r, 1)
-        pygame.draw.rect(surf, (30, 30, 30), plus_r)
-        pygame.draw.rect(surf, COL_PANEL_BORDER, plus_r, 1)
+        minus_r = _r(150, y - 2, 22, ROW_H)
+        plus_r  = _r(176, y - 2, 22, ROW_H)
+        _draw_rect(surf, (30, 30, 30), minus_r)
+        _draw_rect(surf, COL_PANEL_BORDER, minus_r, 1)
+        _draw_rect(surf, (30, 30, 30), plus_r)
+        _draw_rect(surf, COL_PANEL_BORDER, plus_r, 1)
         _label(surf, font, minus_r.x + 5, minus_r.y + 2, '-', COL_TEXT_PRIMARY)
         _label(surf, font, plus_r.x  + 5, plus_r.y  + 2, '+', COL_TEXT_PRIMARY)
         _hit_rects.append(('prop_shift_minus', minus_r))
@@ -477,9 +483,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
             field_col = COL_DESIGNER_FIELD_ACTIVE if editing_um else COL_PANEL_BORDER
             _label(surf, font, PAD, y, 'DISPATCH MW:', COL_TEXT_SECONDARY)
             y += ROW_H
-            um_rect = pygame.Rect(PAD, y - 2, 90, ROW_H + 2)
-            pygame.draw.rect(surf, (0, 0, 0), um_rect)
-            pygame.draw.rect(surf, field_col, um_rect, 1)
+            um_rect = _r(PAD, y - 2, 90, ROW_H + 2)
+            _draw_rect(surf, (0, 0, 0), um_rect)
+            _draw_rect(surf, field_col, um_rect, 1)
             _label(surf, font, PAD + 4, y,
                    (um_disp + '_') if editing_um else (um_disp + ' MW'), COL_TEXT_VALUE)
             if not editing_um:
@@ -488,9 +494,9 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
 
             avail = designer._analysis_unit_available.get(unit.label, True)
             avail_col = COL_TEXT_GOOD if avail else COL_TEXT_CRIT
-            avail_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, ROW_H + 2)
-            pygame.draw.rect(surf, (0, 0, 0), avail_rect)
-            pygame.draw.rect(surf, avail_col, avail_rect, 1)
+            avail_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, ROW_H + 2)
+            _draw_rect(surf, (0, 0, 0), avail_rect)
+            _draw_rect(surf, avail_col, avail_rect, 1)
             _label(surf, font, PAD + 4, y + 2,
                    'AVAILABLE' if avail else 'UNAVAILABLE', avail_col)
             _hit_rects.append(('analysis_unit_toggle_avail', avail_rect))
@@ -514,9 +520,9 @@ def _draw_actions(surf, font, font_bold, designer, y0: int) -> int:
         ('import_shift10','IMPORT SHIFT 10',              COL_TEXT_SECONDARY),
     ]
     for action, label, col in actions:
-        rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-        pygame.draw.rect(surf, (0, 0, 0), rect)
-        pygame.draw.rect(surf, col, rect, 1)
+        rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+        _draw_rect(surf, (0, 0, 0), rect)
+        _draw_rect(surf, col, rect, 1)
         _label(surf, font, PAD + 6, y + 4, label, col)
         _hit_rects.append((action, rect))
         y += BTN_H + 4
@@ -590,17 +596,17 @@ def _draw_analysis_panel(surf, font, font_bold, designer, y0: int) -> int:
         y += ROW_H + 8
 
     # RUN button
-    run_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-    pygame.draw.rect(surf, (0, 0, 0), run_rect)
-    pygame.draw.rect(surf, COL_TEXT_GOOD, run_rect, 1)
+    run_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+    _draw_rect(surf, (0, 0, 0), run_rect)
+    _draw_rect(surf, COL_TEXT_GOOD, run_rect, 1)
     _label(surf, font, PAD + 6, y + 4, 'RUN ANALYSIS  [Enter]', COL_TEXT_GOOD)
     _hit_rects.append(('analysis_run', run_rect))
     y += BTN_H + 4
 
     # CANCEL/close button
-    close_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-    pygame.draw.rect(surf, (0, 0, 0), close_rect)
-    pygame.draw.rect(surf, COL_TEXT_SECONDARY, close_rect, 1)
+    close_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+    _draw_rect(surf, (0, 0, 0), close_rect)
+    _draw_rect(surf, COL_TEXT_SECONDARY, close_rect, 1)
     _label(surf, font, PAD + 6, y + 4, 'CLOSE  [Esc]', COL_TEXT_SECONDARY)
     _hit_rects.append(('analysis_close', close_rect))
     y += BTN_H + PAD
@@ -620,9 +626,9 @@ def _draw_save_dialog(surf, font, font_bold, designer) -> None:
     _label(surf, font, PAD, y, 'Grid name:', COL_TEXT_SECONDARY)
     y += ROW_H + 4
 
-    field_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H + 4)
-    pygame.draw.rect(surf, (0, 30, 0), field_rect)
-    pygame.draw.rect(surf, COL_TEXT_GOOD, field_rect, 1)
+    field_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H + 4)
+    _draw_rect(surf, (0, 30, 0), field_rect)
+    _draw_rect(surf, COL_TEXT_GOOD, field_rect, 1)
     _label(surf, font, PAD + 6, y + 6, designer._save_dialog_buf + '_', COL_TEXT_GOOD)
     y += BTN_H + 12
 
@@ -630,16 +636,16 @@ def _draw_save_dialog(surf, font, font_bold, designer) -> None:
     y += ROW_H + 12
 
     # Commit button
-    commit_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-    pygame.draw.rect(surf, (0, 0, 0), commit_rect)
-    pygame.draw.rect(surf, COL_TEXT_GOOD, commit_rect, 1)
+    commit_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+    _draw_rect(surf, (0, 0, 0), commit_rect)
+    _draw_rect(surf, COL_TEXT_GOOD, commit_rect, 1)
     _label(surf, font, PAD + 6, y + 4, 'SAVE  [Enter]', COL_TEXT_GOOD)
     _overlay_rects.append(('save_dialog_commit', commit_rect))
     y += BTN_H + 6
 
-    cancel_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-    pygame.draw.rect(surf, (0, 0, 0), cancel_rect)
-    pygame.draw.rect(surf, COL_TEXT_SECONDARY, cancel_rect, 1)
+    cancel_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+    _draw_rect(surf, (0, 0, 0), cancel_rect)
+    _draw_rect(surf, COL_TEXT_SECONDARY, cancel_rect, 1)
     _label(surf, font, PAD + 6, y + 4, 'CANCEL  [Esc]', COL_TEXT_SECONDARY)
     _overlay_rects.append(('overlay_cancel', cancel_rect))
 
@@ -662,9 +668,9 @@ def _draw_load_browser(surf, font, font_bold, designer, test_mode: bool = False)
     if not lst:
         _label(surf, font, PAD, y, 'No saved grids found.', COL_TEXT_DIM)
         y += ROW_H + 8
-        cancel_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-        pygame.draw.rect(surf, (0, 0, 0), cancel_rect)
-        pygame.draw.rect(surf, COL_TEXT_SECONDARY, cancel_rect, 1)
+        cancel_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+        _draw_rect(surf, (0, 0, 0), cancel_rect)
+        _draw_rect(surf, COL_TEXT_SECONDARY, cancel_rect, 1)
         _label(surf, font, PAD + 6, y + 4, 'CANCEL  [Esc]', COL_TEXT_SECONDARY)
         _overlay_rects.append(('overlay_cancel', cancel_rect))
         return
@@ -686,10 +692,10 @@ def _draw_load_browser(surf, font, font_bold, designer, test_mode: bool = False)
         is_sel   = (real_idx == idx)
         row_col  = COL_SELECTION if is_sel else COL_TEXT_SECONDARY
         bg_col   = (0, 40, 0) if is_sel else (0, 0, 0)
-        row_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, _BROWSER_ROW_H - 2)
-        pygame.draw.rect(surf, bg_col, row_rect)
+        row_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, _BROWSER_ROW_H - 2)
+        _draw_rect(surf, bg_col, row_rect)
         if is_sel:
-            pygame.draw.rect(surf, row_col, row_rect, 1)
+            _draw_rect(surf, row_col, row_rect, 1)
         _label(surf, font, PAD + 6, y + 4, name, row_col)
         action = f'browser_select:{name}'
         _overlay_rects.append((action, row_rect))
@@ -705,17 +711,17 @@ def _draw_load_browser(surf, font, font_bold, designer, test_mode: bool = False)
 
     y += 4
     action_lbl = 'TEST  [Enter]' if test_mode else 'LOAD  [Enter]'
-    load_rect  = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-    pygame.draw.rect(surf, (0, 0, 0), load_rect)
-    pygame.draw.rect(surf, COL_SELECTION, load_rect, 1)
+    load_rect  = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+    _draw_rect(surf, (0, 0, 0), load_rect)
+    _draw_rect(surf, COL_SELECTION, load_rect, 1)
     _label(surf, font, PAD + 6, y + 4, action_lbl, COL_SELECTION)
     if lst:
         _overlay_rects.append((f'browser_select:{lst[idx]}', load_rect))
     y += BTN_H + 6
 
-    cancel_rect = pygame.Rect(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
-    pygame.draw.rect(surf, (0, 0, 0), cancel_rect)
-    pygame.draw.rect(surf, COL_TEXT_SECONDARY, cancel_rect, 1)
+    cancel_rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)
+    _draw_rect(surf, (0, 0, 0), cancel_rect)
+    _draw_rect(surf, COL_TEXT_SECONDARY, cancel_rect, 1)
     _label(surf, font, PAD + 6, y + 4, 'CANCEL  [Esc]', COL_TEXT_SECONDARY)
     _overlay_rects.append(('overlay_cancel', cancel_rect))
 
@@ -730,11 +736,36 @@ def _draw_footer(surf, font, designer, y0: int) -> None:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DRAWING HELPERS
+#
+# All layout constants and coordinates in this file (PAD, ROW_H, BTN_H,
+# BTN_W, SECTION_*_Y, and every literal passed to _r()/_label() throughout,
+# including arithmetic on a previously-built rect's .x/.y) are expressed in
+# LOGICAL (unscaled) sidebar pixels — the same space hit-testing operates
+# in. _r() returns a logical Rect (used both for hit-testing and as the
+# input to _draw_rect); only _draw_rect()/_label()/_hsep() convert to the
+# surf's actual scaled pixel space, at the point of drawing.
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _r(x, y, w, h) -> pygame.Rect:
+    """Build a logical (unscaled) sidebar Rect — used for hit-testing and layout."""
+    return pygame.Rect(x, y, w, h)
+
+
+def _draw_rect(surf, colour, rect: pygame.Rect, width: int = 0) -> None:
+    """Draw a logical-space Rect, scaling it to surf's actual pixel space."""
+    sc = _scale
+    scaled = pygame.Rect(int(rect.x * sc), int(rect.y * sc),
+                         int(rect.width * sc), int(rect.height * sc))
+    pygame.draw.rect(surf, colour, scaled, width)
+
+
 def _label(surf, font, x, y, text, colour):
-    font.render_to(surf, (x, y), text, colour)
+    sc = _scale
+    font.render_to(surf, (int(x * sc), int(y * sc)), text, colour,
+                   size=int(DESIGNER_FONT_SIZE * sc))
 
 
 def _hsep(surf, y: int) -> None:
-    pygame.draw.line(surf, COL_DESIGNER_SIDEBAR_SEP, (0, y), (DESIGNER_SIDEBAR_W, y), 1)
+    sc = _scale
+    pygame.draw.line(surf, COL_DESIGNER_SIDEBAR_SEP,
+                     (0, int(y * sc)), (int(DESIGNER_SIDEBAR_W * sc), int(y * sc)), 1)

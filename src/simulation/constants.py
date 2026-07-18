@@ -13,6 +13,7 @@ See CLAUDE.md Rule 1.
 # ─────────────────────────────────────────────
 DEBUG_SIMULATION: bool = False
 DEBUG_DISPLAY:    bool = False
+DEBUG_PERF:       bool = False  # per-frame render timing breakdown — see PERF_DEBUG_LOG
 DEBUG_EVENTS:     bool = True
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
@@ -81,6 +82,8 @@ AGC_DEADBAND_HZ:   float = 0.01   # ±Hz inside which AGC is silent
 AGC_INTEGRAL_MAX:  float = 5.0   # Anti-windup clamp on integral accumulator (Hz·s)
 AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
 SIM_DEBUG_LOG:     str   = 'logs/sim_debug.log'  # DEBUG_SIMULATION output destination
+PERF_DEBUG_LOG:    str   = 'logs/perf_debug.log'  # DEBUG_PERF output destination
+PERF_LOG_INTERVAL_S: float = 1.0  # seconds between perf-log summary lines
 
 # ─────────────────────────────────────────────
 # LOSSES

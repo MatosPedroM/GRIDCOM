@@ -21,6 +21,10 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+import os
+import time
+
 import pygame
 import pygame.freetype
 
@@ -52,6 +56,7 @@ from simulation.constants import (
     PANEL_ALARM_X, PANEL_ALARM_W,
     TEXT_SCREEN_FONT_SIZE, TEXT_SCREEN_TOP_MARGIN, TEXT_SCREEN_ROW_H,
     MENU_FONT_SIZE, MENU_ROW_H, MENU_TOP_MARGIN,
+    PERF_DEBUG_LOG, PERF_LOG_INTERVAL_S,
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
@@ -172,6 +177,23 @@ class Renderer:
         self._fps:             float = 0.0
         self._fps_smooth:      float = 0.0
         self._debug_grid_surf: pygame.Surface | None = None  # cached on first debug draw
+
+        # Perf profiling state (used when DEBUG_PERF is True — see tick())
+        self._perf_last_ms:  dict[str, float] = {}   # last-frame timings, for on-screen display
+        self._perf_accum_ms: dict[str, float] = {}   # sum since last log flush
+        self._perf_accum_frames: int   = 0
+        self._perf_log_timer:    float = 0.0
+        self._perf_logger: logging.Logger | None = None
+        if _sim_const.DEBUG_PERF:
+            os.makedirs('logs', exist_ok=True)
+            _plogger = logging.getLogger('perf')
+            _plogger.setLevel(logging.DEBUG)
+            _plogger.propagate = False
+            _plogger.handlers.clear()
+            _phandler = logging.FileHandler(PERF_DEBUG_LOG, mode='w', encoding='utf-8')
+            _phandler.setFormatter(logging.Formatter('%(message)s'))
+            _plogger.addHandler(_phandler)
+            self._perf_logger = _plogger
 
     # ─── Per-frame entry point ────────────────────────────────────────────────
 
@@ -603,6 +625,9 @@ class Renderer:
         # native_changed tracks whether anything was drawn to _native this frame.
         native_changed = False
 
+        _perf = _sim_const.DEBUG_PERF
+        _t0 = time.perf_counter() if _perf else 0.0
+
         # ── Draw canvas ───────────────────────────────────────────────────────
         prev_canvas_key = self._canvas._canvas_key
         self._canvas.draw(
@@ -615,11 +640,21 @@ class Renderer:
         if self._canvas._canvas_key != prev_canvas_key:
             native_changed = True
 
+        if _perf:
+            _t1 = time.perf_counter()
+            self._perf_last_ms['canvas'] = (_t1 - _t0) * 1000.0
+            _t0 = _t1
+
         # ── Line load triangles (drawn on top of canvas) ──────────────────────
         if state is not None:
             draw_load_triangles(self._canvas_surf, state,
                                 self._canvas._lines, self._canvas._line_waypoints)
             native_changed = True
+
+        if _perf:
+            _t1 = time.perf_counter()
+            self._perf_last_ms['triangles'] = (_t1 - _t0) * 1000.0
+            _t0 = _t1
 
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
         paused = (speed_mult == 0.0)
@@ -720,6 +755,11 @@ class Renderer:
             self._strip_surf.blit(self._panel_cache['alarm'],    (int(PANEL_ALARM_X    * _sc), 0))
             native_changed = True
 
+        if _perf:
+            _t1 = time.perf_counter()
+            self._perf_last_ms['panels'] = (_t1 - _t0) * 1000.0
+            _t0 = _t1
+
         # ── Unit context overlay ──────────────────────────────────────────────
         selected_unit = self._get_selected_unit()
         if selected_unit is not None and state is not None:
@@ -754,6 +794,11 @@ class Renderer:
                                       cmd_active=self._line_cmd_active,
                                       font_scale=_fs)
                     native_changed = True
+
+        if _perf:
+            _t1 = time.perf_counter()
+            self._perf_last_ms['context'] = (_t1 - _t0) * 1000.0
+            _t0 = _t1
 
         # ── Editor overlay ────────────────────────────────────────────────────
         if _sim_const.EDITOR_MODE:
@@ -795,6 +840,12 @@ class Renderer:
         if native_changed or self._display_dirty:
             self._display.blit(self._native, self._letterbox_rect.topleft)
             self._display_dirty = False
+
+        if _perf:
+            _t1 = time.perf_counter()
+            self._perf_last_ms['blit'] = (_t1 - _t0) * 1000.0
+            self._perf_last_ms['frame_total'] = dt_real_s * 1000.0
+            self._perf_tick_log(dt_real_s)
 
     # ─── Letterbox helpers ────────────────────────────────────────────────────
 
@@ -885,6 +936,33 @@ class Renderer:
             suffix = f'  →  {self._selected_label}' if self._selected_label else ''
             print(f'[DEBUG CLICK] x={nx}, y={ny}{suffix}')
 
+    def _perf_tick_log(self, dt_real_s: float) -> None:
+        """
+        Accumulate this frame's section timings and flush a summary line to
+        the perf logger roughly every PERF_LOG_INTERVAL_S. Only called when
+        DEBUG_PERF is True (see tick()).
+        """
+        for key, ms in self._perf_last_ms.items():
+            self._perf_accum_ms[key] = self._perf_accum_ms.get(key, 0.0) + ms
+        self._perf_accum_frames += 1
+
+        self._perf_log_timer += dt_real_s
+        if self._perf_log_timer < PERF_LOG_INTERVAL_S or self._perf_logger is None:
+            return
+
+        n = max(1, self._perf_accum_frames)
+        avg_fps = n / self._perf_log_timer if self._perf_log_timer > 0.0 else 0.0
+        parts = [f'fps={avg_fps:.1f}']
+        for key in ('frame_total', 'canvas', 'triangles', 'panels', 'context', 'blit'):
+            total = self._perf_accum_ms.get(key)
+            if total is not None:
+                parts.append(f'{key}={total / n:.2f}ms')
+        self._perf_logger.debug('  '.join(parts))
+
+        self._perf_log_timer     = 0.0
+        self._perf_accum_frames  = 0
+        self._perf_accum_ms.clear()
+
     def _draw_debug(self) -> None:
         font  = self._font
         sc    = self._scale
@@ -931,6 +1009,19 @@ class Renderer:
         res_w, _ = font.get_rect(res_str, size=so)[2:4]
         font.render_to(self._native, (nw - res_w - p8, p32),
                        res_str, COL_DEBUG_TEXT, size=so)
+
+        # Perf section timings — top-right, fourth line (only when DEBUG_PERF is on)
+        if _sim_const.DEBUG_PERF and self._perf_last_ms:
+            order = ('frame_total', 'canvas', 'triangles', 'panels', 'context', 'blit')
+            labels = {'frame_total': 'frame', 'canvas': 'cnv', 'triangles': 'tri',
+                      'panels': 'pnl', 'context': 'ctx', 'blit': 'blit'}
+            perf_str = '  '.join(
+                f'{labels[k]} {self._perf_last_ms[k]:.1f}'
+                for k in order if k in self._perf_last_ms
+            )
+            perf_w, _ = font.get_rect(perf_str, size=so)[2:4]
+            font.render_to(self._native, (nw - perf_w - p8, p32 + p18),
+                           perf_str, COL_DEBUG_TEXT, size=so)
 
         # Click position — shown for 3 seconds (in logical units)
         if self._click_pos is not None:

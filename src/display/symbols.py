@@ -18,7 +18,7 @@ import pygame
 from simulation.constants import (
     FONT_SIZE_OVERLAY,
     LOAD_TRIANGLE_PCT_1, LOAD_TRIANGLE_PCT_2, LOAD_TRIANGLE_PCT_3,
-    LOAD_TRIANGLE_SIZE,
+    LOAD_TRIANGLE_SIZE, LOAD_TRIANGLE_SPACING,
 )
 from display.palette import (
     COL_BACKGROUND,
@@ -28,8 +28,7 @@ from display.palette import (
     COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_HYDRO_PUMP, COL_UNIT_WIND, COL_UNIT_SOLAR,
-    COL_UNIT_ONLINE, COL_UNIT_OFFLINE, COL_UNIT_STARTING,
-    COL_UNIT_SHUTDOWN, COL_UNIT_TRIPPED, COL_UNIT_BORDER,
+    COL_UNIT_TRIPPED,
     COL_INTC_IMPORT, COL_INTC_EXPORT, COL_INTC_IDLE,
     COL_LINE_HYDRAULIC, COL_LOAD_SUB,
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
@@ -38,7 +37,7 @@ from display.palette import (
 
 # Symbol size constants
 BUS_SIZE:   int = 18   # substation square side length (px)
-UNIT_SIZE:  int = 12   # generation unit square side length (px)
+UNIT_SIZE:  int = 18   # generation unit square side length (px) — matches BUS_SIZE
 UNIT_GAP:   int = 1    # gap between unit squares in a multi-unit station
 HALF_BUS:   int = BUS_SIZE // 2
 HALF_UNIT:  int = UNIT_SIZE // 2
@@ -328,7 +327,9 @@ def draw_unit_square(
     scale: float = 1.0,
 ) -> None:
     """
-    Draw a single generation unit square with state-dependent border and output bar.
+    Draw a single generation unit square with fuel-type-coloured border and
+    output bar. Border colour is the unit's fuel-type accent colour, dimmed
+    when offline; TRIPPED always overrides to red regardless of fuel type.
 
     Args:
         surf:             Target surface.
@@ -347,17 +348,18 @@ def draw_unit_square(
     x = cx - half
     y = cy - half
 
-    if unit_state == 'ONLINE':
-        border_col = COL_UNIT_ONLINE
-    elif unit_state in ('STARTING', 'SHUTDOWN'):
-        border_col = COL_UNIT_STARTING if blink_on else COL_UNIT_OFFLINE
-    elif unit_state == 'TRIPPED':
+    dim_col = _dim(type_col, 0.35)
+    if unit_state == 'TRIPPED':
         border_col = COL_UNIT_TRIPPED
+    elif unit_state in ('STARTING', 'SHUTDOWN'):
+        border_col = type_col if blink_on else dim_col
+    elif unit_state == 'ONLINE':
+        border_col = type_col
     else:
-        border_col = COL_UNIT_BORDER
+        border_col = dim_col
 
     pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
-    border_w = max(2, int(2 * scale)) if selected else 1
+    border_w = max(4, int(4 * scale)) if selected else max(2, int(2 * scale))
     border_c = COL_SELECTION if selected else border_col
     pygame.draw.rect(surf, border_c, (x, y, sz, sz), border_w)
 
@@ -596,10 +598,11 @@ def draw_load_triangles(
 ) -> None:
     """
     Draw a static per-line load indicator: for each routed segment of an
-    in-service line, a row of 1-4 small arrow-triangles evenly spaced along
-    that segment, pointing in the flow direction. Count and colour are
-    bucketed by loading % (grey/green/yellow/red for 0-25/25-50/50-75/75%+)
-    and computed once per line, then repeated identically on every segment.
+    in-service line, a cluster of 1-4 small arrow-triangles at a fixed
+    LOAD_TRIANGLE_SPACING gap, centred on that segment's own midpoint,
+    pointing in the flow direction. Count and colour are bucketed by
+    loading % (grey/green/yellow/red for 0-25/25-50/50-75/75%+), computed
+    once per line and repeated identically on every segment.
 
     Args:
         surf:           Canvas surface.
@@ -632,20 +635,21 @@ def draw_load_triangles(
         # Positive flow_mw: from_bus -> to_bus, i.e. along the waypoints in
         # their stored order (same convention as context.py's ▶/◀ arrow).
         forward = state.line_flows_mw.get(lbl, 0.0) >= 0.0
+        pts = waypoints if forward else waypoints[::-1]
         sz = LOAD_TRIANGLE_SIZE
+        spacing = LOAD_TRIANGLE_SPACING
+        cluster_span = spacing * (count - 1)
 
-        for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
-            if not forward:
-                (x1, y1), (x2, y2) = (x2, y2), (x1, y1)
+        for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
             seg_dx, seg_dy = x2 - x1, y2 - y1
             length = math.hypot(seg_dx, seg_dy)
             if length < 1e-6:
                 continue
             dx, dy = seg_dx / length, seg_dy / length
 
-            spacing = length / count
+            start_t = max(0.0, (length - cluster_span) / 2.0)
             for i in range(count):
-                t = spacing * (i + 0.5)
+                t = start_t + spacing * i
                 cx = x1 + dx * t
                 cy = y1 + dy * t
                 _draw_arrow_triangle(surf, cx, cy, dx, dy, sz, col)

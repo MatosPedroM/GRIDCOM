@@ -282,6 +282,7 @@ LOAD_TRIANGLE_PCT_1: float = 25.0  # 1 triangle below this loading %
 LOAD_TRIANGLE_PCT_2: float = 50.0  # 2 triangles below this loading %
 LOAD_TRIANGLE_PCT_3: float = 75.0  # 3 triangles below this loading %, else 4
 LOAD_TRIANGLE_SIZE:  int   = 6     # px — side length of each load-indicator triangle
+LOAD_TRIANGLE_SPACING: int = 10    # px — fixed gap between consecutive load-indicator triangles
 
 # ─────────────────────────────────────────────
 # DEBUG OVERLAY

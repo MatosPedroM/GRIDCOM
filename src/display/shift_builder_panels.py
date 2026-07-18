@@ -221,7 +221,8 @@ def _draw_schedule_tab(surf, builder, font, y0) -> None:
         _label(surf, font, x, y, '(select a grid first — GRID tab)', COL_TEXT_DIM)
         return
 
-    _label(surf, font, x, y, 'INITIAL DISPATCH  [ENTER] set MW  [Backspace] clear (unit starts OFFLINE):',
+    _label(surf, font, x, y,
+                   'INITIAL DISPATCH  [ENTER] set MW  [M] tech min  [X] max  [Backspace] OFFLINE:',
                    COL_TEXT_SECONDARY)
     y += SHIFT_BUILDER_ROW_H
 
@@ -233,7 +234,8 @@ def _draw_schedule_tab(surf, builder, font, y0) -> None:
         state_str = f'{mw:.1f} MW' if mw is not None else 'OFFLINE'
         colour = COL_SELECTION if selected else (COL_TEXT_VALUE if mw is not None else COL_TEXT_DIM)
         prefix = '> ' if selected else '  '
-        _label(surf, font, x + 20, y, f'{prefix}{unit.label:<10} rated {unit.rated_mw:6.1f} MW   {state_str}',
+        _label(surf, font, x + 20, y,
+                       f'{prefix}{unit.label:<10} tech min {unit.min_mw:6.1f}  max {unit.rated_mw:6.1f} MW   {state_str}',
                        colour)
         y += SHIFT_BUILDER_ROW_H
 

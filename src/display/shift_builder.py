@@ -530,6 +530,16 @@ class ShiftBuilder:
             self._shift.initial_schedule.pop(unit.label, None)   # absent = OFFLINE
             self._mark_dirty('initial_schedule')
             return True
+        if event.key == pygame.K_m:
+            unit = self._grid_units[self._schedule_cursor]
+            self._shift.initial_schedule[unit.label] = unit.min_mw   # TECH MIN
+            self._mark_dirty('initial_schedule')
+            return True
+        if event.key == pygame.K_x:
+            unit = self._grid_units[self._schedule_cursor]
+            self._shift.initial_schedule[unit.label] = unit.rated_mw   # MAX
+            self._mark_dirty('initial_schedule')
+            return True
         return False
 
     # ─── DEMAND tab (per-bus hourly load table) ────────────────────────────

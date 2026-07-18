@@ -50,7 +50,7 @@ from display.menus import (
     build_shift_select_items,
 )
 from data.layout_override import load_layout
-from data.profiles import SHIFT_SPECS
+from data.profiles import SHIFT_SPECS, DEMAND_PROFILE_NORMALISED
 from gameplay.shifts.loader import load_shift_config
 from simulation.grid import Grid
 from simulation.simulation import GridSimulation
@@ -218,20 +218,27 @@ def _make_designer_test(
     buses, lines, units = load_designer_grid_named(grid_name)
     designer_grid = DesignerGrid(buses, lines, units)
 
-    # Build flat hourly load table at 50% of each LOAD bus's peak_load_mw.
+    # Profile each LOAD bus's peak_load_mw (the grid design's maximum load
+    # for that substation) across the day using the campaign's generic
+    # demand shape, instead of a flat value.
     substation_load_mw = {
-        b.label: {float(h): b.peak_load_mw * 0.5 for h in range(25)}
+        b.label: {h: b.peak_load_mw * DEMAND_PROFILE_NORMALISED[h]
+                  for h in DEMAND_PROFILE_NORMALISED}
         for b in buses
         if b.bus_type == 'LOAD' and b.peak_load_mw > 0
     }
 
-    initial_schedule = {u.label: u.rated_mw * 0.5 for u in units}
+    initial_schedule = {
+        u.label: (u.start_mw if u.start_mw >= 0 else u.rated_mw * 0.5)
+        for u in units
+    }
+    maintenance_units = {u.label for u in units if not u.in_service}
     sim = GridSimulation(
         grid=designer_grid,
         shift_number=0,
         difficulty='standard',
         initial_schedule=initial_schedule,
-        maintenance_units=set(),
+        maintenance_units=maintenance_units,
         maintenance_lines=set(),
         substation_load_mw=substation_load_mw,
     )

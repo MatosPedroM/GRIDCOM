@@ -40,7 +40,6 @@ from simulation.constants import (
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION, SIM_DEBUG_LOG,
     AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ, AGC_INTEGRAL_MAX,
-    SLACK_BUS,
 )
 import simulation.constants as _sim_const
 from simulation.grid import Grid
@@ -769,7 +768,7 @@ class GridSimulation:
         islands = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
         if len(islands) <= 1:
             return
-        slack_island = next((isl for isl in islands if SLACK_BUS in isl), None)
+        slack_island = next((isl for isl in islands if self._grid.slack_bus in isl), None)
         if slack_island is None:
             return
         for unit in self._grid.get_active_units():
@@ -814,7 +813,7 @@ class GridSimulation:
         """
         any_tripped = False
         for island in islands:
-            if SLACK_BUS in island:
+            if self._grid.slack_bus in island:
                 continue
             if not (island & active_generation_buses):
                 continue  # no generation — blackout zone, handled elsewhere

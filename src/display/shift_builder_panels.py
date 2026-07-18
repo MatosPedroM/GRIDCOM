@@ -84,6 +84,8 @@ def draw_shift_builder(surf: pygame.Surface, builder, font, font_large, scale: f
         _draw_browser(surf, font, 'LOAD SHIFT', builder._browser_list, builder._browser_idx)
     elif builder._mode == 'grid_browser':
         _draw_browser(surf, font, 'SELECT GRID', builder._browser_list, builder._browser_idx)
+    elif builder._mode == 'campaign_browser':
+        _draw_browser(surf, font, 'OPEN CAMPAIGN SHIFT', builder._browser_list, builder._browser_idx)
     elif builder._editing_field is not None:
         _draw_edit_overlay(surf, font, builder._editing_field, builder._edit_buffer)
 
@@ -103,17 +105,20 @@ def _draw_tab_bar(surf, builder, font, tabs) -> None:
 def _draw_shift_header(surf, builder, font) -> None:
     y = SHIFT_BUILDER_TOP_MARGIN + SHIFT_BUILDER_ROW_H + 4
     shift = builder._shift
-    name = builder._shift_file_name or '(unsaved)'
     dirty = ' *' if builder._dirty else ''
     grid = shift.grid or '(none)'
-    text = f'SHIFT: {name}{dirty}    GRID: {grid}    {shift.start_hour:.1f}h + {shift.duration_hours:.1f}h'
+    if builder._campaign_shift_number is not None:
+        name = f'CAMPAIGN SHIFT {builder._campaign_shift_number} (shift_{builder._campaign_shift_number:02d}.py)'
+    else:
+        name = builder._shift_file_name or '(unsaved)'
+    text = f'EDITING: {name}{dirty}    GRID: {grid}    {shift.start_hour:.1f}h + {shift.duration_hours:.1f}h'
     _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y, text, COL_TEXT_VALUE)
 
 
 def _draw_footer(surf, builder, font) -> None:
     y = NATIVE_HEIGHT - 60
     hint = ('[TAB/←→] Tabs  [Ctrl+G] Grid  [Ctrl+S] Save  [Ctrl+O] Load  '
-            '[Ctrl+T] Test  [ESC] Exit')
+            '[Ctrl+Shift+O] Open Campaign  [Ctrl+T] Test  [ESC] Exit')
     _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y, hint, COL_TEXT_DIM)
     if builder._status_timer > 0.0 and builder._status_text:
         _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H, builder._status_text, builder._status_colour)
@@ -125,28 +130,39 @@ def _draw_footer(surf, builder, font) -> None:
 
 def _draw_meta_tab(surf, builder, font, y0) -> None:
     shift = builder._shift
+    is_campaign = builder._campaign_shift_number is not None
     x = SHIFT_BUILDER_LEFT_MARGIN
     y = y0
+
+    if is_campaign:
+        _label(surf, font, x, y,
+               'Narrative fields below are read-only — edit shift_NN.py directly for these:',
+               COL_TEXT_DIM)
+        y += SHIFT_BUILDER_ROW_H
+
+    dim_or_normal = COL_TEXT_DIM if is_campaign else COL_TEXT_SECONDARY
     rows = [
-        ('1', 'Shift date',       shift.shift_date or '(unset)'),
-        ('2', 'Difficulty label', shift.difficulty_label or '(unset)'),
-        ('3', 'Start hour',       f'{shift.start_hour:.1f}'),
-        ('4', 'Duration (h)',     f'{shift.duration_hours:.1f}'),
-        ('5', 'AGC enabled',      'ON' if shift.agc_enabled else 'OFF'),
-        ('6', 'Add handover note', ''),
+        ('1', 'Shift date',       shift.shift_date or '(unset)',       is_campaign),
+        ('2', 'Difficulty label', shift.difficulty_label or '(unset)', is_campaign),
+        ('3', 'Start hour',       f'{shift.start_hour:.1f}',           is_campaign),
+        ('4', 'Duration (h)',     f'{shift.duration_hours:.1f}',       is_campaign),
+        ('5', 'AGC enabled',      'ON' if shift.agc_enabled else 'OFF', False),
+        ('6', 'Add handover note', '',                                  is_campaign),
     ]
-    for key, label, value in rows:
-        _label(surf, font, x, y, f'[{key}]', COL_TEXT_DIM)
-        _label(surf, font, x + 40, y, label, COL_TEXT_SECONDARY)
+    for key, label, value, locked in rows:
+        key_colour = COL_TEXT_DIM if locked else COL_TEXT_DIM
+        _label(surf, font, x, y, f'[{key}]' if not locked else '[ - ]', key_colour)
+        _label(surf, font, x + 40, y, label, dim_or_normal if locked else COL_TEXT_SECONDARY)
         if value:
-            _label(surf, font, x + 280, y, value, COL_TEXT_VALUE)
+            _label(surf, font, x + 280, y, value, COL_TEXT_DIM if locked else COL_TEXT_VALUE)
         y += SHIFT_BUILDER_ROW_H
 
     y += SHIFT_BUILDER_ROW_H // 2
-    _label(surf, font, x, y, 'HANDOVER NOTES  (Backspace removes last):', COL_TEXT_HEADING)
+    notes_hint = 'HANDOVER NOTES  (read-only):' if is_campaign else 'HANDOVER NOTES  (Backspace removes last):'
+    _label(surf, font, x, y, notes_hint, COL_TEXT_HEADING)
     y += SHIFT_BUILDER_ROW_H
     for note in shift.handover_notes:
-        _label(surf, font, x + 20, y, f'- {note}', COL_TEXT_PRIMARY)
+        _label(surf, font, x + 20, y, f'- {note}', COL_TEXT_DIM if is_campaign else COL_TEXT_PRIMARY)
         y += SHIFT_BUILDER_ROW_H
 
 
@@ -158,8 +174,17 @@ def _draw_grid_tab(surf, builder, font, y0) -> None:
     x = SHIFT_BUILDER_LEFT_MARGIN
     y = y0
     shift = builder._shift
-    _label(surf, font, x, y, f'GRID: {shift.grid or "(none — press G to select)"}',
-                   COL_TEXT_HEADING)
+    is_campaign = builder._campaign_shift_number is not None
+
+    if is_campaign:
+        if shift.grid:
+            grid_line = f'GRID: {shift.grid}  (read-only here — edit topology in the Grid Designer)'
+        else:
+            grid_line = 'GRID: campaign topology (topology.py/fleet.py) — not editable here'
+        _label(surf, font, x, y, grid_line, COL_TEXT_DIM)
+    else:
+        _label(surf, font, x, y, f'GRID: {shift.grid or "(none — press G to select)"}',
+                       COL_TEXT_HEADING)
     y += SHIFT_BUILDER_ROW_H * 2
 
     if not builder._grid_units:

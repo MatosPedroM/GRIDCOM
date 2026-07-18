@@ -50,6 +50,8 @@ for that event fires.
 
 from __future__ import annotations
 
+import ast
+import importlib
 import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
@@ -57,6 +59,7 @@ from dataclasses import dataclass, field, asdict
 
 _ASSETS_DIR = Path(__file__).parent.parent / 'assets'
 SHIFTS_DIR = _ASSETS_DIR / 'shifts'
+_SHIFTS_PKG_DIR = Path(__file__).parent.parent / 'gameplay' / 'shifts'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,3 +192,206 @@ def shift_def_to_config(shift_def: ShiftDefinition) -> dict:
         'substation_load_mw': shift_def.substation_load_mw,
         'scripted_events':    [asdict(e) for e in shift_def.events],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CAMPAIGN SHIFT DEV-TOOL BRIDGE
+#
+# Lets Shift Builder open and fine-tune an existing campaign shift
+# (shift_01.py..shift_10.py) instead of only authoring new JSON shifts.
+# Narrative fields (module docstring, HANDOVER_NOTES prose, SHIFT_DATE,
+# DIFFICULTY_LABEL) are read for display only and are never written back
+# here — only the mechanical/tabular constants Shift Builder actually
+# edits (INITIAL_SCHEDULE, MAINTENANCE_UNITS, MAINTENANCE_LINES,
+# SUBSTATION_LOAD_MW, AGC_ENABLED, SCRIPTED_EVENTS) are round-tripped, via
+# a targeted AST-located source-text splice that replaces only the exact
+# line span of each edited constant and leaves every other byte of the
+# file — docstrings, comments, unedited constants — untouched.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Constants Shift Builder is allowed to write back via save_campaign_shift_fields.
+CAMPAIGN_EDITABLE_FIELDS = (
+    'initial_schedule', 'maintenance_units', 'maintenance_lines',
+    'substation_load_mw', 'agc_enabled', 'events',
+)
+
+# Maps a ShiftDefinition field name to the shift_NN.py constant it round-trips to.
+_FIELD_TO_CONSTANT = {
+    'initial_schedule':   'INITIAL_SCHEDULE',
+    'maintenance_units':  'MAINTENANCE_UNITS',
+    'maintenance_lines':  'MAINTENANCE_LINES',
+    'substation_load_mw': 'SUBSTATION_LOAD_MW',
+    'agc_enabled':        'AGC_ENABLED',
+    'events':             'SCRIPTED_EVENTS',
+}
+
+
+def list_campaign_shift_numbers() -> list[int]:
+    """Return sorted shift numbers with a gameplay/shifts/shift_NN.py file."""
+    if not _SHIFTS_PKG_DIR.exists():
+        return []
+    numbers = []
+    for p in _SHIFTS_PKG_DIR.glob('shift_*.py'):
+        stem = p.stem
+        try:
+            numbers.append(int(stem.split('_', 1)[1]))
+        except (IndexError, ValueError):
+            continue
+    return sorted(numbers)
+
+
+def load_campaign_shift_for_editing(shift_number: int) -> ShiftDefinition:
+    """
+    Load a campaign shift's mechanical fields into a ShiftDefinition, the
+    same in-memory shape ShiftBuilder already edits for JSON shifts.
+
+    Narrative fields (shift_date, difficulty_label, handover_notes) are
+    populated for read-only display. 'grid' is set from the shift's
+    GRID_SOURCE constant if present (e.g. Shift 10's 'Alpha'), else left
+    empty — shifts without GRID_SOURCE run on topology.py/fleet.py, which
+    has no Designer-grid equivalent to show here.
+    """
+    from gameplay.shifts.loader import load_shift_config
+
+    cfg = load_shift_config(shift_number)
+    mod = importlib.import_module(f'gameplay.shifts.shift_{shift_number:02d}')
+    raw_events = getattr(mod, 'SCRIPTED_EVENTS', [])
+    events = [
+        ShiftEvent(
+            trigger_min=e['trigger_min'], priority=e['priority'],
+            message=e['message'], detail=e.get('detail', ''),
+            element=e.get('element'), condition=e.get('condition'),
+            action=e.get('action'),
+        )
+        for e in raw_events
+    ]
+
+    return ShiftDefinition(
+        name=f'shift_{shift_number:02d}',
+        grid=cfg.get('grid_source') or '',
+        shift_date=cfg['shift_date'],
+        difficulty_label=cfg['difficulty_label'],
+        start_hour=0.0,
+        duration_hours=0.0,
+        agc_enabled=cfg['agc_enabled'],
+        handover_notes=list(cfg['handover_notes']),
+        initial_schedule=dict(cfg['initial_schedule']),
+        maintenance_units=sorted(cfg['maintenance_units']),
+        maintenance_lines=sorted(cfg['maintenance_lines']),
+        substation_load_mw=cfg['substation_load_mw'],
+        events=events,
+    )
+
+
+def _format_value(value, indent: int = 0) -> str:
+    """Pretty-print a Python literal for splicing into shift_NN.py source."""
+    pad = '    ' * indent
+    if isinstance(value, dict):
+        if not value:
+            return '{}'
+        lines = ['{']
+        for k, v in value.items():
+            lines.append(f'{pad}    {k!r}: {_format_value(v, indent + 1)},')
+        lines.append(f'{pad}}}')
+        return '\n'.join(lines)
+    if isinstance(value, (set, frozenset)):
+        if not value:
+            return 'set()'
+        items = ', '.join(repr(v) for v in sorted(value))
+        return '{' + items + '}'
+    if isinstance(value, list):
+        if not value:
+            return '[]'
+        items = ',\n'.join(f'{pad}    {_format_value(v, indent + 1)}' for v in value)
+        return '[\n' + items + f',\n{pad}]'
+    return repr(value)
+
+
+def _constant_source(name: str, value) -> str:
+    """Return the full 'NAME = value' (or 'NAME: type = value') source line(s)
+    for one of the campaign-editable constants, matching each constant's
+    existing type-annotation style in shift_NN.py."""
+    annotations = {
+        'INITIAL_SCHEDULE':   'dict[str, float]',
+        'MAINTENANCE_UNITS':  'set[str]',
+        'MAINTENANCE_LINES':  'set[str]',
+        'SUBSTATION_LOAD_MW': 'dict[str, dict[float, float]]',
+        'AGC_ENABLED':        'bool',
+        'SCRIPTED_EVENTS':    'list[dict]',
+    }
+    ann = annotations.get(name)
+    prefix = f'{name}: {ann} = ' if ann else f'{name} = '
+    return prefix + _format_value(value)
+
+
+def save_campaign_shift_fields(
+    shift_number: int,
+    shift_def: ShiftDefinition,
+    edited_fields: set[str],
+) -> None:
+    """
+    Splice the given edited fields' values back into shift_NN.py's source
+    text, replacing only each constant's own line span (located via ast)
+    and leaving every other byte of the file — module docstring,
+    HANDOVER_NOTES prose, comments, unedited constants — untouched.
+
+    edited_fields is a subset of CAMPAIGN_EDITABLE_FIELDS. Raises
+    ValueError if a field name isn't recognised, or the target constant
+    isn't found as a top-level assignment in the file (e.g. a shift file
+    that has never declared MAINTENANCE_LINES yet).
+    """
+    unknown = edited_fields - set(CAMPAIGN_EDITABLE_FIELDS)
+    if unknown:
+        raise ValueError(f'Not editable via the campaign dev tool: {sorted(unknown)}')
+    if not edited_fields:
+        return
+
+    path = _SHIFTS_PKG_DIR / f'shift_{shift_number:02d}.py'
+    # newline='' preserves the file's exact original line endings on both
+    # read and write — without it, Python's universal-newline translation
+    # rewrites every LF to the platform's line ending on write (CRLF on
+    # Windows), turning a one-line change into a whole-file diff.
+    with open(path, 'r', encoding='utf-8', newline='') as f:
+        source = f.read()
+    tree = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+
+    values = {
+        'INITIAL_SCHEDULE':   dict(shift_def.initial_schedule),
+        'MAINTENANCE_UNITS':  set(shift_def.maintenance_units),
+        'MAINTENANCE_LINES':  set(shift_def.maintenance_lines),
+        'SUBSTATION_LOAD_MW': shift_def.substation_load_mw,
+        'AGC_ENABLED':        shift_def.agc_enabled,
+        'SCRIPTED_EVENTS':    [asdict(e) for e in shift_def.events],
+    }
+
+    targets = {_FIELD_TO_CONSTANT[f] for f in edited_fields}
+    spans: dict[str, tuple[int, int]] = {}   # constant name -> (start_line, end_line), 1-indexed inclusive
+    for node in tree.body:
+        target_name = None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target_name = node.target.id
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name):
+            target_name = node.targets[0].id
+        if target_name in targets:
+            spans[target_name] = (node.lineno, node.end_lineno)
+
+    missing = targets - spans.keys()
+    if missing:
+        raise ValueError(
+            f'Constant(s) not found as top-level assignments in shift_{shift_number:02d}.py: '
+            f'{sorted(missing)}'
+        )
+
+    # Detect the file's line-ending convention from its own content so the
+    # spliced-in text matches exactly (avoids mixed-EOL diffs).
+    newline = '\r\n' if '\r\n' in source else '\n'
+
+    # Replace bottom-up so earlier line numbers stay valid as we splice.
+    for name, (start, end) in sorted(spans.items(), key=lambda kv: -kv[1][0]):
+        new_src = _constant_source(name, values[name]).replace('\n', newline) + newline
+        lines[start - 1:end] = [new_src]
+
+    with open(path, 'w', encoding='utf-8', newline='') as f:
+        f.write(''.join(lines))

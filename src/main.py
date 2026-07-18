@@ -274,6 +274,21 @@ def _make_designer_test(
     return sim, designer_grid, renderer
 
 
+def _make_campaign_shift_test(
+    display_surf: pygame.Surface,
+    shift_number: int,
+    difficulty: str = 'standard',
+):
+    """
+    Build sim + renderer for a campaign shift being fine-tuned in the Shift
+    Builder dev tool. Reuses _make_sim_and_renderer() directly — the exact
+    real bootstrap path (including Shift 10's Alpha grid_source branch) —
+    so testing here reflects what actually ships, unlike _make_shift_test's
+    generic DesignerGrid preview for authored JSON shifts.
+    """
+    return _make_sim_and_renderer(display_surf, shift_number, difficulty)
+
+
 def _make_shift_test(
     display_surf: pygame.Surface,
     shift_name: str,
@@ -973,6 +988,21 @@ def main() -> None:
                                                    (255, 100, 0))
 
                 _shift_builder.on_test_request = _on_shift_test_request
+
+            if _shift_builder.on_campaign_test_request is None:
+                def _on_campaign_test_request(shift_number: int) -> None:
+                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin
+                    try:
+                        _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
+                            _make_campaign_shift_test(display_surf, shift_number)
+                        sim_accum             = 0.0
+                        _designer_test_origin = GameState.SHIFT_BUILDER
+                        game_state             = GameState.DESIGNER_TEST
+                    except Exception as e:
+                        _shift_builder._set_status(f'Test failed: {e}',
+                                                   (255, 100, 0))
+
+                _shift_builder.on_campaign_test_request = _on_campaign_test_request
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:

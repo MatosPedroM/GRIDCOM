@@ -35,15 +35,19 @@ from simulation.constants import (
     PLANNING_ROW_H, PLANNING_PLOT_H, PLANNING_PLOT_Y_HEADROOM_FRAC,
     PLANNING_TABLE_GROUP_GAP, PLANNING_TABLE_VISIBLE_H,
     PLANNING_KEY_EDIT, PLANNING_KEY_TECH_MIN, PLANNING_KEY_TECH_MAX,
-    PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_RESET, PLANNING_KEY_AUTO,
-    PLANNING_KEY_CONFIRM, PLANNING_KEY_BACK,
+    PLANNING_KEY_ZERO, PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_RESET,
+    PLANNING_KEY_AUTO, PLANNING_KEY_CONFIRM, PLANNING_KEY_BACK,
 )
 
 _scale: float = 1.0
 
-# Dispatchable-only fuel order (WIND is shown as a forecast row, not a
-# schedulable unit group, even though it appears in the stacked plot).
+# Dispatchable-only fuel order (WIND/SOLAR are shown as locked, read-only
+# rows instead — see _RENEWABLE_FUEL_ORDER — even though they appear in
+# the stacked plot and summary forecast rows).
 _DISPATCHABLE_FUEL_ORDER = tuple(f for f in FUEL_ORDER if f not in ('WIND', 'SOLAR'))
+
+# Renewable fuel order for the locked, informational table rows.
+_RENEWABLE_FUEL_ORDER = ('WIND', 'SOLAR')
 
 
 def _label(surf, font, x, y, text, colour) -> None:
@@ -202,7 +206,25 @@ def _draw_table(surf, screen, font, y0) -> float:
     for unit in model.unit_specs:
         units_by_type.setdefault(unit.unit_type, []).append(unit)
 
-    flat_rows: list[tuple[str, object]] = []   # ('group', fuel) | ('unit', unit)
+    renewables_by_type: dict[str, list] = {}
+    for unit in model.renewable_specs:
+        renewables_by_type.setdefault(unit.unit_type, []).append(unit)
+
+    # ('group', fuel) | ('unit', unit) | ('readonly_group', fuel) | ('readonly_unit', unit)
+    flat_rows: list[tuple[str, object]] = []
+
+    # Locked, informational WIND/SOLAR rows first — never added to
+    # screen._row_index (so cursor navigation skips them) and given no
+    # hit-rects (so clicking them does nothing). Their MW already feeds
+    # into total_gen()/stacked_by_tech() via renewable_forecast.
+    for fuel in _RENEWABLE_FUEL_ORDER:
+        units = renewables_by_type.get(fuel)
+        if not units:
+            continue
+        flat_rows.append(('readonly_group', fuel))
+        for unit in units:
+            flat_rows.append(('readonly_unit', unit))
+
     for fuel in _DISPATCHABLE_FUEL_ORDER:
         units = units_by_type.get(fuel)
         if not units:
@@ -238,9 +260,22 @@ def _draw_table(surf, screen, font, y0) -> float:
     for kind, value in flat_rows[scroll_start:]:
         if y >= viewport_bottom:
             break
-        if kind == 'group':
+        if kind in ('group', 'readonly_group'):
             fuel = value
-            _label(surf, font, x0, y, FUEL_LABELS.get(fuel, fuel), FUEL_COLOURS.get(fuel, COL_TEXT_HEADING))
+            label = FUEL_LABELS.get(fuel, fuel)
+            if kind == 'readonly_group':
+                label += ' (forecast, locked)'
+            _label(surf, font, x0, y, label, FUEL_COLOURS.get(fuel, COL_TEXT_HEADING))
+            y += PLANNING_ROW_H
+            continue
+
+        if kind == 'readonly_unit':
+            unit = value
+            _label(surf, font, x0 + 40, y, f'{unit.label:<8}', COL_TEXT_DIM)
+            for i, h in enumerate(model.hours):
+                cx = x0 + PLANNING_LABEL_COL_W + i * PLANNING_HOUR_COL_W
+                mw = model.renewable_forecast.get(unit.label, {}).get(h, 0.0)
+                _label_right(surf, font, cx + PLANNING_HOUR_COL_W - 4, y, f'{mw:.0f}', COL_TEXT_DIM)
             y += PLANNING_ROW_H
             continue
 
@@ -258,13 +293,14 @@ def _draw_table(surf, screen, font, y0) -> float:
         for i, h in enumerate(model.hours):
             cx = x0 + PLANNING_LABEL_COL_W + i * PLANNING_HOUR_COL_W
             mw = model.schedule.get(unit.label, {}).get(h, 0.0)
+            hour_online = model.is_online(unit.label, h)
             is_sel = selected_row and (i == screen._sel_col)
             cell_rect = pygame.Rect(cx, y, PLANNING_HOUR_COL_W, PLANNING_ROW_H)
             screen._hit_rects.append((f'cell:{unit.label}:{h}', cell_rect))
             if is_sel:
                 _rect(surf, COL_PLAN_CELL_SEL, cx, y, PLANNING_HOUR_COL_W, PLANNING_ROW_H, width=1)
-            text = f'{mw:.0f}' if online else '-'
-            colour = COL_TEXT_VALUE if online else COL_PLAN_OFFLINE
+            text = f'{mw:.0f}' if hour_online else '-'
+            colour = COL_TEXT_VALUE if hour_online else COL_PLAN_OFFLINE
             _label_right(surf, font, cx + PLANNING_HOUR_COL_W - 4, y, text, colour)
 
         y += PLANNING_ROW_H
@@ -291,7 +327,8 @@ def _draw_summary_rows(surf, screen, font, y0) -> None:
     y += 4
 
     rows = (
-        ('WIND FCST', lambda h: model.wind_forecast.get(h, 0.0), COL_TEXT_SECONDARY),
+        ('WIND FCST', lambda h: model.renewable_total(h, 'WIND'), COL_TEXT_SECONDARY),
+        ('SOLAR FCST', lambda h: model.renewable_total(h, 'SOLAR'), COL_TEXT_SECONDARY),
         ('TOTAL GEN', lambda h: model.total_gen(h), COL_TEXT_VALUE),
         ('LOAD FCST', lambda h: model.load_forecast.get(h, 0.0), COL_TEXT_VALUE),
         ('DIFF',      lambda h: model.difference(h), None),
@@ -330,9 +367,11 @@ def _draw_footer(surf, screen, font) -> None:
     y = NATIVE_HEIGHT - PLANNING_ROW_H - 4
     tech_min = _key_label(PLANNING_KEY_TECH_MIN)
     tech_max = _key_label(PLANNING_KEY_TECH_MAX)
+    zero_key = _key_label(PLANNING_KEY_ZERO)
     hint = (
         f'[Arrows] move  [{_key_label(PLANNING_KEY_EDIT)}] edit  '
         f'[{tech_min}/{tech_max}] tech min/max  [Shift+{tech_min}/{tech_max}] fill row  '
+        f'[{zero_key}] zero  [Shift+{zero_key}] zero row  '
         f'[{_key_label(PLANNING_KEY_TOGGLE_ONLINE)}] online/off  '
         f'[{_key_label(PLANNING_KEY_RESET)}] reset  '
         f'[Ctrl+{_key_label(PLANNING_KEY_AUTO)}] auto-schedule  '

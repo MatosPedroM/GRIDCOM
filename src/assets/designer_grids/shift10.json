@@ -2743,7 +2743,9 @@
       "station_y": 109,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "RVSD-2",
@@ -2764,7 +2766,9 @@
       "station_y": 109,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "RVSD-3",
@@ -2785,7 +2789,9 @@
       "station_y": 109,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "ASHG-1",
@@ -2806,7 +2812,9 @@
       "station_y": 115,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "ASHG-2",
@@ -2827,7 +2835,9 @@
       "station_y": 115,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "DUND-1",
@@ -2848,7 +2858,9 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "DUND-2",
@@ -2869,7 +2881,9 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "DUND-3",
@@ -2890,7 +2904,9 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "DUND-4",
@@ -2911,7 +2927,9 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "HART-1",
@@ -2928,11 +2946,13 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "HART NUCLEAR unit 1",
-      "station_x": 1365,
+      "station_x": 1366,
       "station_y": 103,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "HART-2",
@@ -2949,11 +2969,13 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "HART NUCLEAR unit 2",
-      "station_x": 1365,
+      "station_x": 1366,
       "station_y": 103,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "HART-3",
@@ -2970,11 +2992,13 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "HART NUCLEAR unit 3",
-      "station_x": 1365,
+      "station_x": 1366,
       "station_y": 103,
       "start_mw": -1.0,
-      "in_service": true,
-      "label_anchor": "top"
+      "in_service": false,
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "THNF-1",
@@ -2995,7 +3019,9 @@
       "station_y": 621,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "THNF-2",
@@ -3016,7 +3042,9 @@
       "station_y": 621,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "WRNG-1",
@@ -3037,7 +3065,9 @@
       "station_y": 279,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "WRNG-2",
@@ -3058,7 +3088,9 @@
       "station_y": 279,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "WRNG-3",
@@ -3079,7 +3111,9 @@
       "station_y": 279,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "BARR-1",
@@ -3100,7 +3134,9 @@
       "station_y": 592,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "BARR-2",
@@ -3121,7 +3157,9 @@
       "station_y": 592,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "BARR-3",
@@ -3142,7 +3180,9 @@
       "station_y": 592,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "KELM-1",
@@ -3163,7 +3203,9 @@
       "station_y": 623,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "DUNH-1",
@@ -3184,7 +3226,9 @@
       "station_y": 601,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "KELD-1",
@@ -3205,7 +3249,9 @@
       "station_y": 102,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "BARD-1",
@@ -3226,7 +3272,9 @@
       "station_y": 479,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "WNCN-1",
@@ -3247,7 +3295,9 @@
       "station_y": 598,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "WNCN-2",
@@ -3268,7 +3318,9 @@
       "station_y": 598,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "WNCN-3",
@@ -3289,7 +3341,9 @@
       "station_y": 598,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
     },
     {
       "label": "WNBR-1",
@@ -3310,7 +3364,147 @@
       "station_y": 474,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0
+    },
+    {
+      "label": "SLST-1",
+      "station_label": "SLST",
+      "bus_label": "EAST",
+      "unit_type": "HYDRO",
+      "rated_mw": 250.0,
+      "min_mw": 25.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 3.0,
+      "cold_start_min": 5.0,
+      "q_max_mvar": 120.0,
+      "q_min_mvar": -40.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "SLST HYDRO unit 1",
+      "station_x": 1426,
+      "station_y": 507,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right",
+      "min_up_time_h": 0.0,
+      "min_down_time_h": 0.0
+    },
+    {
+      "label": "SLST-2",
+      "station_label": "SLST",
+      "bus_label": "EAST",
+      "unit_type": "HYDRO",
+      "rated_mw": 250.0,
+      "min_mw": 25.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 3.0,
+      "cold_start_min": 5.0,
+      "q_max_mvar": 120.0,
+      "q_min_mvar": -40.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "SLST HYDRO unit 2",
+      "station_x": 1426,
+      "station_y": 507,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right",
+      "min_up_time_h": 0.0,
+      "min_down_time_h": 0.0
+    },
+    {
+      "label": "SLST-3",
+      "station_label": "SLST",
+      "bus_label": "EAST",
+      "unit_type": "HYDRO",
+      "rated_mw": 250.0,
+      "min_mw": 25.0,
+      "ramp_pct_per_min": 100.0,
+      "inertia_h": 3.0,
+      "cold_start_min": 5.0,
+      "q_max_mvar": 120.0,
+      "q_min_mvar": -40.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "SLST HYDRO unit 3",
+      "station_x": 1426,
+      "station_y": 507,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right",
+      "min_up_time_h": 0.0,
+      "min_down_time_h": 0.0
+    },
+    {
+      "label": "SLFD-1",
+      "station_label": "SLFD",
+      "bus_label": "NRTH",
+      "unit_type": "CCGT",
+      "rated_mw": 400.0,
+      "min_mw": 100.0,
+      "ramp_pct_per_min": 8.0,
+      "inertia_h": 4.0,
+      "cold_start_min": 60.0,
+      "q_max_mvar": 180.0,
+      "q_min_mvar": -60.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "SLFD CCGT unit 1",
+      "station_x": 742,
+      "station_y": 498,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right",
+      "min_up_time_h": 2.0,
+      "min_down_time_h": 2.0
+    },
+    {
+      "label": "SLFD-2",
+      "station_label": "SLFD",
+      "bus_label": "NRTH",
+      "unit_type": "CCGT",
+      "rated_mw": 400.0,
+      "min_mw": 100.0,
+      "ramp_pct_per_min": 8.0,
+      "inertia_h": 4.0,
+      "cold_start_min": 60.0,
+      "q_max_mvar": 180.0,
+      "q_min_mvar": -60.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "SLFD CCGT unit 2",
+      "station_x": 742,
+      "station_y": 498,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right",
+      "min_up_time_h": 2.0,
+      "min_down_time_h": 2.0
+    },
+    {
+      "label": "SLFD-3",
+      "station_label": "SLFD",
+      "bus_label": "NRTH",
+      "unit_type": "CCGT",
+      "rated_mw": 400.0,
+      "min_mw": 100.0,
+      "ramp_pct_per_min": 8.0,
+      "inertia_h": 4.0,
+      "cold_start_min": 60.0,
+      "q_max_mvar": 180.0,
+      "q_min_mvar": -60.0,
+      "can_pump": false,
+      "active_from_shift": 1,
+      "description": "SLFD CCGT unit 3",
+      "station_x": 742,
+      "station_y": 498,
+      "start_mw": -1.0,
+      "in_service": true,
+      "label_anchor": "right",
+      "min_up_time_h": 2.0,
+      "min_down_time_h": 2.0
     }
   ]
 }

@@ -36,9 +36,9 @@ from simulation.constants import (
     MIN_UP_HOURS_HYDRO, MIN_DOWN_HOURS_HYDRO,
     MIN_UP_HOURS_HYDRO_ROR, MIN_DOWN_HOURS_HYDRO_ROR,
     MIN_UP_HOURS_HYDRO_PUMP, MIN_DOWN_HOURS_HYDRO_PUMP,
-    PLANNING_HOUR0_FRAC_NUCLEAR, PLANNING_HOUR0_FRAC_COAL,
-    PLANNING_HOUR0_FRAC_CCGT, PLANNING_HOUR0_FRAC_HYDRO,
-    PLANNING_HOUR0_FRAC_HYDRO_ROR, PLANNING_HOUR0_FRAC_HYDRO_PUMP,
+    PLANNING_PREV_DAY_FRAC_NUCLEAR, PLANNING_PREV_DAY_FRAC_COAL,
+    PLANNING_PREV_DAY_FRAC_CCGT, PLANNING_PREV_DAY_FRAC_HYDRO,
+    PLANNING_PREV_DAY_FRAC_HYDRO_ROR, PLANNING_PREV_DAY_FRAC_HYDRO_PUMP,
 )
 from simulation.demand import DemandModel
 from simulation.designer_grid import DesignerGrid
@@ -79,15 +79,18 @@ _MIN_DOWN_HOURS: dict[str, float] = {
     'HYDRO_PUMP': MIN_DOWN_HOURS_HYDRO_PUMP,
 }
 
-# Fraction of rated_mw the auto-scheduler seeds every non-maintenance
-# dispatchable unit at, at hour 0 (fixed starting point — see auto_schedule()).
-_HOUR0_FRAC: dict[str, float] = {
-    'NUCLEAR':    PLANNING_HOUR0_FRAC_NUCLEAR,
-    'COAL':       PLANNING_HOUR0_FRAC_COAL,
-    'CCGT':       PLANNING_HOUR0_FRAC_CCGT,
-    'HYDRO':      PLANNING_HOUR0_FRAC_HYDRO,
-    'HYDRO_ROR':  PLANNING_HOUR0_FRAC_HYDRO_ROR,
-    'HYDRO_PUMP': PLANNING_HOUR0_FRAC_HYDRO_PUMP,
+# Fraction of rated_mw every non-maintenance dispatchable unit is assumed
+# to have been producing during the previous day's final hour (H24 of
+# D-1) — a calculation-only boundary state auto_schedule() uses to
+# ramp-limit into and decide min-up/min-down for 00:00, the planning
+# day's own first hour. Never displayed or written to the schedule.
+_PREV_DAY_H24_FRAC: dict[str, float] = {
+    'NUCLEAR':    PLANNING_PREV_DAY_FRAC_NUCLEAR,
+    'COAL':       PLANNING_PREV_DAY_FRAC_COAL,
+    'CCGT':       PLANNING_PREV_DAY_FRAC_CCGT,
+    'HYDRO':      PLANNING_PREV_DAY_FRAC_HYDRO,
+    'HYDRO_ROR':  PLANNING_PREV_DAY_FRAC_HYDRO_ROR,
+    'HYDRO_PUMP': PLANNING_PREV_DAY_FRAC_HYDRO_PUMP,
 }
 
 # Auto-scheduler fill order (player-specified): wind/solar (non-scheduled,
@@ -105,11 +108,15 @@ _PLANNING_HOURS: tuple[float, ...] = tuple(float(h) for h in range(24))
 class PlanningModel:
     """
     Hourly generation schedule for a full 24-hour planning day, checked
-    against the shift's load and wind/solar forecasts.
+    against the shift's load and renewable forecasts.
 
     schedule/online are keyed [unit_label][hour] over all 24 hours
     (0.0-23.0). Renewable units (WIND/SOLAR) are excluded from unit_specs/
-    schedule/online — their contribution comes from wind_forecast instead.
+    schedule/online — they are not player-scheduled at all (no ON/OFF,
+    no MW to edit). Their forecasted contribution lives in
+    renewable_specs/renewable_forecast instead, and is shown in the
+    planning screen as locked, read-only rows that still feed into
+    total_gen()/stacked_by_tech().
     """
     unit_specs:     list[GenerationUnit]
     start_hour:     float
@@ -117,7 +124,8 @@ class PlanningModel:
     schedule:       dict[str, dict[float, float]] = field(default_factory=dict)
     online:         dict[str, dict[float, bool]]  = field(default_factory=dict)
     load_forecast:  dict[float, float] = field(default_factory=dict)
-    wind_forecast:  dict[float, float] = field(default_factory=dict)
+    renewable_specs:     list[GenerationUnit] = field(default_factory=list)
+    renewable_forecast:  dict[str, dict[float, float]] = field(default_factory=dict)
     maintenance_units: frozenset[str] = frozenset()
 
     hours: tuple[float, ...] = _PLANNING_HOURS
@@ -159,11 +167,17 @@ class PlanningModel:
     def fill_cell_max(self, label: str, hour: float) -> None:
         self.set_cell(label, hour, self.tech_max(self.unit(label)))
 
+    def fill_cell_zero(self, label: str, hour: float) -> None:
+        self.set_cell(label, hour, 0.0)
+
     def fill_row_min(self, label: str) -> None:
         self.fill_row(label, self.tech_min(self.unit(label)))
 
     def fill_row_max(self, label: str) -> None:
         self.fill_row(label, self.tech_max(self.unit(label)))
+
+    def fill_row_zero(self, label: str) -> None:
+        self.fill_row(label, 0.0)
 
     def toggle_online(self, label: str) -> None:
         currently_on = self.online.get(label, {}).get(self.hours[0], False)
@@ -185,13 +199,23 @@ class PlanningModel:
                 continue
             mw = self.schedule.get(unit.label, {}).get(hour, 0.0)
             stack[unit.unit_type] = stack.get(unit.unit_type, 0.0) + mw
-        wind_mw = self.wind_forecast.get(hour, 0.0)
-        if wind_mw > 0.0:
-            stack['WIND'] = stack.get('WIND', 0.0) + wind_mw
+        for unit in self.renewable_specs:
+            mw = self.renewable_forecast.get(unit.label, {}).get(hour, 0.0)
+            stack[unit.unit_type] = stack.get(unit.unit_type, 0.0) + mw
         return stack
 
     def total_gen(self, hour: float) -> float:
         return sum(self.stacked_by_tech(hour).values())
+
+    def renewable_total(self, hour: float, unit_type: str | None = None) -> float:
+        """Sum of forecasted renewable MW at hour, optionally filtered to
+        one unit_type ('WIND' or 'SOLAR'). Informational only — this MW
+        is not player-scheduled but is already counted in total_gen()."""
+        return sum(
+            self.renewable_forecast.get(unit.label, {}).get(hour, 0.0)
+            for unit in self.renewable_specs
+            if unit_type is None or unit.unit_type == unit_type
+        )
 
     def difference(self, hour: float) -> float:
         return self.total_gen(hour) - self.load_forecast.get(hour, 0.0)
@@ -229,42 +253,47 @@ class PlanningModel:
         the whole schedule/online table; the player is free to hand-edit
         the result afterward exactly as with any other schedule.
 
-        Hour 0 is a fixed starting point (not derived from commitment
-        logic): every non-maintenance dispatchable unit is forced ONLINE
-        at PLANNING_HOUR0_FRAC_<TYPE> * rated_mw. Hours 1-23 are then
-        committed and filled hour by hour, walking technology groups in
+        All 24 hours (00:00-23:00) are committed and filled by the same
+        per-hour logic, walking technology groups in
         _AUTO_SCHEDULE_FILL_ORDER within each hour so faster/peaking
-        technologies only cover what slower/baseload ones didn't.
+        technologies only cover what slower/baseload ones didn't. Since
+        there is no actual previous day, 00:00's own commitment/ramp
+        decision is computed against a synthetic, calculation-only
+        boundary state: every non-maintenance dispatchable unit is
+        assumed to have been ONLINE at PLANNING_PREV_DAY_FRAC_<TYPE> *
+        rated_mw throughout the previous day's final hour (H24 of D-1),
+        already having satisfied its own min-up/min-down window. This
+        boundary state is never written to schedule/online and never
+        displayed — 00:00 is a fully computed, ordinary hour like any
+        other.
         """
         units_by_type: dict[str, list[GenerationUnit]] = {}
         for unit in self.unit_specs:
             units_by_type.setdefault(unit.unit_type, []).append(unit)
 
         net_load: dict[float, float] = {
-            h: self.load_forecast.get(h, 0.0) - self.wind_forecast.get(h, 0.0)
+            h: self.load_forecast.get(h, 0.0) - self.renewable_total(h)
             for h in self.hours
         }
 
-        # Hour 0: fixed seed, every non-maintenance unit forced online at
-        # its technology's hour-0 output fraction (developer-approved
-        # boundary rule — every unit is treated as already having been
-        # running/stopped long enough before hour 0 to satisfy its own
-        # min-up/min-down window from hour 0 onward).
+        # Synthetic previous-day-H24 boundary state (calculation-only —
+        # see docstring). Seeded far enough in the past that every
+        # technology's own min-up/min-down is already satisfied by 00:00.
         h0 = self.hours[0]
+        prev_online0: dict[str, bool] = {}
+        prev_mw0: dict[str, float] = {}
         last_change_hour: dict[str, float] = {}
         prev_mw: dict[str, float] = {}
         for unit in self.unit_specs:
             label = unit.label
             on_maintenance = label in self.maintenance_units
-            online0 = not on_maintenance
-            frac = _HOUR0_FRAC.get(unit.unit_type, 1.0)
-            mw0 = 0.0 if on_maintenance else self.tech_max(unit) * frac
-            self.online.setdefault(label, {})[h0] = online0
-            self.schedule.setdefault(label, {})[h0] = mw0
-            last_change_hour[label] = h0
-            prev_mw[label] = mw0
+            frac = _PREV_DAY_H24_FRAC.get(unit.unit_type, 1.0)
+            prev_online0[label] = not on_maintenance
+            prev_mw0[label] = 0.0 if on_maintenance else self.tech_max(unit) * frac
+            last_change_hour[label] = h0 - 1000.0
+            prev_mw[label] = prev_mw0[label]
 
-        for h in self.hours[1:]:
+        for h in self.hours:
             covered = 0.0
             for tech in _AUTO_SCHEDULE_FILL_ORDER:
                 min_up = _MIN_UP_HOURS.get(tech, 0.0)
@@ -272,7 +301,7 @@ class PlanningModel:
                 for unit in units_by_type.get(tech, []):
                     label = unit.label
                     shortfall = net_load[h] - covered
-                    prev_online = self.online[label][h - 1.0]
+                    prev_online = prev_online0[label] if h == h0 else self.online[label][h - 1.0]
                     hours_in_state = h - last_change_hour[label]
 
                     if min_up == 0.0 and min_down == 0.0:
@@ -289,7 +318,12 @@ class PlanningModel:
                         # elapsed since it was last stopped.
                         want_online = (hours_in_state >= min_down) and (shortfall > 0.0)
 
-                    if want_online != prev_online:
+                    if h == h0 or want_online != prev_online:
+                        # 00:00 always resets the change-hour to itself —
+                        # the synthetic D-1 lookback only frees up 00:00's
+                        # own decision (see docstring); it must never
+                        # propagate as "already been in this state
+                        # indefinitely" into 01:00 onward.
                         last_change_hour[label] = h
 
                     ramp_mw = (unit.ramp_pct_per_min / 100.0) * unit.rated_mw * 60.0
@@ -359,24 +393,24 @@ def build_planning_model(shift_number: int) -> PlanningModel:
     dispatchable = [
         u for u in grid.get_active_units() if u.unit_type not in _RENEWABLE_TYPES
     ]
+    renewable_specs = [
+        u for u in grid.get_active_units() if u.unit_type in _RENEWABLE_TYPES
+    ]
 
     substation_specs = get_substation_demand_specs(cfg['substation_load_mw'])
     demand_model = DemandModel(spec, substation_specs)
     load_forecast = demand_model.forecast_by_hour(0.0, 23.0, step=1.0)
 
     renewables = RenewablesModel(grid)
-    renew_fc = renewables.forecast_by_hour(0.0, 23.0, step=1.0)
-    wind_forecast: dict[float, float] = {h: 0.0 for h in _PLANNING_HOURS}
-    for unit_label, by_hour in renew_fc.items():
-        for h, mw in by_hour.items():
-            wind_forecast[h] = wind_forecast.get(h, 0.0) + mw
+    renewable_forecast = renewables.forecast_by_hour(0.0, 23.0, step=1.0)
 
     model = PlanningModel(
         unit_specs=dispatchable,
         start_hour=spec.start_hour,
         duration_hours=spec.duration_hours,
         load_forecast=load_forecast,
-        wind_forecast=wind_forecast,
+        renewable_specs=renewable_specs,
+        renewable_forecast=renewable_forecast,
         maintenance_units=frozenset(cfg['maintenance_units']),
     )
     _default_init_schedule(model, shift_number, cfg=cfg)

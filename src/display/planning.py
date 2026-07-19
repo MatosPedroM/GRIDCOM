@@ -32,8 +32,8 @@ from simulation.constants import (
     PLANNING_STATUS_DISPLAY_S,
     PLANNING_KEY_UP, PLANNING_KEY_DOWN, PLANNING_KEY_LEFT, PLANNING_KEY_RIGHT,
     PLANNING_KEY_EDIT, PLANNING_KEY_TECH_MIN, PLANNING_KEY_TECH_MAX,
-    PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_RESET, PLANNING_KEY_AUTO,
-    PLANNING_KEY_CONFIRM, PLANNING_KEY_BACK,
+    PLANNING_KEY_ZERO, PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_RESET,
+    PLANNING_KEY_AUTO, PLANNING_KEY_CONFIRM, PLANNING_KEY_BACK,
 )
 from utils.helpers import resource_path
 
@@ -163,6 +163,13 @@ class PlanningScreen:
                 self._model.fill_row_max(label)
             else:
                 self._model.fill_cell_max(label, hour)
+        elif event.key == PLANNING_KEY_ZERO:
+            label = self._selected_label()
+            hour = self._selected_hour()
+            if shift_held:
+                self._model.fill_row_zero(label)
+            else:
+                self._model.fill_cell_zero(label, hour)
         elif event.key == PLANNING_KEY_TOGGLE_ONLINE:
             self._model.toggle_online(self._selected_label())
         elif event.key == PLANNING_KEY_RESET:

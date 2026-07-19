@@ -337,7 +337,7 @@ PLANNING_FONT_SIZE:             int   = 12    # px — table body text (24 colum
 PLANNING_FONT_SIZE_LARGE:       int   = 18    # px — section headings
 PLANNING_ROW_H:                 int   = 16    # px — table row height
 PLANNING_LEFT_MARGIN:           int   = 24    # px — left content margin
-PLANNING_TOP_MARGIN:            int   = 24    # px — top content margin
+PLANNING_TOP_MARGIN:            int   = 56    # px — top content margin (plot/table start here)
 PLANNING_LABEL_COL_W:           int   = 190   # px — unit label / rated / ON-OFF column
 PLANNING_HOUR_COL_W:            int   = 70    # px — per-hour column (24 columns must fit)
 PLANNING_PLOT_H:                int   = 220   # px — stacked plot region height
@@ -360,6 +360,7 @@ PLANNING_KEY_RIGHT:         int   = pygame.K_RIGHT                 # move cursor
 PLANNING_KEY_EDIT:          int   = pygame.K_RETURN                # open / commit the cell editor
 PLANNING_KEY_TECH_MIN:      int   = pygame.K_n                     # fill selected cell to tech min (+Shift: whole row)
 PLANNING_KEY_TECH_MAX:      int   = pygame.K_m                     # fill selected cell to tech max (+Shift: whole row)
+PLANNING_KEY_ZERO:          int   = pygame.K_BACKSPACE              # fill selected cell to 0 MW (+Shift: whole row)
 PLANNING_KEY_TOGGLE_ONLINE: int   = pygame.K_o                     # toggle selected unit ONLINE/OFFLINE
 PLANNING_KEY_RESET:         int   = pygame.K_r                     # reset schedule to shift handover dispatch
 PLANNING_KEY_AUTO:          int   = pygame.K_a                     # auto-schedule the full 24h (Ctrl+A)
@@ -389,13 +390,17 @@ MIN_DOWN_HOURS_WIND:       float = 0.0
 MIN_UP_HOURS_SOLAR:        float = 0.0
 MIN_DOWN_HOURS_SOLAR:      float = 0.0
 
-# Hour-0 seed: the auto-scheduler forces every non-maintenance
-# dispatchable unit ONLINE at hour 0, at this fraction of its rated_mw,
-# per technology (default: full output). WIND/SOLAR are forecast-driven
-# and never commitment-scheduled, so their fractions are unused.
-PLANNING_HOUR0_FRAC_NUCLEAR:     float = 1.0
-PLANNING_HOUR0_FRAC_COAL:        float = 1.0
-PLANNING_HOUR0_FRAC_CCGT:        float = 1.0
-PLANNING_HOUR0_FRAC_HYDRO:       float = 1.0
-PLANNING_HOUR0_FRAC_HYDRO_ROR:   float = 1.0
-PLANNING_HOUR0_FRAC_HYDRO_PUMP:  float = 1.0
+# Previous-day boundary state: the auto-scheduler's commitment/ramp logic
+# for hour 00:00 needs a "previous hour" to compare against. Since there
+# is no actual prior day, every non-maintenance dispatchable unit is
+# assumed to have been ONLINE at this fraction of its rated_mw during the
+# previous day's final hour (H24 of D-1), per technology (default: full
+# output). Calculation-only — never displayed or written to the
+# schedule/online table. WIND/SOLAR are forecast-driven and never
+# commitment-scheduled, so their fractions are unused.
+PLANNING_PREV_DAY_FRAC_NUCLEAR:     float = 1.0
+PLANNING_PREV_DAY_FRAC_COAL:        float = 1.0
+PLANNING_PREV_DAY_FRAC_CCGT:        float = 1.0
+PLANNING_PREV_DAY_FRAC_HYDRO:       float = 1.0
+PLANNING_PREV_DAY_FRAC_HYDRO_ROR:   float = 1.0
+PLANNING_PREV_DAY_FRAC_HYDRO_PUMP:  float = 1.0

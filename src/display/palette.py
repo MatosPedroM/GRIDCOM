@@ -221,6 +221,7 @@ COL_DESIGNER_SURPLUS_POS: Colour = (0,  255,   0)   # Power surplus positive —
 COL_DESIGNER_SURPLUS_NEG: Colour = (255,  0,   0)   # Power surplus negative — bright red
 COL_DESIGNER_FIELD_ACTIVE:Colour = (0,  170,   0)   # Active property field border — green
 COL_DESIGNER_DELETE_CURSOR:Colour= (255,  0,   0)   # Delete mode cursor — bright red
+COL_DESIGNER_GRID_DOT:    Colour = (60,  60,  60)   # Background reference dot-grid — dim grey
 
 # ─────────────────────────────────────────────
 # PLANNING PHASE (Phase 1 — pre-shift unit scheduling screen)

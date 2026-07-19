@@ -262,9 +262,17 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
     line = designer._selected_line
     unit = designer._selected_unit
 
+    group_n = (len(designer._selected_buses) + len(designer._selected_lines) +
+               len(designer._selected_stations))
     if bus is None and line is None and unit is None:
-        _label(surf, font, PAD, y, 'No element selected', COL_TEXT_DIM)
-        y += ROW_H
+        if group_n:
+            _label(surf, font, PAD, y, f'{group_n} elements selected', COL_TEXT_VALUE)
+            y += ROW_H
+            _label(surf, font, PAD, y, 'Drag to move, Del to remove', COL_TEXT_DIM)
+            y += ROW_H
+        else:
+            _label(surf, font, PAD, y, 'No element selected', COL_TEXT_DIM)
+            y += ROW_H
         return y + PAD
 
     if bus is not None:

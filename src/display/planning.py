@@ -27,6 +27,7 @@ from display.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_C
 from gameplay.phase1 import PlanningModel
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
+    FONT_PATH_MONO_REGULAR,
     PLANNING_FONT_SIZE, PLANNING_FONT_SIZE_LARGE,
     PLANNING_STATUS_DISPLAY_S,
     PLANNING_KEY_UP, PLANNING_KEY_DOWN, PLANNING_KEY_LEFT, PLANNING_KEY_RIGHT,
@@ -56,7 +57,7 @@ class PlanningScreen:
                                       int(NATIVE_HEIGHT * self._scale))
         self._native = pygame.Surface((self._letterbox.width, self._letterbox.height)).convert()
 
-        _font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
+        _font_path = resource_path(FONT_PATH_MONO_REGULAR)
         try:
             self._font       = pygame.freetype.Font(_font_path, PLANNING_FONT_SIZE)
             self._font_large = pygame.freetype.Font(_font_path, PLANNING_FONT_SIZE_LARGE)

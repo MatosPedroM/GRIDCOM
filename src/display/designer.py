@@ -41,17 +41,21 @@ from display.palette import (
     COL_LINE_NORMAL, COL_LINE_TRIPPED,
     COL_SELECTION, COL_PANEL_BORDER,
     COL_DESIGNER_LINE_DRAW, COL_DESIGNER_STATUS_OK, COL_DESIGNER_STATUS_INFO,
-    COL_DESIGNER_DELETE_CURSOR,
+    COL_DESIGNER_DELETE_CURSOR, COL_DESIGNER_GRID_DOT,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_WIND, COL_UNIT_SOLAR, COL_UNIT_HYDRO_PUMP,
 )
 from display.symbols import _draw_dashed_line
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT, CANVAS_HEIGHT,
+    FONT_PATH_MONO_REGULAR,
     DESIGNER_SIDEBAR_W, DESIGNER_CANVAS_W,
     DESIGNER_X_SCALE, DESIGNER_TARGET_LOADING_PCT,
     DESIGNER_STATUS_DISPLAY_S, DESIGNER_HIT_RADIUS, DESIGNER_LINE_HIT_PX,
     DESIGNER_FONT_SIZE, DESIGNER_FONT_SIZE_LARGE, DESIGNER_UNDO_MAX,
+    DESIGNER_MARQUEE_THRESHOLD_PX,
+    DESIGNER_GRID_SPACING_PX, DESIGNER_GRID_DEFAULT_ON,
+    DESIGNER_SNAP_SPACING_PX, DESIGNER_SNAP_DEFAULT_ON,
     LINE_RATING_MW_BY_VOLTAGE,
     OVERLOAD_WARN_PCT, OVERLOAD_CRIT_PCT,
 )
@@ -119,7 +123,7 @@ class GridDesigner:
         self._native = pygame.Surface((self._letterbox.width, self._letterbox.height)).convert()
 
         # Fonts — same JetBrains Mono as the in-game renderer
-        _font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
+        _font_path = resource_path(FONT_PATH_MONO_REGULAR)
         try:
             self._font       = pygame.freetype.Font(_font_path, DESIGNER_FONT_SIZE)
             self._font_bold  = pygame.freetype.Font(_font_path, DESIGNER_FONT_SIZE)
@@ -147,6 +151,26 @@ class GridDesigner:
         self._selected_bus:  DesignerBus  | None = None
         self._selected_line: DesignerLine | None = None
         self._selected_unit: DesignerUnit | None = None
+
+        # Group (marquee) selection — populated only by a rectangle drag,
+        # mutually exclusive with the single-element selection above.
+        self._selected_buses:    set[str] = set()  # bus labels
+        self._selected_lines:    set[str] = set()  # line labels
+        self._selected_stations: set[str] = set()  # station labels
+
+        # Marquee drag-in-progress state
+        self._marquee_start: tuple[int, int] | None = None  # native coords
+        self._marquee_rect:  pygame.Rect | None      = None
+        self._marquee_moved: bool = False   # exceeded click-vs-drag threshold?
+
+        # Group drag-in-progress state (dragging an already-captured group)
+        self._group_dragging:  bool = False
+        self._group_drag_last: tuple[int, int] | None = None
+
+        # Background reference dot-grid + snap-to-grid — independently
+        # toggleable (G / Ctrl+G) and independently sized via constants.
+        self._show_grid:    bool = DESIGNER_GRID_DEFAULT_ON
+        self._snap_enabled: bool = DESIGNER_SNAP_DEFAULT_ON
 
         # Palette / mode
         self._palette_mode:         str   = MODE_SELECT
@@ -236,6 +260,7 @@ class GridDesigner:
             ny = native_pos[1] + self._drag_offset[1]
             nx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, nx))
             ny = max(0, min(CANVAS_HEIGHT - 1, ny))
+            nx, ny = self._snap(nx, ny)
             self._dragging_bus.canvas_x = nx
             self._dragging_bus.canvas_y = ny
             # Full GridCanvas resync (ports/routing/dash pre-bake) is too
@@ -249,12 +274,41 @@ class GridDesigner:
             ny = native_pos[1] + self._drag_offset[1]
             nx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, nx))
             ny = max(0, min(CANVAS_HEIGHT - 1, ny))
+            nx, ny = self._snap(nx, ny)
             for u in self._units:
                 if u.station_label == self._dragging_station:
                     u.station_x = nx
                     u.station_y = ny
             # Same deferred-resync rationale as bus drag — see
             # _draw_canvas_overlays for the station-drag ghost.
+        elif self._group_dragging:
+            # Delta is computed from raw (unsnapped) cursor movement so it
+            # stays accurate frame to frame; only the resulting element
+            # positions are snapped, independently per element.
+            dx = native_pos[0] - self._group_drag_last[0]
+            dy = native_pos[1] - self._group_drag_last[1]
+            for b in self._buses:
+                if b.label in self._selected_buses:
+                    bx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, b.canvas_x + dx))
+                    by = max(0, min(CANVAS_HEIGHT - 1, b.canvas_y + dy))
+                    b.canvas_x, b.canvas_y = self._snap(bx, by)
+            for station_label in self._selected_stations:
+                for u in self._units:
+                    if u.station_label == station_label:
+                        sx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, u.station_x + dx))
+                        sy = max(0, min(CANVAS_HEIGHT - 1, u.station_y + dy))
+                        u.station_x, u.station_y = self._snap(sx, sy)
+            self._group_drag_last = native_pos
+            # Same deferred-resync rationale as single bus/station drag —
+            # group ghost lines are drawn in _draw_canvas_overlays.
+        elif self._marquee_start is not None:
+            x0, y0 = self._marquee_start
+            x1, y1 = native_pos
+            if (abs(x1 - x0) > DESIGNER_MARQUEE_THRESHOLD_PX or
+                    abs(y1 - y0) > DESIGNER_MARQUEE_THRESHOLD_PX):
+                self._marquee_moved = True
+            self._marquee_rect = pygame.Rect(
+                min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0))
 
     def on_mouse_down(self, native_pos: tuple[int, int]) -> None:
         if self._dialog_active:
@@ -264,6 +318,18 @@ class GridDesigner:
             return
         if native_pos[0] < DESIGNER_SIDEBAR_W:
             return
+
+        # If there's an active group selection and the click landed on one
+        # of its members, start a group drag — checked before the
+        # single-element hit-tests below so clicking directly on a captured
+        # bus/station re-drags the whole group instead of peeling off just
+        # that one element into a single-element drag.
+        if self._group_selection_hit(native_pos):
+            self._push_undo()
+            self._group_dragging  = True
+            self._group_drag_last = native_pos
+            return
+
         station_label = self._hit_station(native_pos)
         if station_label is not None:
             sx, sy = self._station_anchor(station_label)
@@ -275,6 +341,12 @@ class GridDesigner:
             self._dragging_bus   = bus
             self._drag_offset    = (bus.canvas_x - native_pos[0],
                                     bus.canvas_y - native_pos[1])
+            return
+
+        # Nothing under the cursor and no group hit — start a new marquee.
+        self._marquee_start = native_pos
+        self._marquee_rect  = pygame.Rect(native_pos[0], native_pos[1], 0, 0)
+        self._marquee_moved = False
 
     def on_mouse_up(self, native_pos: tuple[int, int]) -> None:
         if self._dragging_bus is not None:
@@ -283,6 +355,15 @@ class GridDesigner:
         elif self._dragging_station is not None:
             self._dragging_station = None
             self._mark_dirty()
+        elif self._group_dragging:
+            self._group_dragging  = False
+            self._group_drag_last = None
+            self._mark_dirty()
+        elif self._marquee_start is not None:
+            if self._marquee_moved and self._marquee_rect is not None:
+                self._marquee_capture(self._marquee_rect)
+            self._marquee_start = None
+            self._marquee_rect  = None
 
     def on_click(self, native_pos: tuple[int, int]) -> None:
         if self._dialog_active:
@@ -297,6 +378,12 @@ class GridDesigner:
 
         # Canvas click
         if self._palette_mode == MODE_SELECT:
+            # A marquee drag (or a group re-drag) already handled selection
+            # in on_mouse_down/on_mouse_up for this same button-down event —
+            # don't also run single-element select, which would stomp the
+            # group selection or misfire on the drag's release point.
+            if self._marquee_moved or self._group_dragging:
+                return
             self._do_select(native_pos)
 
         elif self._palette_mode == MODE_BUS:
@@ -358,7 +445,9 @@ class GridDesigner:
                 return True
             elif (self._selected_bus is not None or
                   self._selected_line is not None or
-                  self._selected_unit is not None):
+                  self._selected_unit is not None or
+                  self._selected_buses or self._selected_lines or
+                  self._selected_stations):
                 self._clear_selection()
                 return True
             else:
@@ -397,13 +486,29 @@ class GridDesigner:
             self._line_first_bus = None
             return True
 
+        if ctrl and event.key == pygame.K_g:
+            self._snap_enabled = not self._snap_enabled
+            self._set_status(
+                'Snap to grid: ON' if self._snap_enabled else 'Snap to grid: OFF',
+                COL_DESIGNER_STATUS_INFO)
+            return True
+
+        if event.key == pygame.K_g:
+            self._show_grid = not self._show_grid
+            self._set_status('Grid: ON' if self._show_grid else 'Grid: OFF',
+                             COL_DESIGNER_STATUS_INFO)
+            return True
+
         if event.key == pygame.K_d and not ctrl:
             self._palette_mode = (MODE_SELECT if self._palette_mode == MODE_DELETE
                                   else MODE_DELETE)
             return True
 
         if event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
-            self._delete_selected()
+            if self._selected_buses or self._selected_lines or self._selected_stations:
+                self._delete_selected_group()
+            else:
+                self._delete_selected()
             return True
 
         if event.key == pygame.K_r and not ctrl:
@@ -453,6 +558,7 @@ class GridDesigner:
         self._rotating_line_end = None
         self._editing_field = None
         self._edit_buffer   = ''
+        self._clear_group_selection()
 
     def _set_status(self, text: str, colour: tuple = None) -> None:
         self._status_text   = text
@@ -703,6 +809,14 @@ class GridDesigner:
                 return b
         return None
 
+    def _snap(self, x: int, y: int) -> tuple[int, int]:
+        """Round (x, y) to the nearest DESIGNER_SNAP_SPACING_PX grid point,
+        or return it unchanged if snap-to-grid is currently disabled."""
+        if not self._snap_enabled:
+            return (x, y)
+        step = DESIGNER_SNAP_SPACING_PX
+        return (round(x / step) * step, round(y / step) * step)
+
     def _station_anchor(self, station_label: str) -> tuple[int, int]:
         """
         Resolve a station's current canvas anchor. Falls back to 20px above
@@ -738,9 +852,89 @@ class GridDesigner:
     def _units_at_station(self, station_label: str) -> list[DesignerUnit]:
         return [u for u in self._units if u.station_label == station_label]
 
+    # ─── Group (marquee) selection ──────────────────────────────────────────────
+
+    def _marquee_capture(self, rect: pygame.Rect) -> None:
+        """
+        Populate the group-selection sets with every bus/station whose
+        anchor point falls inside rect, and every line whose *both*
+        endpoint buses fall inside rect (avoids surprising partial capture
+        of a long line merely grazing the rectangle edge).
+        """
+        buses = {b.label for b in self._buses
+                 if rect.collidepoint(b.canvas_x, b.canvas_y)}
+        stations = set()
+        seen: set[str] = set()
+        for u in self._units:
+            sl = u.station_label
+            if sl in seen:
+                continue
+            seen.add(sl)
+            if rect.collidepoint(*self._station_anchor(sl)):
+                stations.add(sl)
+        lines = {l.label for l in self._lines
+                 if l.from_bus in buses and l.to_bus in buses}
+
+        if not buses and not stations and not lines:
+            self._clear_selection()
+            return
+
+        self._clear_selection()
+        self._selected_buses    = buses
+        self._selected_lines    = lines
+        self._selected_stations = stations
+        n = len(buses) + len(stations) + len(lines)
+        self._set_status(f'{n} element{"s" if n != 1 else ""} selected',
+                         COL_DESIGNER_STATUS_INFO)
+
+    def _group_selection_hit(self, pos: tuple[int, int]) -> bool:
+        """True if pos lands on a bus/station/line already in the group selection."""
+        if not (self._selected_buses or self._selected_lines or self._selected_stations):
+            return False
+        bus = self._hit_bus(pos)
+        if bus is not None and bus.label in self._selected_buses:
+            return True
+        station = self._hit_station(pos)
+        if station is not None and station in self._selected_stations:
+            return True
+        line = self._hit_line(pos)
+        if line is not None and line.label in self._selected_lines:
+            return True
+        return False
+
+    def _clear_group_selection(self) -> None:
+        self._selected_buses.clear()
+        self._selected_lines.clear()
+        self._selected_stations.clear()
+
+    def _delete_selected_group(self) -> None:
+        # Snapshot the label sets up front — _remove_bus/_remove_station
+        # call _clear_selection() internally, which wipes the live
+        # _selected_* sets, so the loops below must not read them directly.
+        bus_labels     = list(self._selected_buses)
+        station_labels = list(self._selected_stations)
+        line_labels    = list(self._selected_lines)
+
+        self._push_undo()
+        for label in bus_labels:
+            bus = self._bus_by_label(label)
+            if bus is not None:
+                self._remove_bus(bus)
+        for label in station_labels:
+            if self._units_at_station(label):
+                self._remove_station(label)
+        for label in line_labels:
+            line = next((l for l in self._lines if l.label == label), None)
+            if line is not None:
+                self._lines.remove(line)
+                self._used_line_labels.discard(label)
+        self._clear_group_selection()
+        self._mark_dirty()
+
     # ─── Placement ───────────────────────────────────────────────────────────
 
     def _do_place_bus(self, x: int, y: int) -> None:
+        x, y = self._snap(x, y)
         if self._palette_load_toggle:
             # Ask for peak load
             self._dialog_prompt  = 'Peak load MW (150kV LOAD bus):'
@@ -858,6 +1052,7 @@ class GridDesigner:
     def _do_select(self, pos: tuple[int, int]) -> None:
         self._editing_field = None
         self._edit_buffer   = ''
+        self._clear_group_selection()
         bus = self._hit_bus(pos)
         if bus is not None:
             if (self._selected_line is not None and
@@ -1324,12 +1519,25 @@ class GridDesigner:
                                             station_positions, label_anchors)
         self._canvas_dirty = False
 
+    def _draw_grid_dots(self, surf: pygame.Surface) -> None:
+        """Background reference dot-grid, drawn beneath GridCanvas's blit."""
+        if not self._show_grid:
+            return
+        sc = self._scale
+        step = DESIGNER_GRID_SPACING_PX
+        x0 = ((DESIGNER_SIDEBAR_W + step - 1) // step) * step  # first on-canvas grid line
+        for gx in range(x0, NATIVE_WIDTH, step):
+            sgx = int(gx * sc)
+            for gy in range(0, CANVAS_HEIGHT, step):
+                surf.set_at((sgx, int(gy * sc)), COL_DESIGNER_GRID_DOT)
+
     def _draw_canvas(self, surf: pygame.Surface) -> None:
         # Canvas clip region — occupies the right side, sidebar is on the left
         sc = self._scale
         canvas_rect = pygame.Rect(int(DESIGNER_SIDEBAR_W * sc), 0,
                                   int(DESIGNER_CANVAS_W * sc), int(CANVAS_HEIGHT * sc))
         pygame.draw.rect(surf, (10, 10, 10), canvas_rect)
+        self._draw_grid_dots(surf)
 
         if self._canvas_dirty:
             self._sync_canvas()
@@ -1392,6 +1600,29 @@ class GridDesigner:
                                  pygame.Rect(int((sx - 8) * sc), int((sy - 8) * sc),
                                             int(16 * sc), int(16 * sc)), 1)
 
+        # Same deferred-resync trick, generalized to a whole dragged group:
+        # ghost every line with at least one endpoint bus in the group, plus
+        # every dragged station's collector line to its bus.
+        if self._group_dragging:
+            moved_bus_labels = self._selected_buses
+            for l in self._lines:
+                if l.from_bus in moved_bus_labels or l.to_bus in moved_bus_labels:
+                    b1 = self._bus_by_label(l.from_bus)
+                    b2 = self._bus_by_label(l.to_bus)
+                    if b1 is None or b2 is None:
+                        continue
+                    col = _VOLT_LINE_COLOUR.get(l.voltage_kv, COL_LINE_NORMAL)
+                    pygame.draw.line(surf, col, (int(b1.canvas_x * sc), int(b1.canvas_y * sc)),
+                                     (int(b2.canvas_x * sc), int(b2.canvas_y * sc)), 1)
+            for station_label in self._selected_stations:
+                sx, sy = self._station_anchor(station_label)
+                station_units = self._units_at_station(station_label)
+                if station_units:
+                    bus = self._bus_by_label(station_units[0].bus_label)
+                    if bus is not None:
+                        pygame.draw.line(surf, COL_LINE_NORMAL, (int(sx * sc), int(sy * sc)),
+                                         (int(bus.canvas_x * sc), int(bus.canvas_y * sc)), 1)
+
         # Selected-line highlight — waypoints come from GridCanvas, which
         # already draws at self._scale, so they're already in display pixels.
         if self._selected_line is not None and self._canvas is not None:
@@ -1399,6 +1630,36 @@ class GridDesigner:
             if waypoints:
                 for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
                     pygame.draw.line(surf, COL_SELECTION, (x1, y1), (x2, y2), 3)
+
+        # Group (marquee) selection highlight — same visual language as the
+        # single-element highlights above, just looped over the label sets.
+        if self._selected_buses or self._selected_lines or self._selected_stations:
+            for b in self._buses:
+                if b.label in self._selected_buses:
+                    pygame.draw.rect(surf, COL_SELECTION,
+                                     pygame.Rect(int((b.canvas_x - 8) * sc), int((b.canvas_y - 8) * sc),
+                                                int(16 * sc), int(16 * sc)), 2)
+            if self._selected_stations:
+                seen: set[str] = set()
+                for u in self._units:
+                    if u.station_label in self._selected_stations and u.station_label not in seen:
+                        seen.add(u.station_label)
+                        sx, sy = self._station_anchor(u.station_label)
+                        pygame.draw.rect(surf, COL_SELECTION,
+                                         pygame.Rect(int((sx - 8) * sc), int((sy - 8) * sc),
+                                                    int(16 * sc), int(16 * sc)), 2)
+            if self._selected_lines and self._canvas is not None:
+                for line_label in self._selected_lines:
+                    waypoints = self._canvas._line_waypoints.get(line_label)
+                    if waypoints:
+                        for (x1, y1), (x2, y2) in zip(waypoints, waypoints[1:]):
+                            pygame.draw.line(surf, COL_SELECTION, (x1, y1), (x2, y2), 3)
+
+        # Live marquee rectangle while dragging.
+        if self._marquee_rect is not None and self._marquee_moved:
+            scaled = pygame.Rect(int(self._marquee_rect.x * sc), int(self._marquee_rect.y * sc),
+                                 int(self._marquee_rect.width * sc), int(self._marquee_rect.height * sc))
+            pygame.draw.rect(surf, COL_SELECTION, scaled, 1)
 
         # Analysis mode: loading-% labels + out-of-service dashed overstroke.
         # Lines toggled out of service render no differently in GridCanvas's
@@ -1452,8 +1713,10 @@ class GridDesigner:
         # Mode hint bottom-left of canvas
         bus_hint = (f'PLACE BUS  150kV LOAD  (click canvas)' if self._palette_load_toggle
                     else f'PLACE BUS  {self._palette_voltage:.0f}kV  (click canvas)')
+        group_n = len(self._selected_buses) + len(self._selected_lines) + len(self._selected_stations)
+        select_hint = (f'{group_n} SELECTED  (drag to move, Del to remove)' if group_n else '')
         hint_map = {
-            MODE_SELECT: '',
+            MODE_SELECT: select_hint,
             MODE_BUS:    bus_hint,
             MODE_UNIT:   f'PLACE UNIT  {self._palette_unit_type}  (click a bus)',
             MODE_LINE:   ('Click first bus' if self._line_first_bus is None

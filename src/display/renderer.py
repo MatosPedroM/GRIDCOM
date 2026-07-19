@@ -48,6 +48,7 @@ import simulation.constants as _sim_const
 from simulation.constants import (
     CANVAS_HEIGHT, STRIP_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
+    FONT_PATH_MONO_REGULAR,
     FONT_SIZE_PANEL, FONT_SIZE_OVERLAY,
     PANEL_FREQ_X, PANEL_FREQ_W,
     PANEL_POWER_X, PANEL_POWER_W,
@@ -116,7 +117,7 @@ class Renderer:
             pygame.Rect(0, scaled_canvas_h, scaled_w, scaled_strip_h)
         )
 
-        font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
+        font_path = resource_path(FONT_PATH_MONO_REGULAR)
         if font_path.exists():
             self._font = pygame.freetype.Font(str(font_path), 11)
         else:

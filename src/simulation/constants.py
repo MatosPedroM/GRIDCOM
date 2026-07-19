@@ -213,6 +213,8 @@ TARGET_FPS:           int   = 60
 SIM_TICK_INTERVAL_S:  float = 0.1    # Simulation advances at 10 Hz regardless of render FPS
 LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
 
+FONT_PATH_MONO_REGULAR:  str = 'assets/fonts/TerminusTTF-4.49.3.ttf' #'assets/fonts/Px437_IBM_VGA_8x16.ttf'
+
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
 FONT_SIZE_LABEL:          int = 14      # bus/station labels on canvas
 FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
@@ -311,6 +313,11 @@ DESIGNER_LINE_HIT_PX:        int   = 8      # px — perpendicular distance thre
 DESIGNER_FONT_SIZE:          int   = 12     # px — designer sidebar and overlay font size
 DESIGNER_FONT_SIZE_LARGE:    int   = 22     # px — status messages on canvas
 DESIGNER_UNDO_MAX:           int   = 50     # maximum undo stack depth
+DESIGNER_MARQUEE_THRESHOLD_PX: int = 3       # px — drag distance before a marquee counts as a drag, not a click
+DESIGNER_GRID_SPACING_PX:    int   = 10     # px — background reference dot-grid spacing
+DESIGNER_GRID_DEFAULT_ON:    bool  = False  # dot-grid visibility on Designer entry
+DESIGNER_SNAP_SPACING_PX:    int   = 5      # px — snap-to-grid resolution for bus/station placement and drag
+DESIGNER_SNAP_DEFAULT_ON:    bool  = True   # whether snap-to-grid is active by default
 
 # ─────────────────────────────────────────────
 # SHIFT BUILDER MODE

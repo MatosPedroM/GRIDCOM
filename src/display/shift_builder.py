@@ -37,6 +37,7 @@ from display.palette import (
 )
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
+    FONT_PATH_MONO_REGULAR,
     SHIFT_BUILDER_FONT_SIZE, SHIFT_BUILDER_FONT_SIZE_LARGE,
     SHIFT_BUILDER_ROW_H, SHIFT_BUILDER_LEFT_MARGIN, SHIFT_BUILDER_TOP_MARGIN,
     SHIFT_BUILDER_STATUS_DISPLAY_S, SHIFT_BUILDER_DEFAULT_DURATION_H,
@@ -76,7 +77,7 @@ class ShiftBuilder:
         # bitmap-stretched afterward (matches Renderer's approach).
         self._native = pygame.Surface((self._letterbox.width, self._letterbox.height)).convert()
 
-        _font_path = resource_path('assets/fonts/JetBrainsMono-Regular.ttf')
+        _font_path = resource_path(FONT_PATH_MONO_REGULAR)
         try:
             self._font       = pygame.freetype.Font(_font_path, SHIFT_BUILDER_FONT_SIZE)
             self._font_large = pygame.freetype.Font(_font_path, SHIFT_BUILDER_FONT_SIZE_LARGE)

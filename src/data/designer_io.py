@@ -15,7 +15,8 @@ JSON schema version 1:
     "units": [ { label, station_label, bus_label, unit_type, rated_mw, min_mw,
                  ramp_pct_per_min, inertia_h, cold_start_min,
                  q_max_mvar, q_min_mvar, can_pump, active_from_shift, description,
-                 station_x, station_y, start_mw, in_service } ]
+                 station_x, station_y, start_mw, in_service,
+                 min_up_time_h, min_down_time_h } ]
   }
 
   start_mw: test-session starting dispatch, MW. -1.0 (default) means "not
@@ -66,28 +67,36 @@ STATION_LABEL_POOL: tuple[str, ...] = (
 UNIT_DEFAULTS: dict[str, dict] = {
     'COAL':       {'rated_mw': 300.0, 'min_mw': 105.0, 'ramp_pct_per_min': 3.0,
                    'inertia_h': 5.0, 'cold_start_min': 240.0,
-                   'q_max_mvar': 150.0, 'q_min_mvar': -50.0},
+                   'q_max_mvar': 150.0, 'q_min_mvar': -50.0,
+                   'min_up_time_h': 6.0, 'min_down_time_h': 8.0},
     'CCGT':       {'rated_mw': 400.0, 'min_mw': 100.0, 'ramp_pct_per_min': 8.0,
                    'inertia_h': 4.0, 'cold_start_min': 60.0,
-                   'q_max_mvar': 180.0, 'q_min_mvar': -60.0},
+                   'q_max_mvar': 180.0, 'q_min_mvar': -60.0,
+                   'min_up_time_h': 2.0, 'min_down_time_h': 2.0},
     'NUCLEAR':    {'rated_mw': 700.0, 'min_mw': 420.0, 'ramp_pct_per_min': 1.0,
                    'inertia_h': 6.0, 'cold_start_min': 480.0,
-                   'q_max_mvar': 300.0, 'q_min_mvar': -100.0},
+                   'q_max_mvar': 300.0, 'q_min_mvar': -100.0,
+                   'min_up_time_h': 24.0, 'min_down_time_h': 24.0},
     'HYDRO':      {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
                    'inertia_h': 3.0, 'cold_start_min': 5.0,
-                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0},
+                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
     'HYDRO_ROR':  {'rated_mw': 30.0,  'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
                    'inertia_h': 3.0, 'cold_start_min': 5.0,
-                   'q_max_mvar': 15.0, 'q_min_mvar': -5.0},
+                   'q_max_mvar': 15.0, 'q_min_mvar': -5.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
     'HYDRO_PUMP': {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
                    'inertia_h': 3.0, 'cold_start_min': 8.0,
-                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0},
+                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
     'WIND':       {'rated_mw': 300.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
                    'inertia_h': 0.0, 'cold_start_min': 0.0,
-                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0},
+                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
     'SOLAR':      {'rated_mw': 400.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
                    'inertia_h': 0.0, 'cold_start_min': 0.0,
-                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0},
+                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
 }
 
 
@@ -161,6 +170,10 @@ class DesignerUnit:
     start_mw:          float = -1.0  # test-session starting dispatch, -1 = auto (rated_mw * 0.5)
     in_service:        bool = True   # test-session availability, False = starts on maintenance
     label_anchor:      str = 'right'  # station label position, one per station_label
+    # Phase 1 planning-layer constraints (see GenerationUnit) — fallback
+    # defaults only used when loading a saved grid predating this field.
+    min_up_time_h:     float = 1.0
+    min_down_time_h:   float = 1.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -202,7 +215,12 @@ def load_designer_grid(
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NAMED FILE SAVE / LOAD
-# Multiple designer grids stored in assets/designer_grids/<name>.json
+# Multiple designer grids stored in assets/designer_grids/<name>.json.
+#
+# Naming convention: names of the form 'shift<N>' (e.g. 'shift10') are
+# reserved for campaign use — they're the GRID_SOURCE a shift_NN.py module
+# points at. Player scratch designs should avoid that pattern so they don't
+# collide with (or get mistaken for) campaign-owned grids.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def list_designer_grids() -> list[str]:

@@ -48,7 +48,8 @@ _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
 
 # Unit types eligible for AGC dispatch (fast-response, reservoir-backed units only —
 # run-of-river has no stored head to draw on and pumped storage is excluded by design).
-_AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'CCGT'})
+AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'CCGT'})
+_AGC_UNIT_TYPES = AGC_UNIT_TYPES
 
 # Technical minimum fraction per unit type — used by AGC lower-bound and regulation indicator.
 _TECH_MIN_FRAC: dict[str, float] = {

@@ -217,4 +217,6 @@ def _to_unit(u: DesignerUnit) -> GenerationUnit:
         can_pump=u.can_pump,
         active_from_shift=1,
         description=u.description,
+        min_up_time_h=u.min_up_time_h,
+        min_down_time_h=u.min_down_time_h,
     )

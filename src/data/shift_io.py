@@ -247,7 +247,7 @@ def load_campaign_shift_for_editing(shift_number: int) -> ShiftDefinition:
 
     Narrative fields (shift_date, difficulty_label, handover_notes) are
     populated for read-only display. 'grid' is set from the shift's
-    GRID_SOURCE constant if present (e.g. Shift 10's 'Alpha'), else left
+    GRID_SOURCE constant if present (e.g. Shift 10's 'shift10'), else left
     empty — shifts without GRID_SOURCE run on topology.py/fleet.py, which
     has no Designer-grid equivalent to show here.
     """

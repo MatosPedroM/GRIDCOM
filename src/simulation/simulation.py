@@ -210,10 +210,18 @@ class GridSimulation:
         scripted_events: list[dict] | None = None,
         start_hour: float | None = None,
         duration_hours: float | None = None,
+        hourly_schedule: dict[str, dict[float, float]] | None = None,
     ) -> None:
         self._grid         = grid
         self._shift_number = shift_number
         self._difficulty   = difficulty
+
+        # Full 24h per-unit schedule from the Phase 1 planning screen
+        # ({unit_label: {hour: mw}}), if the shift went through planning.
+        # Not currently consumed anywhere — the real-time session still
+        # runs on the single initial_schedule handover dispatch plus
+        # manual dispatch/AGC. Stored here for a future per-hour executor.
+        self._hourly_schedule: dict[str, dict[float, float]] | None = hourly_schedule
 
         spec = SHIFT_SPECS[shift_number]
         self._start_hour        = start_hour if start_hour is not None else spec.start_hour

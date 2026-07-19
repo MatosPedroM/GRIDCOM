@@ -679,6 +679,7 @@ class GridDesigner:
         segment — mirrors renderer.py's production click hit-test pattern.
         """
         px, py = pos
+        scale = self._scale
         best_dist = DESIGNER_LINE_HIT_PX + 1
         best = None
         waypoints_map = self._canvas._line_waypoints if self._canvas is not None else {}
@@ -686,7 +687,10 @@ class GridDesigner:
             waypoints = waypoints_map.get(l.label)
             if waypoints is None:
                 continue  # canvas not yet synced this session — no hit this frame
-            d = min(point_segment_dist(px, py, sx1, sy1, sx2, sy2)
+            # waypoints are cached in display-scaled space (GridCanvas is
+            # constructed with scale=self._scale); pos is logical/native —
+            # convert back to logical space before comparing.
+            d = min(point_segment_dist(px, py, sx1 / scale, sy1 / scale, sx2 / scale, sy2 / scale)
                     for (sx1, sy1), (sx2, sy2) in zip(waypoints, waypoints[1:]))
             if d < best_dist:
                 best_dist = d
@@ -815,6 +819,8 @@ class GridDesigner:
                 description=f'{station_label} {unit_type} unit {i}',
                 station_x=sx,
                 station_y=sy,
+                min_up_time_h=defaults['min_up_time_h'],
+                min_down_time_h=defaults['min_down_time_h'],
             )
             self._units.append(unit)
         self._palette_mode = MODE_SELECT

@@ -221,3 +221,12 @@ COL_DESIGNER_SURPLUS_POS: Colour = (0,  255,   0)   # Power surplus positive —
 COL_DESIGNER_SURPLUS_NEG: Colour = (255,  0,   0)   # Power surplus negative — bright red
 COL_DESIGNER_FIELD_ACTIVE:Colour = (0,  170,   0)   # Active property field border — green
 COL_DESIGNER_DELETE_CURSOR:Colour= (255,  0,   0)   # Delete mode cursor — bright red
+
+# ─────────────────────────────────────────────
+# PLANNING PHASE (Phase 1 — pre-shift unit scheduling screen)
+# ─────────────────────────────────────────────
+COL_PLAN_LOAD_LINE:  Colour = (255,255,   0)  # Load-forecast overlay polyline — bright yellow
+COL_PLAN_GRID_LINE:  Colour = (85,  85,  85)  # Plot/table gridlines and column separators
+COL_PLAN_CELL_SEL:   Colour = (255,255, 255)  # Selected table cell highlight — bright white
+COL_PLAN_OFFLINE:    Colour = (85,  85,  85)  # Dimmed row colour for an OFFLINE unit
+COL_PLAN_WINDOW_MARK:Colour = (0,  170,   0)  # Shift-window bracket/highlight on the 24h axis

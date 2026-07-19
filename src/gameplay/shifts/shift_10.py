@@ -1,11 +1,14 @@
 """
 src/gameplay/shifts/shift_10.py
 
-Shift 10 scenario — the campaign finale, now run on the "Alpha" grid built
-in the Grid Designer (src/assets/designer_grids/Alpha.json) instead of the
-shared topology.py/fleet.py subset every other shift uses: 57 buses, 115
-lines, 30 units across 14 stations. See GRID_SOURCE below and
-gameplay/shifts/loader.py for how this is wired in.
+Shift 10 scenario — the campaign finale, run on a grid built in the Grid
+Designer and saved as its own campaign-owned file
+(src/assets/designer_grids/shift10.json) instead of the shared
+topology.py/fleet.py subset every other shift uses: 57 buses, 115 lines,
+30 units across 14 stations. Kept separate from any player scratch design
+in the Grid Designer (e.g. "Alpha", the grid this was originally built as)
+so player edits there can never affect the campaign. See GRID_SOURCE below
+and gameplay/shifts/loader.py for how this is wired in.
 
 Narrative:
   Final shift, peak demand day, 06:00-18:00. Every station on Alpha's grid
@@ -39,7 +42,7 @@ DIFFICULTY_LABEL: str = 'Expert'
 # shared topology.py/fleet.py subset every other campaign shift uses. See
 # gameplay/shifts/loader.py:load_shift_config() and
 # main._make_sim_and_renderer() for how this is resolved.
-GRID_SOURCE: str = 'Alpha'
+GRID_SOURCE: str = 'shift10'
 
 HANDOVER_NOTES: tuple[str, ...] = (
     'Final shift, 06:00. Full Alpha grid energised — 57 buses, 115 lines, 30 units live.',
@@ -56,12 +59,12 @@ HANDOVER_NOTES: tuple[str, ...] = (
 )
 
 # Units on planned outage at shift start.
-MAINTENANCE_UNITS: set[str] = {'RVSD-3'}
+MAINTENANCE_UNITS: set[str] = set()
 
 # No lines start open — full mesh intact at shift start.
 MAINTENANCE_LINES: set[str] = set()
 
-AGC_ENABLED: bool = False
+AGC_ENABLED: bool = True
 
 # Per-bus hourly load table (MW). Full grid: 11 load buses.
 # LD01-LD06 retain a small residual (~5% of their old standalone curve) —
@@ -251,30 +254,24 @@ SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
 # midday wind lull and the evening peak ramp. RVSD-3 omitted: on
 # maintenance for the whole shift (see MAINTENANCE_UNITS above).
 INITIAL_SCHEDULE: dict[str, float] = {
-    'RVSD-1':  141.0,   # Riverside Coal 1 — ramp headroom held
-    'RVSD-2':  141.0,   # Riverside Coal 2 — ramp headroom held
-    'THNF-1':  141.0,   # Thornfield Coal 1 — ramp headroom held
-    'THNF-2':  141.0,   # Thornfield Coal 2 — ramp headroom held
-    'ASHG-1':   90.0,   # Ashford CCGT 1 — reserve for peaks
-    'ASHG-2':   90.0,   # Ashford CCGT 2 — reserve for peaks
-    'WRNG-1':   90.0,   # Wrentham CCGT 1 — reserve for peaks
-    'WRNG-2':   90.0,   # Wrentham CCGT 2 — reserve for peaks
-    'DUNH-1':   30.0,   # Dunmore Upper 1 — fast regulation reserve
-    'DUNH-2':   30.0,   # Dunmore Upper 2 — fast regulation reserve
-    'KELM-1':   37.5,   # Kelmore Upper 1 — fast regulation reserve
-    'BARR-1':   37.5,   # Barrow Upper 1 — fast regulation reserve
-    'DUND-1':    9.8,   # Dunmore Lower 1 — fast regulation reserve
-    'DUND-2':    9.8,   # Dunmore Lower 2 — fast regulation reserve
-    'DUND-3':    9.8,   # Dunmore Lower 3 — fast regulation reserve
-    'DUND-4':    9.8,   # Dunmore Lower 4 — fast regulation reserve
-    'KELD-1':   12.0,   # Kelmore Lower 1 — fast regulation reserve
-    'KELD-2':   12.0,   # Kelmore Lower 2 — fast regulation reserve
-    'BARD-1':   12.0,   # Barrow Lower 1 — fast regulation reserve
-    'BARD-2':   12.0,   # Barrow Lower 2 — fast regulation reserve
-    'BARD-3':   12.0,   # Barrow Lower 3 — fast regulation reserve
-    # River Arden cascade — run near available flow (no manual staging needed).
-    'AR01-1':   37.5, 'AR01-2':  37.5,
-    'AR03-1':   39.0, 'AR03-2':  39.0, 'AR03-3':  39.0,
+    'DUNH-1': 0.0,
+    'DUNH-2': 0.0,
+    'KELM-1': 0.0,
+    'BARR-1': 0.0,
+    'DUND-1': 0.0,
+    'DUND-2': 0.0,
+    'DUND-3': 0.0,
+    'DUND-4': 0.0,
+    'KELD-1': 0.0,
+    'KELD-2': 0.0,
+    'BARD-1': 0.0,
+    'BARD-2': 0.0,
+    'BARD-3': 0.0,
+    'AR01-1': 25.0,
+    'AR01-2': 25.0,
+    'AR03-1': 0.0,
+    'AR03-2': 0.0,
+    'AR03-3': 0.0,
 }
 
 

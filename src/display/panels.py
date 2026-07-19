@@ -513,6 +513,12 @@ _FUEL_COLOURS = {
     'SOLAR':     COL_UNIT_SOLAR,
 }
 
+# Public aliases — reused by display/planning_panels.py so fuel grouping/
+# colours/labels stay single-sourced (CLAUDE.md Rule 2) instead of duplicated.
+FUEL_ORDER   = _FUEL_ORDER
+FUEL_LABELS  = _FUEL_LABELS
+FUEL_COLOURS = _FUEL_COLOURS
+
 _FALLBACK_MIX = {
     'NUCLEAR': 0.0,
     'COAL':    0.0,

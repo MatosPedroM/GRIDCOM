@@ -8,6 +8,8 @@ No hardcoded numbers anywhere else in the codebase.
 See CLAUDE.md Rule 1.
 """
 
+import pygame
+
 # ─────────────────────────────────────────────
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
@@ -320,3 +322,73 @@ SHIFT_BUILDER_LEFT_MARGIN:      int   = 40    # px — left content margin
 SHIFT_BUILDER_TOP_MARGIN:       int   = 40    # px — top content margin
 SHIFT_BUILDER_STATUS_DISPLAY_S: float = 3.0   # seconds to show status messages
 SHIFT_BUILDER_DEFAULT_DURATION_H: float = 8.0 # default duration for a new shift
+
+# ─────────────────────────────────────────────
+# PLANNING PHASE (Phase 1 — pre-shift unit scheduling screen)
+# ─────────────────────────────────────────────
+PLANNING_FONT_SIZE:             int   = 12    # px — table body text (24 columns is tight)
+PLANNING_FONT_SIZE_LARGE:       int   = 18    # px — section headings
+PLANNING_ROW_H:                 int   = 16    # px — table row height
+PLANNING_LEFT_MARGIN:           int   = 24    # px — left content margin
+PLANNING_TOP_MARGIN:            int   = 24    # px — top content margin
+PLANNING_LABEL_COL_W:           int   = 190   # px — unit label / rated / ON-OFF column
+PLANNING_HOUR_COL_W:            int   = 70    # px — per-hour column (24 columns must fit)
+PLANNING_PLOT_H:                int   = 220   # px — stacked plot region height
+PLANNING_PLOT_Y_HEADROOM_FRAC:  float = 1.10  # plot Y max = peak value * this
+PLANNING_STATUS_DISPLAY_S:      float = 3.0   # seconds to show status messages
+PLANNING_TABLE_GROUP_GAP:       int   = 4     # px — extra gap before each tech-group header row
+PLANNING_TABLE_VISIBLE_H:       int   = 480   # px — scrollable table viewport height (unit rows only)
+
+# Confirm-time adequacy gate: F10 is refused if any hour's scheduled
+# generation is outside load_forecast(h) * (1 +/- this fraction).
+PLANNING_LOAD_TOLERANCE_FRAC:   float = 0.10
+
+# ─────────────────────────────────────────────
+# PLANNING PHASE — KEYBOARD SHORTCUTS
+# ─────────────────────────────────────────────
+PLANNING_KEY_UP:            tuple = (pygame.K_UP, pygame.K_w)      # move cursor up a row
+PLANNING_KEY_DOWN:          tuple = (pygame.K_DOWN, pygame.K_s)    # move cursor down a row
+PLANNING_KEY_LEFT:          int   = pygame.K_LEFT                  # move cursor to previous hour
+PLANNING_KEY_RIGHT:         int   = pygame.K_RIGHT                 # move cursor to next hour
+PLANNING_KEY_EDIT:          int   = pygame.K_RETURN                # open / commit the cell editor
+PLANNING_KEY_TECH_MIN:      int   = pygame.K_n                     # fill selected cell to tech min (+Shift: whole row)
+PLANNING_KEY_TECH_MAX:      int   = pygame.K_m                     # fill selected cell to tech max (+Shift: whole row)
+PLANNING_KEY_TOGGLE_ONLINE: int   = pygame.K_o                     # toggle selected unit ONLINE/OFFLINE
+PLANNING_KEY_RESET:         int   = pygame.K_r                     # reset schedule to shift handover dispatch
+PLANNING_KEY_AUTO:          int   = pygame.K_a                     # auto-schedule the full 24h (Ctrl+A)
+PLANNING_KEY_CONFIRM:       int   = pygame.K_F10                   # confirm plan and start the real-time shift
+PLANNING_KEY_BACK:          int   = pygame.K_ESCAPE                # cancel cell edit / exit planner to main menu
+
+# ─────────────────────────────────────────────
+# PLANNING PHASE — AUTO-SCHEDULER (heuristic day-ahead unit commitment)
+# ─────────────────────────────────────────────
+# Minimum hours a unit must stay ONLINE once committed / OFFLINE once
+# stopped, by dispatchable technology. Planning-layer-only constraint —
+# not enforced by the real-time simulation (units.py has no cooldown).
+MIN_UP_HOURS_NUCLEAR:      float = 24.0
+MIN_DOWN_HOURS_NUCLEAR:    float = 24.0
+MIN_UP_HOURS_COAL:         float = 6.0
+MIN_DOWN_HOURS_COAL:       float = 8.0
+MIN_UP_HOURS_CCGT:         float = 2.0
+MIN_DOWN_HOURS_CCGT:       float = 2.0
+MIN_UP_HOURS_HYDRO:        float = 0.0
+MIN_DOWN_HOURS_HYDRO:      float = 0.0
+MIN_UP_HOURS_HYDRO_ROR:    float = 0.0
+MIN_DOWN_HOURS_HYDRO_ROR:  float = 0.0
+MIN_UP_HOURS_HYDRO_PUMP:   float = 0.0
+MIN_DOWN_HOURS_HYDRO_PUMP: float = 0.0
+MIN_UP_HOURS_WIND:         float = 0.0
+MIN_DOWN_HOURS_WIND:       float = 0.0
+MIN_UP_HOURS_SOLAR:        float = 0.0
+MIN_DOWN_HOURS_SOLAR:      float = 0.0
+
+# Hour-0 seed: the auto-scheduler forces every non-maintenance
+# dispatchable unit ONLINE at hour 0, at this fraction of its rated_mw,
+# per technology (default: full output). WIND/SOLAR are forecast-driven
+# and never commitment-scheduled, so their fractions are unused.
+PLANNING_HOUR0_FRAC_NUCLEAR:     float = 1.0
+PLANNING_HOUR0_FRAC_COAL:        float = 1.0
+PLANNING_HOUR0_FRAC_CCGT:        float = 1.0
+PLANNING_HOUR0_FRAC_HYDRO:       float = 1.0
+PLANNING_HOUR0_FRAC_HYDRO_ROR:   float = 1.0
+PLANNING_HOUR0_FRAC_HYDRO_PUMP:  float = 1.0

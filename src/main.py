@@ -73,6 +73,7 @@ class GameState(Enum):
     DIFFICULTY_SELECT = 'difficulty_select'
     CAMPAIGN_INTRO    = 'campaign_intro'
     BRIEFING          = 'briefing'
+    PLANNING          = 'planning'
     PLAYING           = 'playing'
     DEBRIEF           = 'debrief'
     SHIFT_SELECT      = 'shift_select'
@@ -193,6 +194,7 @@ def _make_sim_and_renderer(
     display_surf: pygame.Surface,
     shift: int,
     difficulty: str = 'standard',
+    planning_model=None,
 ):
     """
     Build sim + renderer for a campaign shift.
@@ -203,6 +205,12 @@ def _make_sim_and_renderer(
     (assets/designer_grids/<name>.json) via DesignerGrid — shift_number is
     still passed through unchanged so briefing/debrief/HUD/scripted-events
     continue to key off the real shift number either way.
+
+    planning_model: a completed gameplay.phase1.PlanningModel, if the player
+    went through the Phase 1 planning screen for this shift. When given, its
+    shift-start-hour column overrides the shift file's INITIAL_SCHEDULE (the
+    handover dispatch), and its full 24h schedule is passed through to
+    GridSimulation as hourly_schedule (currently inert — see simulation.py).
     """
     cfg         = load_shift_config(shift)
     grid_source = cfg.get('grid_source')
@@ -215,11 +223,18 @@ def _make_sim_and_renderer(
     else:
         grid = Grid(shift)
 
+    initial_schedule = cfg['initial_schedule']
+    hourly_schedule   = None
+    if planning_model is not None:
+        initial_schedule = planning_model.to_initial_schedule()
+        hourly_schedule   = planning_model.to_hourly_dispatch()
+
     sim = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
-                         initial_schedule=cfg['initial_schedule'],
+                         initial_schedule=initial_schedule,
                          maintenance_units=cfg['maintenance_units'],
                          maintenance_lines=cfg['maintenance_lines'],
-                         substation_load_mw=cfg['substation_load_mw'] or None)
+                         substation_load_mw=cfg['substation_load_mw'] or None,
+                         hourly_schedule=hourly_schedule)
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
     if grid_source:
@@ -368,6 +383,10 @@ def main() -> None:
                         # into it, or lazily on entry to the DESIGNER state
     _shift_builder = None   # ShiftBuilder instance — lazily created on entry
                             # to the SHIFT_BUILDER state
+    _planning_screen = None   # PlanningScreen instance — lazily created on entry
+                              # to the PLANNING state
+    _planning_model  = None   # PlanningModel built when campaign entry redirects
+                              # to the Shift 10 planner (see DIFFICULTY_SELECT)
     shift = 10   # default for SHIFT_SPECS.get(shift) below regardless of boot path
 
     if _const.DEBUG_SCENARIO_ACTIVE:
@@ -584,15 +603,25 @@ def main() -> None:
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         difficulty_map = {0: 'trainee', 1: 'standard', 2: 'dispatcher'}
                         difficulty     = difficulty_map.get(menu_selected, 'standard')
-                        # Rebuild sim with selected difficulty
-                        sim, grid, renderer = _make_sim_and_renderer(
-                            display_surf, shift=1, difficulty=difficulty,
-                        )
-                        state = sim.get_state()
-                        game_state       = GameState.CAMPAIGN_INTRO
-                        intro_screen_idx = 0
-                        intro_chars      = 0.0
-                        campaign_start_time = pygame.time.get_ticks()
+                        # DEBUG: campaign entry currently jumps straight to the
+                        # Shift 10 planner (skipping shift 1's intro/briefing)
+                        # while Phase 1 is developed against Shift 10 only.
+                        # Restore the commented block below to resume the
+                        # normal shift-1 campaign start once other shifts are
+                        # wired into planning.
+                        shift = 10
+                        from gameplay.phase1 import build_planning_model_for_shift10
+                        _planning_model  = build_planning_model_for_shift10()
+                        _planning_screen = None
+                        game_state = GameState.PLANNING
+                        # sim, grid, renderer = _make_sim_and_renderer(
+                        #     display_surf, shift=1, difficulty=difficulty,
+                        # )
+                        # state = sim.get_state()
+                        # game_state       = GameState.CAMPAIGN_INTRO
+                        # intro_screen_idx = 0
+                        # intro_chars      = 0.0
+                        # campaign_start_time = pygame.time.get_ticks()
                     elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MODE_SELECT
                         menu_selected = 0
@@ -681,6 +710,57 @@ def main() -> None:
             briefing_chars = min(briefing_chars + TYPEWRITER_CHARS_PER_SEC * dt,
                                  float(total) + 1)
             renderer.tick_text_screen(dt, briefing_lines, int(briefing_chars))
+
+        # ── PLANNING (Phase 1 — pre-shift unit scheduling, Shift 10 only) ──────
+        elif game_state == GameState.PLANNING:
+            if _planning_screen is None:
+                from display.planning import PlanningScreen
+                _planning_screen = PlanningScreen(display_surf, _planning_model, shift_number=shift)
+
+            if _planning_screen.on_plan_complete is None:
+                def _on_plan_complete(model) -> None:
+                    nonlocal game_state, sim, grid, renderer, state, sim_accum, speed, _planning_screen
+                    sim, grid, renderer = _make_sim_and_renderer(
+                        display_surf, shift=shift, difficulty=difficulty,
+                        planning_model=model,
+                    )
+                    state      = sim.get_state()
+                    sim_accum  = 0.0
+                    speed      = SPEED_PAUSE
+                    _planning_screen = None
+                    game_state = GameState.PLAYING
+
+                _planning_screen.on_plan_complete = _on_plan_complete
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if not _planning_screen.on_key(event):
+                            game_state    = GameState.MAIN_MENU
+                            menu_selected = 0
+                    else:
+                        _planning_screen.on_key(event)
+
+                elif event.type == pygame.MOUSEMOTION:
+                    _planning_screen.on_mouse_move(
+                        _planning_screen.to_native(event.pos))
+
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        native = _planning_screen.to_native(event.pos)
+                        _planning_screen.on_mouse_down(native)
+                        _planning_screen.on_click(native)
+
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:
+                        _planning_screen.on_mouse_up(
+                            _planning_screen.to_native(event.pos))
+
+            if _planning_screen is not None:
+                _planning_screen.tick(dt, display_surf)
 
         # ── PLAYING ──────────────────────────────────────────────────────────
         elif game_state == GameState.PLAYING:

@@ -369,6 +369,7 @@ def _next_enabled(items: list, current: int, direction: int) -> int:
 def main() -> None:
     pygame.init()
     pygame.freetype.init()
+    pygame.mixer.init()
 
     load_layout()
 
@@ -906,13 +907,17 @@ def main() -> None:
                           and (renderer._input_active or renderer._get_selected_unit() is not None)):
                         renderer.on_key_digit(pygame.key.name(event.key))
 
-                    elif (event.key in (pygame.K_p, pygame.K_SPACE)
+                    elif (event.key == pygame.K_p
                           and not _const.EDITOR_MODE and not renderer._input_active):
                         if speed > 0.0:
                             speed = SPEED_PAUSE
                             sim_accum = 0.0
                         else:
                             speed = SPEED_NORMAL
+
+                    elif (event.key == pygame.K_SPACE
+                          and not _const.EDITOR_MODE and not renderer._input_active):
+                        renderer.on_silence_alarm()
 
                     elif not _const.EDITOR_MODE and event.key == pygame.K_BACKSPACE:
                         renderer.on_backspace()
@@ -1184,13 +1189,17 @@ def main() -> None:
                         else:
                             game_state = GameState.DESIGNER
 
-                    elif (event.key in (pygame.K_p, pygame.K_SPACE)
+                    elif (event.key == pygame.K_p
                           and not _rend._input_active):
                         if speed > 0.0:
                             speed = SPEED_PAUSE
                             sim_accum = 0.0
                         else:
                             speed = SPEED_NORMAL
+
+                    elif (event.key == pygame.K_SPACE
+                          and not _rend._input_active):
+                        _rend.on_silence_alarm()
 
                     elif event.key == pygame.K_F1:
                         speed = SPEED_SLOW

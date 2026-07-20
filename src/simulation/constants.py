@@ -289,6 +289,14 @@ ALARM_RECENT_FADE_S:   float = 10.0         # Acknowledged alarms shown for 10s 
 ALARM_MESSAGE_MAX_LEN: int   = 60           # Max characters in alarm message
 
 # ─────────────────────────────────────────────
+# SOUND
+# ─────────────────────────────────────────────
+SOUND_PATH_ALARM:   str   = 'assets/sounds/alarm.wav'  # Loops while a WARNING/CRITICAL alarm is unacknowledged
+SOUND_PATH_PING:    str   = 'assets/sounds/ping.wav'   # One-shot on new INFO/TUTOR alarm
+SOUND_VOLUME_ALARM: float = 0.6
+SOUND_VOLUME_PING:  float = 0.5
+
+# ─────────────────────────────────────────────
 # LINE LOAD TRIANGLE INDICATOR
 # ─────────────────────────────────────────────
 LOAD_TRIANGLE_PCT_1: float = 25.0  # 1 triangle below this loading %

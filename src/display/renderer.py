@@ -63,6 +63,7 @@ from simulation.constants import (
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
+from display.sound import SoundManager
 
 
 _BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
@@ -161,6 +162,9 @@ class Renderer:
         }
         # Sentinel objects force a full draw on the first frame
         self._panel_keys: dict[str, object] = {k: object() for k in self._panel_cache}
+
+        # Sound: alarm loop + info/tutor ping, driven from tick()
+        self._sound = SoundManager()
 
         # Selection state
         self._selected_label: str | None = None
@@ -355,6 +359,10 @@ class Renderer:
     def on_ack_all_alarms(self, sim) -> None:
         """Acknowledge all unacknowledged alarms."""
         sim.acknowledge_all_alarms()
+
+    def on_silence_alarm(self) -> None:
+        """Stop the alarm sound until a new WARNING/CRITICAL alarm is raised."""
+        self._sound.silence()
 
     def _selectable_labels(self) -> list[str]:
         """Flat ordered list: all active unit labels, then bus labels, then line labels."""
@@ -605,6 +613,9 @@ class Renderer:
             state:      Current SimulationState, or None for static view.
             speed_mult: Current simulation speed multiplier.
         """
+        if state is not None:
+            self._sound.update(state.active_alarms)
+
         # Track whether the blink phase changed this frame — drives display dirty.
         prev_blink_on    = self._blink_on
         prev_blink_2hz   = self._blink_2hz_on

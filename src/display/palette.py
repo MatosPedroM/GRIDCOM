@@ -89,8 +89,8 @@ COL_UNIT_BORDER:    Colour = (85,  85,  85)     # Default unit border — dark g
 COL_UNIT_COAL:      Colour = (170,  0,   0)     # Coal — red (closest in-palette to brown/earth)
 COL_UNIT_CCGT:      Colour = (85,  85,  85)     # CCGT — dark grey
 COL_UNIT_NUCLEAR:   Colour = (170,  0, 170)     # Nuclear — purple
-COL_UNIT_HYDRO:     Colour = (0,    0, 255)     # Hydro — blue (water)
-COL_UNIT_HYDRO_PUMP:Colour = (0,    0, 255)     # Hydro pumping mode — blue, same as HYDRO
+COL_UNIT_HYDRO:     Colour = (0,  200, 255)     # Hydro — blue (water)
+COL_UNIT_HYDRO_PUMP:Colour = (0,  200, 255)     # Hydro pumping mode — blue, same as HYDRO
 COL_UNIT_WIND:      Colour = (255,255, 255)     # Wind — white
 COL_UNIT_SOLAR:     Colour = (255,255,   0)     # Solar — bright yellow (sunshine)
 

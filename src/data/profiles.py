@@ -45,7 +45,7 @@ SHIFT_SPECS: dict[int, ShiftSpec] = {
     # Shift 0 is a sentinel used only by the Grid Designer test session.
     0:  ShiftSpec(shift_number=0,  start_hour=0.0,  duration_hours=999.0, grid_size=0, has_phase1=False, peak_demand_mw=0.0),
 
-    1:  ShiftSpec(shift_number=1,  start_hour=4.0,  duration_hours=3.0,  grid_size=3,  has_phase1=False, peak_demand_mw=55.0),
+    1:  ShiftSpec(shift_number=1,  start_hour=4.0,  duration_hours=3.0,  grid_size=4,  has_phase1=False, peak_demand_mw=100.0),
     2:  ShiftSpec(shift_number=2,  start_hour=10.0, duration_hours=4.0,  grid_size=4,  has_phase1=False, peak_demand_mw=315.0),
     3:  ShiftSpec(shift_number=3,  start_hour=14.0, duration_hours=6.0,  grid_size=10, has_phase1=False, peak_demand_mw=1400.0),
     4:  ShiftSpec(shift_number=4,  start_hour=20.0, duration_hours=8.0,  grid_size=16, has_phase1=False, peak_demand_mw=2600.0),
@@ -186,13 +186,15 @@ def get_profile_value(profile: dict[float, float], hour: float) -> float:
 
     Args:
         profile: Dict mapping integer hours (0.0-24.0) to normalised values.
-        hour:    Decimal hour to evaluate (e.g. 14.5 = 14:30).
-                 Clamped to [0.0, 24.0].
+        hour:    Decimal hour to evaluate (e.g. 14.5 = 14:30). Elapsed sim
+                 hours beyond 24.0 (test sessions starting late in the day)
+                 wrap around to the same daily curve rather than flatlining
+                 at the hour-24 value.
 
     Returns:
         Linearly interpolated normalised value in [0.0, 1.0].
     """
-    hour = max(0.0, min(24.0, hour))
+    hour = hour % 24.0
     h_low = float(int(hour))
     h_high = h_low + 1.0
     if h_high > 24.0:

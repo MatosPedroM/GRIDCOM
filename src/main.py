@@ -81,6 +81,7 @@ class GameState(Enum):
     DESIGNER          = 'designer'
     DESIGNER_TEST     = 'designer_test'
     GRID_TEST_SELECT  = 'grid_test_select'
+    GRID_TEST_TIME_SELECT = 'grid_test_time_select'
     SHIFT_BUILDER     = 'shift_builder'
     SHIFT_SELECT_JSON = 'shift_select_json'
 
@@ -248,6 +249,8 @@ def _make_sim_and_renderer(
 def _make_designer_test(
     display_surf: pygame.Surface,
     grid_name: str,
+    start_hour: float = 0.0,
+    duration_hours: float = 24.0,
 ):
     """Build sim + renderer for a designer-grid test session."""
     from data.designer_io import load_designer_grid_named
@@ -279,6 +282,8 @@ def _make_designer_test(
         maintenance_units=maintenance_units,
         maintenance_lines=set(),
         substation_load_mw=substation_load_mw,
+        start_hour=start_hour,
+        duration_hours=duration_hours,
     )
     # Renderer uses shift=1 as a safe sentinel — the canvas will show shift-1
     # topology but the simulation state (frequency, dispatch, alarms) is live.
@@ -385,9 +390,10 @@ def main() -> None:
                             # to the SHIFT_BUILDER state
     _planning_screen = None   # PlanningScreen instance — lazily created on entry
                               # to the PLANNING state
-    _planning_model  = None   # PlanningModel built when campaign entry redirects
-                              # to the Shift 10 planner (see DIFFICULTY_SELECT)
-    shift = 10   # default for SHIFT_SPECS.get(shift) below regardless of boot path
+    _planning_model  = None   # PlanningModel for the PLANNING state (Phase 1) —
+                              # not currently reachable from campaign entry;
+                              # set this and switch to GameState.PLANNING to test it
+    shift = 1   # default for SHIFT_SPECS.get(shift) below regardless of boot path
 
     if _const.DEBUG_SCENARIO_ACTIVE:
         sim, grid = make_debug_sim(DEBUG_SCENARIO)
@@ -433,6 +439,9 @@ def main() -> None:
     _designer_test_renderer: object    = None
     _designer_test_origin:   GameState = GameState.DESIGNER
     _grid_test_items:        list      = []
+    _grid_test_error:        str       = ''
+    _grid_test_pending_name: str       = ''       # grid chosen, awaiting time-window pick
+    _time_window_origin:     GameState = GameState.GRID_TEST_SELECT
     _shift_json_items:       list      = []
     mode_select_items   = build_mode_select_items()
     difficulty_items    = build_difficulty_items()
@@ -507,6 +516,7 @@ def main() -> None:
                             from display.menus import build_grid_test_select_items
                             _grid_test_items = build_grid_test_select_items(list_designer_grids())
                             menu_selected    = 0
+                            _grid_test_error = ''
                             game_state       = GameState.GRID_TEST_SELECT
                         elif idx == 8: # SHIFT BUILDER
                             from display.shift_builder import ShiftBuilder
@@ -537,25 +547,63 @@ def main() -> None:
                         menu_selected = _next_enabled(_grid_test_items, menu_selected, +1)
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         if _grid_test_items and _grid_test_items[menu_selected][1]:
-                            grid_name = _grid_test_items[menu_selected][0]
-                            try:
-                                _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
-                                    _make_designer_test(display_surf, grid_name)
-                                sim_accum             = 0.0
-                                _designer_test_origin = GameState.GRID_TEST_SELECT
-                                game_state            = GameState.DESIGNER_TEST
-                            except Exception:
-                                pass   # stay on list
+                            _grid_test_pending_name = _grid_test_items[menu_selected][0]
+                            _time_window_origin     = GameState.GRID_TEST_SELECT
+                            menu_selected            = 0
+                            _grid_test_error         = ''
+                            game_state               = GameState.GRID_TEST_TIME_SELECT
                     elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MAIN_MENU
                         menu_selected = 0
+                        _grid_test_error = ''
 
+            _grid_test_footer = ('[UP / DOWN]  Select    [ENTER]  Test    [ESC]  Back'
+                                 if not _grid_test_error else _grid_test_error)
             renderer.tick_menu_screen(
                 dt,
                 title_lines=menu_title,
                 items=_grid_test_items,
                 selected_idx=menu_selected,
-                footer_hint='[UP / DOWN]  Select    [ENTER]  Test    [ESC]  Back',
+                footer_hint=_grid_test_footer,
+            )
+
+        # ── GRID TEST TIME WINDOW SELECT ────────────────────────────────────
+        elif game_state == GameState.GRID_TEST_TIME_SELECT:
+            from display.menus import build_time_window_select_items, TIME_WINDOWS
+            _time_window_items = build_time_window_select_items()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        menu_selected = _next_enabled(_time_window_items, menu_selected, -1)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        menu_selected = _next_enabled(_time_window_items, menu_selected, +1)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        _, start_hour, duration_hours = TIME_WINDOWS[menu_selected]
+                        try:
+                            _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
+                                _make_designer_test(display_surf, _grid_test_pending_name,
+                                                    start_hour, duration_hours)
+                            sim_accum             = 0.0
+                            _designer_test_origin = _time_window_origin
+                            game_state            = GameState.DESIGNER_TEST
+                            _grid_test_error       = ''
+                        except Exception as e:
+                            _grid_test_error = f'Test failed: {e}'
+                    elif event.key == pygame.K_ESCAPE:
+                        game_state    = _time_window_origin
+                        menu_selected = 0
+                        _grid_test_error = ''
+
+            _time_window_footer = ('[UP / DOWN]  Select    [ENTER]  Test    [ESC]  Back'
+                                   if not _grid_test_error else _grid_test_error)
+            renderer.tick_menu_screen(
+                dt,
+                title_lines=menu_title,
+                items=_time_window_items,
+                selected_idx=menu_selected,
+                footer_hint=_time_window_footer,
             )
 
         # ── MODE SELECT ──────────────────────────────────────────────────────
@@ -603,25 +651,19 @@ def main() -> None:
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         difficulty_map = {0: 'trainee', 1: 'standard', 2: 'dispatcher'}
                         difficulty     = difficulty_map.get(menu_selected, 'standard')
-                        # DEBUG: campaign entry currently jumps straight to the
-                        # Shift 10 planner (skipping shift 1's intro/briefing)
-                        # while Phase 1 is developed against Shift 10 only.
-                        # Restore the commented block below to resume the
-                        # normal shift-1 campaign start once other shifts are
-                        # wired into planning.
-                        shift = 10
-                        from gameplay.phase1 import build_planning_model_for_shift10
-                        _planning_model  = build_planning_model_for_shift10()
-                        _planning_screen = None
-                        game_state = GameState.PLANNING
-                        # sim, grid, renderer = _make_sim_and_renderer(
-                        #     display_surf, shift=1, difficulty=difficulty,
-                        # )
-                        # state = sim.get_state()
-                        # game_state       = GameState.CAMPAIGN_INTRO
-                        # intro_screen_idx = 0
-                        # intro_chars      = 0.0
-                        # campaign_start_time = pygame.time.get_ticks()
+                        shift = 1
+                        sim, grid, renderer = _make_sim_and_renderer(
+                            display_surf, shift=1, difficulty=difficulty,
+                        )
+                        state = sim.get_state()
+                        campaign_start_time = pygame.time.get_ticks()
+                        # SKIP: campaign intro sequence disabled for now — go
+                        # straight to shift 1's briefing (see CAMPAIGN_INTRO
+                        # for the intro-screens flow this bypasses).
+                        _spec      = SHIFT_SPECS.get(shift)
+                        briefing_lines = build_briefing_lines(_spec) if _spec else []
+                        briefing_chars = 0.0
+                        game_state = GameState.BRIEFING
                     elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MODE_SELECT
                         menu_selected = 0
@@ -1004,17 +1046,14 @@ def main() -> None:
                 from display.designer import GridDesigner
                 _designer = GridDesigner(display_surf)
 
+            if _designer.on_test_request is None:
                 def _on_test_request(grid_name: str) -> None:
-                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin
-                    try:
-                        _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
-                            _make_designer_test(display_surf, grid_name)
-                        sim_accum             = 0.0
-                        _designer_test_origin = GameState.DESIGNER
-                        game_state            = GameState.DESIGNER_TEST
-                    except Exception as e:
-                        _designer._set_status(f'Test failed: {e}',
-                                              (255, 100, 0))
+                    nonlocal game_state, _grid_test_pending_name, _time_window_origin, menu_selected, _grid_test_error
+                    _grid_test_pending_name = grid_name
+                    _time_window_origin     = GameState.DESIGNER
+                    menu_selected            = 0
+                    _grid_test_error         = ''
+                    game_state               = GameState.GRID_TEST_TIME_SELECT
 
                 _designer.on_test_request = _on_test_request
 
@@ -1153,14 +1192,12 @@ def main() -> None:
                         else:
                             speed = SPEED_NORMAL
 
-                    elif event.key == pygame.K_1:
+                    elif event.key == pygame.K_F1:
                         speed = SPEED_SLOW
-                    elif event.key == pygame.K_2:
+                    elif event.key == pygame.K_F2:
                         speed = SPEED_NORMAL
-                    elif event.key == pygame.K_3:
+                    elif event.key == pygame.K_F3:
                         speed = SPEED_FAST
-                    elif event.key == pygame.K_4:
-                        speed = SPEED_VERY_FAST
 
                     elif ctrl and not shift_held and event.key == pygame.K_a:
                         _const.AGC_ENABLED = not _const.AGC_ENABLED

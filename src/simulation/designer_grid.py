@@ -72,11 +72,13 @@ class DesignerGrid:
             if u.station_x != -1 and u.station_y != -1:
                 self._station_positions[u.station_label] = (u.station_x, u.station_y)
 
-        # Label anchors (bus/station label → 'top'/'right'/'bottom'/'left'),
-        # as set via the Designer's R-key rotation.
-        self._label_anchors: dict[str, str] = {b.label: b.label_anchor for b in d_buses}
-        for u in d_units:
-            self._label_anchors.setdefault(u.station_label, u.label_anchor)
+        # Label anchors ('top'/'right'/'bottom'/'left'), as set via the
+        # Designer's R-key rotation. Kept as two separate dicts — a
+        # station's label frequently equals its own bus's label (e.g. a
+        # single-unit station sitting alone on its bus), so a single shared
+        # dict would let one silently overwrite the other.
+        self._bus_label_anchors:     dict[str, str] = {b.label: b.label_anchor for b in d_buses}
+        self._station_label_anchors: dict[str, str] = {u.station_label: u.label_anchor for u in d_units}
 
         # Slack bus label
         slack_candidates = [b for b in d_buses if b.is_slack]
@@ -149,9 +151,13 @@ class DesignerGrid:
         """Station label -> saved canvas anchor, for GridCanvas.load_designer_topology()."""
         return dict(self._station_positions)
 
-    def get_label_anchors(self) -> dict[str, str]:
-        """Bus/station label -> saved label anchor, for GridCanvas.load_designer_topology()."""
-        return dict(self._label_anchors)
+    def get_bus_label_anchors(self) -> dict[str, str]:
+        """Bus label -> saved label anchor, for GridCanvas.load_designer_topology()."""
+        return dict(self._bus_label_anchors)
+
+    def get_station_label_anchors(self) -> dict[str, str]:
+        """Station label -> saved label anchor, for GridCanvas.load_designer_topology()."""
+        return dict(self._station_label_anchors)
 
     # ─────── MEMBERSHIP CHECKS ───────────────────────────────────────────────
 

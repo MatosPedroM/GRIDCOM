@@ -14,14 +14,14 @@ import pygame
 # DEBUG FLAGS
 # ─────────────────────────────────────────────
 DEBUG_SIMULATION: bool = False
-DEBUG_DISPLAY:    bool = True
+DEBUG_DISPLAY:    bool = False
 DEBUG_PERF:       bool = False  # per-frame render timing breakdown — see PERF_DEBUG_LOG
 DEBUG_EVENTS:     bool = True
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
 DEBUG_SCENARIO_ACTIVE: bool = False
 DEV_SKIP_INTRO:        bool = True
-VOLTAGE_COLOUR_VIEW:   bool = False  # 'L' toggle — colour lines/substations by voltage tier instead of load
+VOLTAGE_COLOUR_VIEW:   bool = True  # 'L' toggle — colour lines/substations by voltage tier instead of load
 
 # ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES
@@ -216,11 +216,15 @@ LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
 FONT_PATH_MONO_REGULAR:  str = 'assets/fonts/TerminusTTF-4.49.3.ttf' #'assets/fonts/Px437_IBM_VGA_8x16.ttf'
 
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
-FONT_SIZE_LABEL:          int = 14      # bus/station labels on canvas
+FONT_SIZE_LABEL:          int = 18      # bus/station labels on canvas
+LABEL_PAD_PX:             int = 3       # px — gap between a label and the symbol it labels
 FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
 FONT_SIZE_PANEL:          int = 13      # standard instrument strip text
 FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
 FONT_SIZE_CONTEXT:        int = 13      # unit context overlay text
+
+UNIT_BORDER_W_PX:          int = 3       # px — generation unit square border, normal
+UNIT_BORDER_W_SELECTED_PX: int = 4       # px — generation unit square border, selected
 
 TYPEWRITER_CHARS_PER_SEC: int   = 400  # Characters revealed per real second on text screens
 TEXT_SCREEN_FONT_SIZE:    int   = 17   # px — font size for briefing/debrief screens

@@ -40,14 +40,14 @@ from display.symbols import (
     draw_unit_square, draw_station_collector,
     draw_transmission_line, draw_hydraulic_connector,
     draw_interconnector,
-    UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX, HALF_BUS,
+    UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX, HALF_BUS, HALF_UNIT,
     get_port_point,
     _draw_dashed_line,
 )
 from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC
 from display.geometry import point_segment_dist
 from data.layout_override import get_label_anchor
-from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL, FONT_SIZE_PANEL, NATIVE_WIDTH
+from simulation.constants import CANVAS_HEIGHT, FONT_SIZE_LABEL, LABEL_PAD_PX, NATIVE_WIDTH
 import simulation.constants as _sim_const
 from utils.helpers import resource_path
 
@@ -316,10 +316,15 @@ class GridCanvas:
         # Fast bus lookup
         self._bus_map: dict[str, Bus] = {b.label: b for b in self._buses}
 
-        # Designer-supplied label anchors (station/bus label → 'top'/'right'/
-        # 'bottom'/'left'), set via load_designer_topology(). None outside the
-        # Designer, where labels fall back to the global layout_override system.
-        self._designer_label_anchors: dict[str, str] | None = None
+        # Designer-supplied label anchors (label → 'top'/'right'/'bottom'/
+        # 'left'), set via load_designer_topology(). Kept as two separate
+        # dicts (bus vs. station) since a station's label frequently equals
+        # its own bus's label (e.g. a single-unit station sitting alone on
+        # its bus) — a single shared dict would let one silently overwrite
+        # the other. None outside the Designer, where labels fall back to
+        # the global layout_override system.
+        self._designer_bus_label_anchors:     dict[str, str] | None = None
+        self._designer_station_label_anchors: dict[str, str] | None = None
 
         # Pre-compute unit layout per station (only stations active this shift)
         active_bus_labels = {b.label for b in self._buses}
@@ -487,8 +492,9 @@ class GridCanvas:
         buses:  list,
         lines:  list,
         units:  list,
-        station_positions: dict[str, tuple[int, int]] | None = None,
-        label_anchors: dict[str, str] | None = None,
+        station_positions:     dict[str, tuple[int, int]] | None = None,
+        bus_label_anchors:     dict[str, str] | None = None,
+        station_label_anchors: dict[str, str] | None = None,
     ) -> None:
         """
         Replace the canvas topology with designer-supplied Bus/Line/Unit lists.
@@ -498,14 +504,17 @@ class GridCanvas:
         Station position comes from station_positions (unscaled, native-space
         anchors set/dragged in the Designer); a station missing an entry falls
         back to 20px above its bus.
-        label_anchors (bus/station label → 'top'/'right'/'bottom'/'left') is
-        the Designer's own per-grid anchor data; it overrides the global
-        layout_override system used by normal gameplay while this topology is
-        loaded (see _render_anchored()).
+        bus_label_anchors / station_label_anchors ('top'/'right'/'bottom'/
+        'left' per label) are the Designer's own per-grid anchor data; kept
+        as two separate dicts since a station's label frequently equals its
+        own bus's label. They override the global layout_override system
+        used by normal gameplay while this topology is loaded (see
+        _render_anchored()).
         """
         scale = self._scale
         station_positions = station_positions or {}
-        self._designer_label_anchors = label_anchors or {}
+        self._designer_bus_label_anchors     = bus_label_anchors or {}
+        self._designer_station_label_anchors = station_label_anchors or {}
 
         self._buses    = buses
         self._lines    = lines
@@ -837,20 +846,31 @@ class GridCanvas:
     def _draw_labels(self, surf: pygame.Surface, font_scale: float = 1.0) -> None:
         """Draw bus and station labels at anchor-relative positions."""
         font = self._font
-        sl   = int(FONT_SIZE_PANEL * font_scale)
+        sl   = int(FONT_SIZE_LABEL * font_scale)
         sc   = self._scale
-        off  = int(8 * sc)   # distance from symbol centre to text edge
 
+        bus_off = int((HALF_BUS + LABEL_PAD_PX) * sc)
         for bus in self._buses:
             bx, by = self._bus_pos[bus.label]
-            self._render_anchored(surf, font, bus.label, bx, by, sl, off)
+            if self._designer_bus_label_anchors is not None:
+                anchor = self._designer_bus_label_anchors.get(bus.label, 'right')
+            else:
+                anchor = get_label_anchor(bus.label)
+            self._render_anchored(surf, font, bus.label, bx, by, sl, bus_off, bus_off, anchor)
 
+        unit_off_y = int((HALF_UNIT + LABEL_PAD_PX) * sc)
         for station_lbl, positions in self._station_pos.items():
             if not positions:
                 continue
             cx = sum(p[0] for p in positions) // len(positions)
             cy = sum(p[1] for p in positions) // len(positions)
-            self._render_anchored(surf, font, station_lbl, cx, cy, sl, off)
+            half_w    = (max(p[0] for p in positions) - min(p[0] for p in positions)) // 2 + HALF_UNIT
+            unit_off_x = int((half_w + LABEL_PAD_PX) * sc)
+            if self._designer_station_label_anchors is not None:
+                anchor = self._designer_station_label_anchors.get(station_lbl, 'right')
+            else:
+                anchor = get_label_anchor(station_lbl)
+            self._render_anchored(surf, font, station_lbl, cx, cy, sl, unit_off_x, unit_off_y, anchor)
 
     def _render_anchored(
         self,
@@ -860,25 +880,23 @@ class GridCanvas:
         cx: int,
         cy: int,
         size: int,
-        off: int,
+        off_x: int,
+        off_y: int,
+        anchor: str,
     ) -> None:
         """Render a 4-char label at the anchor position relative to (cx, cy)."""
-        if self._designer_label_anchors is not None:
-            anchor = self._designer_label_anchors.get(label, 'right')
-        else:
-            anchor = get_label_anchor(label)
         rect   = font.get_rect(label, size=size)
         w, h   = rect.width, rect.height
         if anchor == 'top':
             lx = cx - w // 2
-            ly = cy - off - h
+            ly = cy - off_y - h
         elif anchor == 'bottom':
             lx = cx - w // 2
-            ly = cy + off
+            ly = cy + off_y
         elif anchor == 'left':
-            lx = cx - off - w
+            lx = cx - off_x - w
             ly = cy - h // 2
         else:  # right (default)
-            lx = cx + off
+            lx = cx + off_x
             ly = cy - h // 2
         font.render_to(surf, (lx, ly), label, COL_TEXT_PRIMARY, size=size)

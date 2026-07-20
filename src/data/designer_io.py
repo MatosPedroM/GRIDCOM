@@ -16,7 +16,7 @@ JSON schema version 1:
                  ramp_pct_per_min, inertia_h, cold_start_min,
                  q_max_mvar, q_min_mvar, can_pump, active_from_shift, description,
                  station_x, station_y, start_mw, in_service,
-                 min_up_time_h, min_down_time_h } ]
+                 min_up_time_h, min_down_time_h, station_name } ]
   }
 
   start_mw: test-session starting dispatch, MW. -1.0 (default) means "not
@@ -44,23 +44,50 @@ DESIGNER_GRIDS_DIR  = _ASSETS_DIR / 'designer_grids'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LABEL POOLS
+# NAME POOL
+#
+# Human-readable substation/place names, auto-assigned when a new bus is
+# placed. The 4-letter code (label) for both buses and generation stations
+# is mechanically derived from the chosen name — see label_from_name()
+# below — so there is a single source of truth for identity, not a
+# separate flat code pool. A generation station has no name pool of its
+# own: it simply takes the name of the bus it is connected to.
+#
+# Must not reuse: topology.py's hand-authored bus names (Westham, Midbury,
+# Southwick, Centrefield, Northgate, Eastmoor, Ashford, Fairfield, Wrentham,
+# Dunmore, Dunmore Lower, Redstone, Kelmore Lower, Ardenbridge, Millhaven,
+# Weirfield, Ardenmouth, Coalton, Barrow Lower, Cairn Wind, Stanton Solar,
+# Stanton, Brackley, Brentford, Brentwell, Brentmoor, Feldon, Colnbrook,
+# Colnhurst, Colnstead, Hallowmere, Pemberton, Thistledown, Elmscroft,
+# Farringstone, Rushbourne, Ottermead, Bramleigh, Hartsdene, Rowancroft,
+# Wychmoor) or fleet.py's station name-roots (Riverside, Thornfield, Ashford,
+# Wrentham, Hartwell, Barrow, Kelmore, Dunmore, Cairn, Brackley, Stanton,
+# Feldon, Ardenbridge, Millhaven, Weirfield, Ardenmouth, Brentford, Brentwell,
+# Brentmoor, Colnbrook, Colnhurst, Colnstead) — see CLAUDE.md "Naming
+# Conventions" and topology.py/fleet.py for the authoritative campaign list.
 # ─────────────────────────────────────────────────────────────────────────────
 
-BUS_LABEL_POOL: tuple[str, ...] = (
-    'MDBY', 'CNTR', 'NRTH', 'EAST', 'WEST', 'STHW', 'ASHF', 'WRNT', 'RDST', 'FAIR',
-    'COAL', 'DUNM', 'BRCK', 'STAN', 'FLDN', 'RIVR', 'VALE', 'CRES', 'HRBR', 'PORT',
-    'MNTN', 'LAKE', 'GLEN', 'MOOR', 'HOLM', 'FORD', 'DALE', 'PEAK', 'WICK', 'SHAW',
-    'BRID', 'COVE', 'HOLT', 'FELD', 'GATE', 'MERE', 'BURN', 'HALE', 'ROOK', 'WOLD',
-    'AVEN', 'TARN', 'SCAR', 'KNOB', 'FELL', 'CRAG', 'DENE', 'BURY', 'CLEY', 'WREN',
-)
-
-STATION_LABEL_POOL: tuple[str, ...] = (
-    'RVSD', 'THNF', 'ASHG', 'WRNG', 'HART', 'BARR', 'KELM', 'DUNH', 'DUND', 'KELD',
-    'BARD', 'WNCN', 'WNBR', 'SLST', 'SLFD', 'AR01', 'AR02', 'AR03', 'AR04', 'BR01',
-    'BR02', 'BR03', 'CO01', 'CO02', 'CO03', 'COLM', 'GRBY', 'ASHN', 'PNWY', 'ELMS',
-    'CORB', 'DKWD', 'GLSM', 'RDSG', 'BRKG', 'STNG', 'FLDG', 'CRSG', 'VLEG', 'GLNG',
-    'LKNG', 'STEN', 'PENT', 'HOLW', 'BRYN', 'CORS', 'WNST', 'WNFD', 'SLSH', 'SLMR',
+SUBSTATION_NAME_POOL: tuple[str, ...] = (
+    'Riverside',    'Ashcombe',     'Greymoor',     'Oakendale',    'Sutterleigh',
+    'Ravensmere',   'Hollowgate',   'Wrenfield',    'Batherton',    'Cloverstead',
+    'Nettlecross',  'Sheldwick',    'Warrengate',   'Foxholt',      'Larkspur Cross',
+    'Thornbury',    'Applecroft',   'Marchden',     'Yewbarrow',    'Cranmere',
+    'Pikestead',    'Longacre',     'Underwold',    'Farleigh',     'Studcombe',
+    'Hazelbourne',  'Whinmoor',     'Alderthorpe',  'Buryhurst',    'Kestrelford',
+    'Netherwick',   'Odcombe',      'Sparrowdene',  'Elmshaw',      'Priorsgate',
+    'Merryhurst',   'Bracknell End','Ferngate',     'Southmere',    'Highbourne',
+    'Gorsecombe',   'Wexfield',     'Ledgemoor',    'Hartswell',    'Stourbridge Fen',
+    'Chalkdown',    'Rivenholt',    'Downside',     'Aldergate',    'Marrowfield',
+    'Cobbleford',   'Wintermoor',   'Faulkhurst',   'Reedcroft',    'Ashendene',
+    'Barnstead',    'Cinderleigh',  'Draycombe',    'Emberholt',    'Fenwold',
+    'Grimsdyke',    'Hollyford',    'Iverbourne',   'Juniperleigh', 'Kirkstead',
+    'Lambhurst',    'Mossgate',     'Norbrook',     'Oxendene',     'Pennywold',
+    'Quernmore',    'Ridgeholt',    'Silverdale',   'Tallowcross',  'Ulverwick',
+    'Vinecombe',    'Waltham Fen',  'Yarnfield',    'Zennorwick',   'Ambercroft',
+    'Blackthorn End','Cragwell',    'Dunstable Row','Elderholt',    'Fallowmere',
+    'Grovehaven',   'Hartledene',   'Ivythorpe',    'Jackdaw Cross','Knollside',
+    'Larchmoor',    'Mistover',     'Newfold',      'Oatlands',     'Peverell',
+    'Quarrymoor',   'Rushgate',     'Stonewick',    'Thistlecombe', 'Woolhurst',
 )
 
 # Default unit parameters by type
@@ -174,6 +201,10 @@ class DesignerUnit:
     # defaults only used when loading a saved grid predating this field.
     min_up_time_h:     float = 1.0
     min_down_time_h:   float = 1.0
+    # Human-readable station name, e.g. 'Millbrook' (technology-flavoured
+    # pool). '' = pre-existing saved grid predating this field — falls back
+    # to station_label for display, same pattern as min_up_time_h above.
+    station_name:      str = ''
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -445,25 +476,53 @@ def import_shift_as_designer_grid(shift_number: int, name: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LABEL POOL HELPERS
+# LABEL & NAME POOL HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def next_bus_label(used_labels: set[str]) -> str:
-    """Return the next unused bus label from the pool."""
-    for lbl in BUS_LABEL_POOL:
-        if lbl not in used_labels:
-            return lbl
+def next_bus_name(used_names: set[str]) -> str:
+    """Return the next unused human-readable bus/substation name from the pool."""
+    for name in SUBSTATION_NAME_POOL:
+        if name not in used_names:
+            return name
+    idx = len(used_names)
+    return f'Substation {idx}'
+
+
+def label_from_name(name: str, used_labels: set[str]) -> str:
+    """Derive a 4-letter uppercase code from a human-readable name (bus or
+    station), resolving collisions against used_labels. Used for both bus
+    labels and station labels — there is no separate code pool; the code
+    always comes from whichever name was already assigned.
+
+    First word only (for multi-word pool entries like 'Windrush Fell'),
+    letters only, uppercased. On collision, shortens the letter prefix and
+    appends a digit (mirrors the campaign's own AR01-AR04/BR01-BR03 digit-
+    suffix convention) rather than slicing into the middle of the word,
+    which would produce unreadable fragments.
+    """
+    letters = ''.join(ch for ch in name.split(' ', 1)[0] if ch.isalpha()).upper()
+    if not letters:
+        letters = 'GRID'
+    letters = (letters + 'XXXX')[:4] if len(letters) < 4 else letters
+
+    candidate = letters[:4]
+    if candidate not in used_labels:
+        return candidate
+
+    prefix = letters[:3]
+    for n in range(2, 10):
+        candidate = f'{prefix}{n}'
+        if candidate not in used_labels:
+            return candidate
+
+    prefix = letters[:2]
+    for n in range(10, 100):
+        candidate = f'{prefix}{n}'
+        if candidate not in used_labels:
+            return candidate
+
     idx = len(used_labels)
-    return f'B{idx:03d}'
-
-
-def next_station_label(used_stations: set[str]) -> str:
-    """Return the next unused station label from the pool."""
-    for lbl in STATION_LABEL_POOL:
-        if lbl not in used_stations:
-            return lbl
-    idx = len(used_stations)
-    return f'S{idx:03d}'
+    return f'X{idx:03d}'
 
 
 def next_line_label(used_labels: set[str]) -> str:

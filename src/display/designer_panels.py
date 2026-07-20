@@ -413,7 +413,8 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
     elif unit is not None:
         _label(surf, font, PAD, y, f'UNIT:    {unit.label}',     COL_TEXT_SECONDARY)
         y += ROW_H
-        _label(surf, font, PAD, y, f'STATION: {unit.station_label}', COL_TEXT_SECONDARY)
+        _label(surf, font, PAD, y,
+               f'STATION: {unit.station_name or unit.station_label}', COL_TEXT_SECONDARY)
         y += ROW_H
         _label(surf, font, PAD, y, f'TYPE:    {unit.unit_type}', COL_TEXT_SECONDARY)
         y += ROW_H

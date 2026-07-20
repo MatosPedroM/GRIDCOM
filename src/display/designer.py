@@ -28,7 +28,8 @@ from data.designer_io import (
     DesignerBus, DesignerLine, DesignerUnit,
     save_designer_grid_named, load_designer_grid_named,
     list_designer_grids,
-    next_bus_label, next_station_label, next_line_label,
+    next_line_label,
+    next_bus_name, label_from_name,
     UNIT_DEFAULTS,
     designer_buses_to_topology, designer_lines_to_topology, designer_units_to_fleet,
     import_shift_as_designer_grid,
@@ -219,6 +220,7 @@ class GridDesigner:
         self._used_bus_labels:     set[str] = set()
         self._used_station_labels: set[str] = set()
         self._used_line_labels:    set[str] = set()
+        self._used_bus_names:      set[str] = set()
 
         # Named file save/load sidebar state
         # _sidebar_mode: 'normal', 'save_dialog', 'load_browser', 'test_browser'
@@ -757,6 +759,7 @@ class GridDesigner:
             self._used_bus_labels     = {b.label for b in buses}
             self._used_station_labels = {u.station_label for u in units}
             self._used_line_labels    = {l.label for l in lines}
+            self._used_bus_names      = {b.name for b in buses}
             self._grid_name = name
             self._clear_selection()
             self._dirty = False
@@ -956,10 +959,11 @@ class GridDesigner:
     def _place_bus(self, x: int, y: int, voltage_kv: float,
                    bus_type: str = 'TRANSMISSION',
                    peak_load_mw: float = 0.0) -> None:
-        label = next_bus_label(self._used_bus_labels)
+        name  = next_bus_name(self._used_bus_names)
+        label = label_from_name(name, self._used_bus_labels)
         bus = DesignerBus(
             label=label,
-            name=label,
+            name=name,
             voltage_kv=voltage_kv,
             bus_type=bus_type,
             canvas_x=x,
@@ -971,6 +975,7 @@ class GridDesigner:
         )
         self._buses.append(bus)
         self._used_bus_labels.add(label)
+        self._used_bus_names.add(name)
         self._selected_bus  = bus
         self._selected_line = None
         self._selected_unit = None
@@ -990,7 +995,8 @@ class GridDesigner:
             count = 1
         self._push_undo()
         unit_type = self._palette_unit_type
-        station_label = next_station_label(self._used_station_labels)
+        station_name = bus.name
+        station_label = label_from_name(station_name, self._used_station_labels)
         self._used_station_labels.add(station_label)
         sx, sy = bus.canvas_x, max(0, bus.canvas_y - 20)
         defaults = UNIT_DEFAULTS.get(unit_type, UNIT_DEFAULTS['COAL'])
@@ -1010,11 +1016,12 @@ class GridDesigner:
                 q_min_mvar=defaults['q_min_mvar'],
                 can_pump=(unit_type == 'HYDRO_PUMP'),
                 active_from_shift=1,
-                description=f'{station_label} {unit_type} unit {i}',
+                description=f'{station_name} {unit_type.title()} Unit {i}',
                 station_x=sx,
                 station_y=sy,
                 min_up_time_h=defaults['min_up_time_h'],
                 min_down_time_h=defaults['min_down_time_h'],
+                station_name=station_name,
             )
             self._units.append(unit)
         self._palette_mode = MODE_SELECT
@@ -1130,6 +1137,7 @@ class GridDesigner:
                         if l.from_bus != lbl and l.to_bus != lbl]
         self._units  = [u for u in self._units  if u.bus_label != lbl]
         self._used_bus_labels.discard(lbl)
+        self._used_bus_names.discard(bus.name)
         self._used_line_labels = {l.label for l in self._lines}
         self._clear_selection()
         self._mark_dirty()
@@ -1506,9 +1514,12 @@ class GridDesigner:
             if u.station_x != -1 and u.station_y != -1:
                 station_positions[u.station_label] = (u.station_x, u.station_y)
 
-        label_anchors: dict[str, str] = {b.label: b.label_anchor for b in self._buses}
-        for u in self._units:
-            label_anchors.setdefault(u.station_label, u.label_anchor)
+        # Kept as two separate dicts — a station's label frequently equals
+        # its own bus's label (e.g. a single-unit station sitting alone on
+        # its bus), so a single shared dict would let one silently overwrite
+        # the other (this was the R-key label-rotation bug for units).
+        bus_label_anchors:     dict[str, str] = {b.label: b.label_anchor for b in self._buses}
+        station_label_anchors: dict[str, str] = {u.station_label: u.label_anchor for u in self._units}
 
         if self._canvas is None:
             # shift=0 sentinel — never actually used; load_designer_topology()
@@ -1516,7 +1527,8 @@ class GridDesigner:
             # from get_buses_by_shift(0).
             self._canvas = GridCanvas(shift=0, font=self._font, scale=self._scale)
         self._canvas.load_designer_topology(real_buses, real_lines, real_units,
-                                            station_positions, label_anchors)
+                                            station_positions,
+                                            bus_label_anchors, station_label_anchors)
         self._canvas_dirty = False
 
     def _draw_grid_dots(self, surf: pygame.Surface) -> None:
@@ -1537,7 +1549,6 @@ class GridDesigner:
         canvas_rect = pygame.Rect(int(DESIGNER_SIDEBAR_W * sc), 0,
                                   int(DESIGNER_CANVAS_W * sc), int(CANVAS_HEIGHT * sc))
         pygame.draw.rect(surf, (10, 10, 10), canvas_rect)
-        self._draw_grid_dots(surf)
 
         if self._canvas_dirty:
             self._sync_canvas()
@@ -1550,6 +1561,11 @@ class GridDesigner:
             # every position by the sidebar width).
             self._canvas.draw(surf, state=None, blink_on=True,
                               selected_label=self._selected_label_for_canvas())
+
+        # Drawn after GridCanvas's blit (which is opaque and covers the full
+        # canvas rect) so the reference dots stay visible once a topology is
+        # loaded, instead of being painted over.
+        self._draw_grid_dots(surf)
 
         self._draw_canvas_overlays(surf)
 

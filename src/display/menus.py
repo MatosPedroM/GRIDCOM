@@ -102,6 +102,25 @@ def build_grid_test_select_items(grid_names: list[str]) -> list:
     return [(name, True) for name in grid_names]
 
 
+# ─── Time-window select (designer/shift test sessions) ───────────────────────
+# (label, start_hour, duration_hours) — offered after picking a grid to test,
+# so a session can start already in the load condition the player wants to
+# check instead of always running the full 24h from midnight. PEAK crosses
+# the midnight wrap (17:00 -> 00:00); get_profile_value() in data/profiles.py
+# wraps sim_hour modulo 24 so demand/wind/solar keep cycling correctly past
+# hour 24 rather than flatlining.
+TIME_WINDOWS: list[tuple[str, float, float]] = [
+    ('OFF-PEAK  (00:00 - 06:00)', 0.0,  6.0),
+    ('SHOULDER  (06:00 - 16:00)', 6.0,  10.0),
+    ('PEAK      (17:00 - 00:00)', 17.0, 7.0),
+]
+
+
+def build_time_window_select_items() -> list:
+    """Returns list of (label, enabled) for the test-session time-window selector."""
+    return [(label, True) for label, _, _ in TIME_WINDOWS]
+
+
 def build_shift_json_select_items(shift_names: list[str]) -> list:
     """Returns list of (label, enabled) for the CONTINUOUS-mode authored-shift picker."""
     if not shift_names:

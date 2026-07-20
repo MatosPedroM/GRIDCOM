@@ -19,6 +19,7 @@ from simulation.constants import (
     FONT_SIZE_OVERLAY,
     LOAD_TRIANGLE_PCT_1, LOAD_TRIANGLE_PCT_2, LOAD_TRIANGLE_PCT_3,
     LOAD_TRIANGLE_SIZE, LOAD_TRIANGLE_SPACING,
+    UNIT_BORDER_W_PX, UNIT_BORDER_W_SELECTED_PX,
 )
 from display.palette import (
     COL_BACKGROUND,
@@ -359,7 +360,8 @@ def draw_unit_square(
         border_col = dim_col
 
     pygame.draw.rect(surf, COL_BACKGROUND, (x, y, sz, sz))
-    border_w = max(4, int(4 * scale)) if selected else max(2, int(2 * scale))
+    border_w = (max(4, int(UNIT_BORDER_W_SELECTED_PX * scale)) if selected
+                else max(2, int(UNIT_BORDER_W_PX * scale)))
     border_c = COL_SELECTION if selected else border_col
     pygame.draw.rect(surf, border_c, (x, y, sz, sz), border_w)
 

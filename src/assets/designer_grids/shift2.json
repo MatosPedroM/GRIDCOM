@@ -30,48 +30,24 @@
       "label": "GREY",
       "name": "Greymoor",
       "voltage_kv": 150.0,
-      "bus_type": "TRANSMISSION",
+      "bus_type": "LOAD",
       "canvas_x": 455,
-      "canvas_y": 375,
+      "canvas_y": 370,
       "active_from_shift": 1,
       "is_slack": false,
-      "peak_load_mw": 0.0,
-      "label_anchor": "left"
+      "peak_load_mw": 200.0,
+      "label_anchor": "right"
     },
     {
       "label": "OAKE",
       "name": "Oakendale",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 455,
-      "canvas_y": 420,
+      "canvas_x": 530,
+      "canvas_y": 370,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
-    },
-    {
-      "label": "SUTT",
-      "name": "Sutterleigh",
-      "voltage_kv": 150.0,
-      "bus_type": "LOAD",
-      "canvas_x": 540,
-      "canvas_y": 420,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 200.0,
-      "label_anchor": "right"
-    },
-    {
-      "label": "RAVE",
-      "name": "Ravensmere",
-      "voltage_kv": 150.0,
-      "bus_type": "TRANSMISSION",
-      "canvas_x": 540,
-      "canvas_y": 375,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 0.0,
       "label_anchor": "right"
     }
   ],
@@ -91,20 +67,7 @@
     },
     {
       "label": "L02",
-      "from_bus": "GREY",
-      "to_bus": "ASHC",
-      "reactance_pu": 0.013,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L03",
-      "from_bus": "OAKE",
+      "from_bus": "ASHC",
       "to_bus": "GREY",
       "reactance_pu": 0.0117,
       "rating_mw": 175.0,
@@ -116,22 +79,9 @@
       "to_port_override": null
     },
     {
-      "label": "L06",
+      "label": "L03",
       "from_bus": "ASHC",
       "to_bus": "GREY",
-      "reactance_pu": 0.013,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L07",
-      "from_bus": "GREY",
-      "to_bus": "OAKE",
       "reactance_pu": 0.0117,
       "rating_mw": 175.0,
       "voltage_kv": 150.0,
@@ -144,8 +94,27 @@
     {
       "label": "L04",
       "from_bus": "ASHC",
-      "to_bus": "RAVE",
-      "reactance_pu": 0.0257,
+      "to_bus": "OAKE",
+      "reactance_pu": 0.0228,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "E",
+        1
+      ],
+      "to_port_override": [
+        "N",
+        0
+      ]
+    },
+    {
+      "label": "L05",
+      "from_bus": "ASHC",
+      "to_bus": "OAKE",
+      "reactance_pu": 0.0228,
       "rating_mw": 175.0,
       "voltage_kv": 150.0,
       "active_from_shift": 1,
@@ -156,45 +125,6 @@
         "N",
         1
       ]
-    },
-    {
-      "label": "L05",
-      "from_bus": "ASHC",
-      "to_bus": "RAVE",
-      "reactance_pu": 0.0257,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L08",
-      "from_bus": "RAVE",
-      "to_bus": "SUTT",
-      "reactance_pu": 0.0117,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L09",
-      "from_bus": "RAVE",
-      "to_bus": "SUTT",
-      "reactance_pu": 0.0117,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
     }
   ],
   "units": [

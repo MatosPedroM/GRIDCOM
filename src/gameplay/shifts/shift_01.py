@@ -55,4 +55,38 @@ SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
     },
 }
 
-SCRIPTED_EVENTS: list[dict] = []
+SCRIPTED_EVENTS: list[dict] = [
+    {
+        'trigger_min': 0.0,
+        'priority':    'TUTOR',
+        'message':     'ASHC-1 on-line at 30 MW. AGC off — you are in manual control.',
+        'detail':      ('Ashcombe Hydro Unit 1 is the only generator on this grid. '
+                        'AGC is off, so its output never changes unless you change '
+                        'it. Watch the frequency indicator — it drifts below 50 Hz '
+                        'when generation falls behind demand, and above when it '
+                        'exceeds it.'),
+        'element':     'ASHC-1',
+        'condition':   None,
+    },
+    {
+        'trigger_min': 60.0,
+        'priority':    'TUTOR',
+        'message':     'Demand is rising. Raise ASHC-1 output to hold frequency.',
+        'detail':      ('Load at Oakendale is climbing through the pre-dawn ramp. '
+                        'If frequency has started drifting low, increase ASHC-1\'s '
+                        'target output — hydro responds almost immediately.'),
+        'element':     'ASHC-1',
+        'condition':   {'metric': 'FREQUENCY_HZ', 'op': '<', 'value': 49.9},
+    },
+    {
+        'trigger_min': 120.0,
+        'priority':    'TUTOR',
+        'message':     'Morning ramp continuing. Keep ASHC-1 tracking demand.',
+        'detail':      ('Demand keeps climbing toward the 07:00 handover. Keep an '
+                        'eye on both frequency and ASHC-1\'s output — small, steady '
+                        'adjustments are easier to manage than large corrections.'),
+        'element':     'ASHC-1',
+        'condition':   {'metric': 'UNIT_OUTPUT_MW', 'target': 'ASHC-1',
+                        'op': '<', 'value': 33.0},
+    },
+]

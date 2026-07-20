@@ -80,7 +80,7 @@ def _load_scripted_events(shift_number: int) -> list[dict]:
 @dataclass
 class Alarm:
     alarm_id:       int
-    priority:       str     # 'CRITICAL', 'WARNING', 'INFO'
+    priority:       str     # 'CRITICAL', 'WARNING', 'INFO', 'TUTOR'
     timestamp_min:  float
     message:        str     # max ALARM_MESSAGE_MAX_LEN chars
     element_label:  str | None
@@ -1066,7 +1066,7 @@ class GridSimulation:
     def _expire_alarms(self) -> None:
         self._alarms = [
             a for a in self._alarms
-            if not (a.acknowledged and a.priority == 'INFO'
+            if not (a.acknowledged and a.priority in ('INFO', 'TUTOR')
                     and self._sim_time_min - a.timestamp_min > 60.0)
         ]
 

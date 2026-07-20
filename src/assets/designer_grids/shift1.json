@@ -30,21 +30,9 @@
       "label": "GREY",
       "name": "Greymoor",
       "voltage_kv": 150.0,
-      "bus_type": "TRANSMISSION",
-      "canvas_x": 455,
-      "canvas_y": 375,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 0.0,
-      "label_anchor": "right"
-    },
-    {
-      "label": "OAKE",
-      "name": "Oakendale",
-      "voltage_kv": 150.0,
       "bus_type": "LOAD",
       "canvas_x": 455,
-      "canvas_y": 420,
+      "canvas_y": 380,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 100.0,
@@ -67,28 +55,18 @@
     },
     {
       "label": "L02",
-      "from_bus": "GREY",
-      "to_bus": "ASHC",
-      "reactance_pu": 0.013,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
-    },
-    {
-      "label": "L03",
-      "from_bus": "OAKE",
+      "from_bus": "ASHC",
       "to_bus": "GREY",
-      "reactance_pu": 0.0117,
+      "reactance_pu": 0.0143,
       "rating_mw": 175.0,
       "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
+      "from_port_override": [
+        "S",
+        0
+      ],
       "to_port_override": null
     }
   ],

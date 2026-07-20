@@ -86,7 +86,7 @@ COL_UNIT_BORDER:    Colour = (85,  85,  85)     # Default unit border — dark g
 # ─────────────────────────────────────────────
 # UNIT TYPE ACCENT COLOURS
 # ─────────────────────────────────────────────
-COL_UNIT_COAL:      Colour = (170,  0,   0)     # Coal — red (closest in-palette to brown/earth)
+COL_UNIT_COAL:      Colour = (165, 42,  42)     # Coal — red (closest in-palette to brown/earth)
 COL_UNIT_CCGT:      Colour = (85,  85,  85)     # CCGT — dark grey
 COL_UNIT_NUCLEAR:   Colour = (170,  0, 170)     # Nuclear — purple
 COL_UNIT_HYDRO:     Colour = (0,  200, 255)     # Hydro — blue (water)
@@ -129,6 +129,7 @@ COL_FLOW_60KV:      Colour = (0,    0, 170)     # Blue — contrasts against yel
 COL_ALARM_CRIT:     Colour = (255,  0,   0)     # Critical alarm — bright red
 COL_ALARM_WARN:     Colour = (170,170,   0)     # Warning alarm — yellow
 COL_ALARM_INFO:     Colour = (0,  170, 170)     # Info alarm — cyan
+COL_ALARM_TUTOR:    Colour = (0,  170,   0)     # Tutorial alarm — green
 COL_ALARM_ACK:      Colour = (85,  85,  85)     # Acknowledged alarm — dark grey
 
 # ─────────────────────────────────────────────

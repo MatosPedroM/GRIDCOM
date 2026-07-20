@@ -98,7 +98,7 @@ Tabs, in order: `META`, `GRID`, `SCHEDULE`, `DEMAND`, `EVENTS`.
   **Delete** — remove the selected event.
 - With an event selected, its detail fields are editable via number keys:
   - **[1]** trigger time (minutes from shift start)
-  - **[2]** priority — cycles INFO → WARNING → ALARM → CRITICAL → MAINTENANCE
+  - **[2]** priority — cycles INFO → TUTOR → WARNING → ALARM → CRITICAL → MAINTENANCE
   - **[3]** message (short alarm-bar text)
   - **[4]** detail (longer popup text)
   - **[5]** element (bus/line/unit label this event is associated with, or blank)

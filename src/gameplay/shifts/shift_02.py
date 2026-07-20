@@ -1,21 +1,27 @@
 """
 src/gameplay/shifts/shift_02.py
 
-Shift 2 scenario definition — AGC regulation band tutorial.
+Shift 2 scenario definition — two-unit manual dispatch tutorial.
 
 Narrative:
-  Riverside Coal is commissioned onto the Midbury busbar this shift.
-  RVSD-1 is online; RVSD-2 is out of service (planned relay maintenance —
-  the COALCOM easter egg) and RVSD-3 remains available for cold start.
-  DUND-1 is the sole AGC unit (max 65 MW); DUND-2 is on planned maintenance.
-  Demand rises through the shift, pushing DUND-1 toward saturation.
-  The player must ramp RVSD-1 to relieve DUND-1 and maintain regulation headroom.
+  RIVE-1 (Riverside Coal Unit 1, 300 MW) and ASHC-1 (Ashcombe Hydro Unit 1,
+  250 MW) are both on-line at handover. AGC is off — neither unit responds
+  to demand automatically. Demand rises steadily through the shift and the
+  player must manually raise both units' output to keep pace, splitting the
+  rise between them however they see fit.
 
-Grid: MDBY ──L11──► DUND ──L49──► LD01, ──L50──► LD02   (4 buses, 3 lines)
+Grid: RIVE ──L01──► ASHC ──{L02,L03}──► GREY, ASHC ──{L04,L05}──► OAKE
+      (4 buses, 5 lines)
+
+GRID_SOURCE below points this shift at the hand-authored Grid Designer grid
+(assets/designer_grids/shift2.json) instead of the campaign's topology.py/
+fleet.py — see shift_10.py for the same pattern.
 """
 
 from __future__ import annotations
 
+
+GRID_SOURCE: str = 'shift2'
 
 SHIFT_DATE: str = 'MON 07 NOV 1994'
 
@@ -23,61 +29,47 @@ DIFFICULTY_LABEL: str = 'Tutorial'
 
 HANDOVER_NOTES: tuple[str, ...] = (
     'Mid-morning handover.',
-    'Riverside Coal commissioned at Midbury this shift.',
-    'RVSD-1 on-line at 200 MW. RVSD-2 out of service — planned relay maintenance.',
-    'RVSD-3 available, cold start 240 min.',
-    'DUND-1 on-line at 40 MW. DUND-2 on planned maintenance outage.',
-    'Demand rising. DUND-1 is the sole AGC unit — headroom is limited.',
-    'AGC active — ramp RVSD-1 as load grows to keep DUND-1 in its band.',
+    'Riverside Coal Unit 1 (RIVE-1) on-line at 120 MW.',
+    'Ashcombe Hydro Unit 1 (ASHC-1) on-line at 160 MW.',
+    'AGC off — manual dispatch only, on both units.',
+    'Demand rising through the shift. Your task: keep both units tracking it.',
 )
 
-MAINTENANCE_UNITS: set[str] = {'RVSD-2', 'DUND-2'}
+# Units on planned maintenance — visible on canvas but cannot be started.
+MAINTENANCE_UNITS: set[str] = set()
 
-AGC_ENABLED: bool = True
+AGC_ENABLED: bool = False
 
-# Per-bus hourly load table (MW). Shift 2: LD01 + LD02, peak 315 MW.
-# RVSD-1 at 200 MW coal, DUND-1 at 40 MW = 240 MW initial.
-# Load rises above 265 MW (200 MW coal + 65 MW DUND-1 max) to force RVSD ramping.
-# LD01 (55%): peak ≈ 173 MW. LD02 (45%): peak ≈ 142 MW.
+# Per-bus hourly load table (MW). Shift 2: GREY + OAKE, 400 MW combined peak.
+# Full 24h table required by DemandModel/get_profile_value (interpolates across
+# the whole day even though the shift itself only plays 10:00-14:00). Shaped like
+# the old shift's full-day curve (which also rises 10:00-14:00), rescaled 400/315
+# to the new grid's 400 MW combined peak, with the 10:00-14:00 window forced to
+# exact values matching the SCRIPTED_EVENTS thresholds below: combined load
+# 273 -> 311 -> 340 -> 371 -> 400 MW. Split evenly 50/50 GREY/OAKE (both buses
+# share an identical 200 MW peak_load_mw in shift2.json).
 SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
-    'LD01': {
-         0.0:  55,  1.0:  52,  2.0:  50,  3.0:  48,  4.0:  50,
-         5.0:  54,  6.0:  66,  7.0:  85,  8.0: 102,  9.0: 116,
-        10.0: 118, 11.0: 135, 12.0: 147, 13.0: 161, 14.0: 173,
-        15.0: 172, 16.0: 168, 17.0: 164, 18.0: 160, 19.0: 153,
-        20.0: 144, 21.0: 131, 22.0: 114, 23.0:  91, 24.0:  67,
+    'GREY': {
+         0.0: 63.5,  1.0: 60.3,  2.0: 57.15, 3.0: 55.85, 4.0: 57.15,
+         5.0: 62.2,  6.0: 76.2,  7.0: 98.4,  8.0:117.45, 9.0:133.35,
+        10.0:136.5, 11.0:155.5, 12.0:170.0, 13.0:185.5, 14.0:200.0,
+        15.0:198.1, 16.0:193.65,17.0:189.2, 18.0:184.15,19.0:176.5,
+        20.0:166.35,21.0:151.1, 22.0:132.05,23.0:104.75,24.0: 77.45,
     },
-    'LD02': {
-         0.0:  45,  1.0:  43,  2.0:  40,  3.0:  40,  4.0:  40,
-         5.0:  44,  6.0:  54,  7.0:  70,  8.0:  83,  9.0:  94,
-        10.0:  97, 11.0: 110, 12.0: 121, 13.0: 131, 14.0: 142,
-        15.0: 140, 16.0: 137, 17.0: 134, 18.0: 130, 19.0: 125,
-        20.0: 118, 21.0: 107, 22.0:  94, 23.0:  74, 24.0:  55,
+    'OAKE': {
+         0.0: 63.5,  1.0: 60.3,  2.0: 57.15, 3.0: 55.85, 4.0: 57.15,
+         5.0: 62.2,  6.0: 76.2,  7.0: 98.4,  8.0:117.45, 9.0:133.35,
+        10.0:136.5, 11.0:155.5, 12.0:170.0, 13.0:185.5, 14.0:200.0,
+        15.0:198.1, 16.0:193.65,17.0:189.2, 18.0:184.15,19.0:176.5,
+        20.0:166.35,21.0:151.1, 22.0:132.05,23.0:104.75,24.0: 77.45,
     },
 }
 
 # Starting dispatch — units absent from this dict start OFFLINE.
 INITIAL_SCHEDULE: dict[str, float] = {
-    'RVSD-1': 200.0,   # Riverside Coal 1 — 200 MW at handover
-    'DUND-1': 40.0,    # Dunmore Lower 1  — AGC, regulating
-    # RVSD-2 absent → OFFLINE (relay maintenance — COALCOM easter egg)
-    # RVSD-3 absent → OFFLINE (available, cold start)
-    # DUND-2 absent → OFFLINE (planned maintenance outage)
+    'RIVE-1': 120.0,   # Riverside Coal Unit 1 — 300 MW rated, 105 MW min
+    'ASHC-1': 160.0,   # Ashcombe Hydro Unit 1  — 250 MW rated, 25 MW min
 }
-
-
-# ── Condition helpers ──────────────────────────────────────────────────────────
-
-def _dund1_near_saturation(fleet) -> bool:
-    """True when DUND-1 is being pushed above 55 MW — only ~10 MW headroom left."""
-    cur, _, _ = fleet.agc_regulation_state()
-    return cur > 55.0
-
-
-def _reg_band_narrow(fleet) -> bool:
-    """True when the available AGC bandwidth drops below 40 MW."""
-    _, _min, _max = fleet.agc_regulation_state()
-    return (_max - _min) < 40.0
 
 
 # ── Scripted events ────────────────────────────────────────────────────────────
@@ -85,45 +77,47 @@ def _reg_band_narrow(fleet) -> bool:
 SCRIPTED_EVENTS: list[dict] = [
     {
         'trigger_min': 0.0,
-        'priority':    'INFO',
-        'message':     'RVSD-2 on relay maintenance. AGC active on DUND-1 only.',
-        'detail':      ('RVSD-2 is unavailable for this shift (planned relay '
-                        'maintenance). DUND-1 is the sole AGC unit with a maximum '
-                        'of 65 MW. Monitor the REG BAND panel — as demand rises, '
-                        'DUND-1 will need headroom to respond.'),
-        'element':     'RVSD-2',
+        'priority':    'TUTOR',
+        'message':     'RIVE-1 and ASHC-1 on-line. AGC off — manual dispatch only.',
+        'detail':      ('Riverside Coal Unit 1 (RIVE-1, 300 MW) and Ashcombe Hydro '
+                        'Unit 1 (ASHC-1, 250 MW) are both on-line. AGC is off — '
+                        'neither unit will respond to demand automatically. Monitor '
+                        'frequency and adjust both units manually as load rises.'),
+        'element':     None,
         'condition':   None,
     },
     {
         'trigger_min': 30.0,
-        'priority':    'INFO',
-        'message':     'Demand rising. Ramp RVSD before DUND-1 saturates.',
-        'detail':      ('Load is climbing toward the DUND-1 ceiling. Increase '
-                        'RVSD-1 output target (or cold-start RVSD-3) so DUND-1 '
-                        'can settle lower in its band and retain upward headroom '
-                        'for AGC.'),
+        'priority':    'TUTOR',
+        'message':     'Demand rising. Two units, your call how to split the load.',
+        'detail':      ('Load is climbing steadily through the shift. ASHC-1 responds '
+                        'quickly; RIVE-1 responds more slowly but has the larger '
+                        'reserve. Split the rise between them as you see fit — just '
+                        'keep total generation tracking load.'),
         'element':     None,
         'condition':   None,
     },
     {
         'trigger_min': 60.0,
-        'priority':    'WARNING',
-        'message':     'DUND-1 nearing upper limit. Ramp RVSD to restore margin.',
-        'detail':      ('AGC is holding DUND-1 above 55 MW. Only ~10 MW of upward '
-                        'headroom remains. Ramp RVSD-1 or RVSD-3 to push DUND-1 '
-                        'back toward mid-band and restore regulation capacity.'),
-        'element':     'DUND-1',
-        'condition':   _dund1_near_saturation,
+        'priority':    'TUTOR',
+        'message':     'Generation lagging demand. Ramp RIVE-1 or ASHC-1 to keep up.',
+        'detail':      ('Load has risen toward 310 MW but total dispatch is still '
+                        'near its 280 MW handover level. Increase RIVE-1 and/or '
+                        'ASHC-1 output to close the gap and hold frequency nominal.'),
+        'element':     None,
+        'condition':   {'metric': 'UNIT_OUTPUT_MW_SUM', 'targets': ['RIVE-1', 'ASHC-1'],
+                        'op': '<', 'value': 290.0},
     },
     {
         'trigger_min': 120.0,
-        'priority':    'WARNING',
-        'message':     'Regulation band narrow. Increase RVSD to relieve DUND-1.',
-        'detail':      ('Available AGC bandwidth is below 40 MW. DUND-1 has '
-                        'insufficient headroom to absorb further load increases. '
-                        'Ramp RVSD-1 or RVSD-3 to allow DUND-1 to reduce output '
-                        'and widen the regulation band.'),
+        'priority':    'TUTOR',
+        'message':     'Midday load near 340 MW. Confirm both units are tracking it.',
+        'detail':      ('The shift is at its halfway point. Total generation should '
+                        'be tracking close to system load by now. If either unit is '
+                        'still near its handover output, ramp it before the final '
+                        'push toward the 400 MW peak at end of shift.'),
         'element':     None,
-        'condition':   _reg_band_narrow,
+        'condition':   {'metric': 'UNIT_OUTPUT_MW_SUM', 'targets': ['RIVE-1', 'ASHC-1'],
+                        'op': '<', 'value': 320.0},
     },
 ]

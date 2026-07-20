@@ -69,7 +69,7 @@ _SHIFTS_PKG_DIR = Path(__file__).parent.parent / 'gameplay' / 'shifts'
 @dataclass
 class ShiftEvent:
     trigger_min: float
-    priority:    str                  # INFO | WARNING | ALARM | CRITICAL | MAINTENANCE
+    priority:    str                  # INFO | TUTOR | WARNING | ALARM | CRITICAL | MAINTENANCE
     message:     str
     detail:      str = ''
     element:     str | None = None

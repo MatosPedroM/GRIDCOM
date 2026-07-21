@@ -20,35 +20,35 @@
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
       "canvas_x": 455,
-      "canvas_y": 325,
+      "canvas_y": 360,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "top"
+      "label_anchor": "right"
     },
     {
       "label": "GREY",
       "name": "Greymoor",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 455,
-      "canvas_y": 370,
+      "canvas_x": 415,
+      "canvas_y": 415,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 150.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "OAKE",
       "name": "Oakendale",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 530,
-      "canvas_y": 370,
+      "canvas_x": 500,
+      "canvas_y": 415,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     },
     {
       "label": "SUTT",
@@ -60,7 +60,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "right"
+      "label_anchor": "top"
     },
     {
       "label": "RAVE",
@@ -68,11 +68,11 @@
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
       "canvas_x": 625,
-      "canvas_y": 320,
+      "canvas_y": 305,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 150.0,
-      "label_anchor": "right"
+      "label_anchor": "bottom"
     }
   ],
   "lines": [
@@ -99,8 +99,14 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
+      "from_port_override": [
+        "W",
+        1
+      ],
+      "to_port_override": [
+        "E",
+        0
+      ]
     },
     {
       "label": "L03",
@@ -112,11 +118,36 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
+      "from_port_override": [
+        "S",
+        0
+      ],
+      "to_port_override": [
+        "E",
+        1
+      ]
     },
     {
       "label": "L04",
+      "from_bus": "ASHC",
+      "to_bus": "OAKE",
+      "reactance_pu": 0.0228,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "S",
+        1
+      ],
+      "to_port_override": [
+        "W",
+        1
+      ]
+    },
+    {
+      "label": "L05",
       "from_bus": "ASHC",
       "to_bus": "OAKE",
       "reactance_pu": 0.0228,
@@ -130,24 +161,8 @@
         1
       ],
       "to_port_override": [
-        "N",
+        "W",
         0
-      ]
-    },
-    {
-      "label": "L05",
-      "from_bus": "ASHC",
-      "to_bus": "OAKE",
-      "reactance_pu": 0.0228,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": [
-        "N",
-        1
       ]
     },
     {
@@ -160,8 +175,14 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null
+      "from_port_override": [
+        "E",
+        0
+      ],
+      "to_port_override": [
+        "W",
+        0
+      ]
     },
     {
       "label": "L07",
@@ -188,6 +209,19 @@
       "parallel": 0,
       "from_port_override": null,
       "to_port_override": null
+    },
+    {
+      "label": "L09",
+      "from_bus": "RIVE",
+      "to_bus": "ASHC",
+      "reactance_pu": 0.0143,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null
     }
   ],
   "units": [
@@ -207,7 +241,7 @@
       "active_from_shift": 1,
       "description": "Ashcombe Hydro Unit 1",
       "station_x": 400,
-      "station_y": 305,
+      "station_y": 320,
       "start_mw": -1.0,
       "in_service": true,
       "label_anchor": "left",

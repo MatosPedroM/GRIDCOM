@@ -291,10 +291,12 @@ ALARM_MESSAGE_MAX_LEN: int   = 60           # Max characters in alarm message
 # ─────────────────────────────────────────────
 # SOUND
 # ─────────────────────────────────────────────
-SOUND_PATH_ALARM:   str   = 'assets/sounds/alarm.wav'  # Loops while a WARNING/CRITICAL alarm is unacknowledged
-SOUND_PATH_PING:    str   = 'assets/sounds/ping.wav'   # One-shot on new INFO/TUTOR alarm
-SOUND_VOLUME_ALARM: float = 0.6
-SOUND_VOLUME_PING:  float = 0.5
+SOUND_PATH_ALARM:         str   = 'assets/sounds/alarm.wav'         # Loops while a CRITICAL alarm is unacknowledged
+SOUND_PATH_PING:          str   = 'assets/sounds/ping.wav'          # One-shot on new INFO/TUTOR alarm
+SOUND_PATH_WARNING_PING:  str   = 'assets/sounds/warning_ping.wav'  # Loops while a WARNING alarm is unacknowledged
+SOUND_VOLUME_ALARM:       float = 0.6
+SOUND_VOLUME_PING:        float = 0.5
+SOUND_VOLUME_WARNING_PING: float = 0.5
 
 # ─────────────────────────────────────────────
 # LINE LOAD TRIANGLE INDICATOR

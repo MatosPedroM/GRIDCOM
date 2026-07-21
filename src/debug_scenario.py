@@ -10,14 +10,14 @@ scenario instead of the normal shift handover.
 from dataclasses import dataclass
 from simulation.grid import Grid
 from simulation.simulation import GridSimulation
-from data.profiles import SHIFT_SPECS, ShiftSpec
+from gameplay.shifts.loader import load_shift_config
 
 
 @dataclass
 class DebugScenario:
     shift_number:            int
     initial_schedule:        dict[str, float]   # {unit_label: initial_mw}
-    peak_demand_mw:          float              # overrides ShiftSpec.peak_demand_mw
+    peak_demand_mw:          float              # overrides the shift's grid-derived peak demand
     start_hour:              float              # sim clock start (0.0–23.0)
     line_outages:            list[str]          # line labels to trip on init
     interconnector_north_mw: float             # INTC-N MW (positive = import)
@@ -32,32 +32,16 @@ def make_debug_sim(scenario: DebugScenario) -> tuple[GridSimulation, Grid]:
     Construct a GridSimulation and Grid from a DebugScenario spec.
     Returns (sim, grid) ready to pass to Renderer.
     """
-    base_spec = SHIFT_SPECS[scenario.shift_number]
-    patched_spec = ShiftSpec(
-        shift_number=base_spec.shift_number,
+    grid = Grid(scenario.shift_number)
+    sim  = GridSimulation(
+        grid=grid,
+        shift_number=scenario.shift_number,
+        difficulty='standard',
+        initial_schedule=scenario.initial_schedule,
         start_hour=scenario.start_hour,
-        duration_hours=base_spec.duration_hours,
-        grid_size=base_spec.grid_size,
-        has_phase1=base_spec.has_phase1,
-        peak_demand_mw=scenario.peak_demand_mw,
+        duration_hours=load_shift_config(scenario.shift_number)['duration_hours'],
     )
-
-    # Temporarily replace SHIFT_SPECS entry so GridSimulation.__init__ sees the overrides.
-    # ShiftSpec is frozen=True so we construct a new instance rather than mutating.
-    from data import profiles as _profiles
-    original_spec = _profiles.SHIFT_SPECS[scenario.shift_number]
-    _profiles.SHIFT_SPECS[scenario.shift_number] = patched_spec
-
-    try:
-        grid = Grid(scenario.shift_number)
-        sim  = GridSimulation(
-            grid=grid,
-            shift_number=scenario.shift_number,
-            difficulty='standard',
-            initial_schedule=scenario.initial_schedule,
-        )
-    finally:
-        _profiles.SHIFT_SPECS[scenario.shift_number] = original_spec
+    sim._demand._peak_demand_mw = scenario.peak_demand_mw
 
     for line_label in scenario.line_outages:
         sim.trip_line(line_label)

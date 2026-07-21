@@ -425,6 +425,29 @@ _FALLBACK_ALARMS: list[tuple[str, str, str, bool]] = [
 ]
 
 
+def _wrap_text(
+    font:      pygame.freetype.Font,
+    text:      str,
+    size:      int,
+    max_width: int,
+) -> list[str]:
+    """Word-wrap text to fit max_width px at the given font size."""
+    words = text.split()
+    if not words:
+        return []
+    lines: list[str] = []
+    line = words[0]
+    for word in words[1:]:
+        candidate = f'{line} {word}'
+        if font.get_rect(candidate, size=size).width <= max_width:
+            line = candidate
+        else:
+            lines.append(line)
+            line = word
+    lines.append(line)
+    return lines
+
+
 def draw_alarm_panel(
     surf:       pygame.Surface,
     font:       pygame.freetype.Font,
@@ -433,16 +456,18 @@ def draw_alarm_panel(
     scroll_row: int,
     font_scale: float = 1.0,
 ) -> None:
-    """Alarm panel: scrollable alarm list with priority, timestamp, message."""
+    """Alarm panel: scrollable alarm list with priority, timestamp, message.
+    Alarms with non-empty detail text wrap it onto extra lines beneath the
+    message; alarms with no detail render as a single line, as before."""
 
     if state is not None:
-        alarms: list[tuple[str, str, str, bool]] = []
+        alarms: list[tuple[str, str, str, bool, str]] = []
         for a in sorted(state.active_alarms, key=lambda x: x.alarm_id, reverse=True):
             h = int(a.timestamp_min // 60)
             m = int(a.timestamp_min % 60)
-            alarms.append((a.priority, f'{h:02d}:{m:02d}', a.message, a.acknowledged))
+            alarms.append((a.priority, f'{h:02d}:{m:02d}', a.message, a.acknowledged, a.detail))
     else:
-        alarms = _FALLBACK_ALARMS
+        alarms = [(pri, ts, msg, acked, '') for pri, ts, msg, acked in _FALLBACK_ALARMS]
 
     _fill_panel(surf)
     _header(surf, font, 'ALARMS', font_scale)
@@ -453,34 +478,61 @@ def draw_alarm_panel(
     rh   = max(1, int(_ROW_H * fs))
     pad  = int(_PAD * fs)
 
-    w            = surf.get_width()
-    visible_rows = max(1, (surf.get_height() - hh) // rh)
-    total        = len(alarms)
-    start        = max(0, min(scroll_row, max(0, total - visible_rows)))
+    w = surf.get_width()
 
     dot_x  = pad
     pri_x  = dot_x + int(12 * fs)
     time_x = pri_x + int(34 * fs)
     msg_x  = time_x + int(40 * fs)
+    detail_max_w = max(1, w - msg_x - pad)
 
-    for i, (pri, ts, msg, acked) in enumerate(alarms[start:start + visible_rows]):
-        y = _row_y(i, fs)
+    # Pre-wrap detail text and compute each row's height (in row units) so
+    # scroll/visibility math can work over variable-height entries.
+    wrapped: list[list[str]] = []
+    row_units: list[int] = []
+    for pri, ts, msg, acked, detail in alarms:
+        detail_lines = _wrap_text(font, detail, sp, detail_max_w) if detail else []
+        wrapped.append(detail_lines)
+        row_units.append(1 + len(detail_lines))
+
+    total        = len(alarms)
+    visible_units = max(1, (surf.get_height() - hh) // rh)
+    max_start     = total
+    for i in range(total):
+        units = sum(row_units[i:])
+        if units <= visible_units:
+            max_start = i
+            break
+    start = max(0, min(scroll_row, max_start))
+
+    y = hh + max(1, int(2 * fs))
+    bottom_limit = surf.get_height()
+    for i in range(start, total):
+        pri, ts, msg, acked, _detail = alarms[i]
+        detail_lines = wrapped[i]
+        row_h = rh * row_units[i]
+        if y + row_h > bottom_limit and i > start:
+            break
 
         pri_col = _ALARM_DOT_COL.get(pri, COL_TEXT_DIM)
         if acked:
             pri_col = COL_ALARM_ACK
-            msg_col = COL_TEXT_DIM
-        else:
-            msg_col = COL_TEXT_PRIMARY
-            if not blink_on and pri in ('CRITICAL', 'WARNING'):
-                pri_col = COL_METER_BG
-                msg_col = COL_TEXT_DIM
+        elif not blink_on and pri in ('CRITICAL', 'WARNING'):
+            pri_col = COL_METER_BG
+        msg_col = pri_col
 
         dot_sym = '●' if not acked else '○'
         font.render_to(surf, (dot_x,  y), dot_sym,  pri_col,         size=sp)
         font.render_to(surf, (pri_x,  y), pri[:4],  pri_col,         size=sp)
         font.render_to(surf, (time_x, y), ts,        COL_TEXT_DIM,    size=sp)
         font.render_to(surf, (msg_x,  y), msg,       msg_col,         size=sp)
+
+        detail_col = COL_ALARM_ACK if acked else COL_TEXT_PRIMARY
+        for dline in detail_lines:
+            y += rh
+            font.render_to(surf, (msg_x, y), dline, detail_col, size=sp)
+
+        y += rh
 
     hint = '[A] ACK  [AA] ALL'
     rect = font.get_rect(hint, size=sp)

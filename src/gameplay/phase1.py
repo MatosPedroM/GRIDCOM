@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 from data.designer_io import load_designer_grid_named
 from data.fleet import GenerationUnit
-from data.profiles import SHIFT_SPECS, get_substation_demand_specs
+from data.profiles import get_substation_demand_specs
 from gameplay.shifts.loader import load_shift_config
 from simulation.constants import (
     TECH_MIN_FRAC_HYDRO,
@@ -380,7 +380,6 @@ def build_planning_model_for_shift10() -> PlanningModel:
 
 def build_planning_model(shift_number: int) -> PlanningModel:
     cfg = load_shift_config(shift_number)
-    spec = SHIFT_SPECS[shift_number]
 
     grid_source = cfg.get('grid_source')
     if grid_source:
@@ -398,7 +397,7 @@ def build_planning_model(shift_number: int) -> PlanningModel:
     ]
 
     substation_specs = get_substation_demand_specs(cfg['substation_load_mw'])
-    demand_model = DemandModel(spec, substation_specs)
+    demand_model = DemandModel(cfg['peak_demand_mw'], substation_specs)
     load_forecast = demand_model.forecast_by_hour(0.0, 23.0, step=1.0)
 
     renewables = RenewablesModel(grid)
@@ -406,8 +405,8 @@ def build_planning_model(shift_number: int) -> PlanningModel:
 
     model = PlanningModel(
         unit_specs=dispatchable,
-        start_hour=spec.start_hour,
-        duration_hours=spec.duration_hours,
+        start_hour=cfg['start_hour'],
+        duration_hours=cfg['duration_hours'],
         load_forecast=load_forecast,
         renewable_specs=renewable_specs,
         renewable_forecast=renewable_forecast,

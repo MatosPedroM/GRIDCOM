@@ -112,6 +112,7 @@ class UnitModel:
         self._start_timer_min: float = 0.0   # simulated minutes elapsed since STARTING
         self._q_injection_mvar: float = 0.0
         self._maintenance: bool = False
+        self._derate_cap_mw: float | None = None   # None = not derated
 
     # ─────── READ-ONLY PROPERTIES ─────────────────────────────────────────
 
@@ -152,6 +153,17 @@ class UnitModel:
 
     def set_maintenance(self, flag: bool) -> None:
         self._maintenance = flag
+
+    @property
+    def is_derated(self) -> bool:
+        return self._derate_cap_mw is not None
+
+    @property
+    def effective_max_mw(self) -> float:
+        """Current dispatch ceiling: rated_mw, or the derate cap if derated."""
+        if self._derate_cap_mw is None:
+            return self._spec.rated_mw
+        return min(self._spec.rated_mw, self._derate_cap_mw)
 
     @property
     def inertia_contribution(self) -> tuple[str, float]:
@@ -216,6 +228,23 @@ class UnitModel:
         self._start_timer_min = 0.0
         self._q_injection_mvar = 0.0
 
+    def derate(self, cap_mw: float) -> None:
+        """
+        Reduce the unit's dispatch ceiling to cap_mw and hold it there
+        (e.g. a cooling fault) — unlike trip(), the unit stays ONLINE and
+        keeps producing, just below its nameplate rating. If output is
+        currently above the new cap, it ramps down at the unit's normal
+        ramp_pct_per_min rate (via the target setpoint) rather than
+        snapping instantly. Clamped to min_mw.
+        """
+        cap = max(self._spec.min_mw, min(self._spec.rated_mw, float(cap_mw)))
+        self._derate_cap_mw = cap
+        if DEBUG_SIMULATION:
+            logging.getLogger('sim').debug(f'[UNITS] {self.label} DERATED to {cap:.1f} MW '
+                                           f'(was rated {self._spec.rated_mw:.1f} MW)')
+        if self._target_mw > cap:
+            self._target_mw = cap
+
     def set_target(self, target_mw: float) -> bool:
         """
         Set dispatch target. Only valid when ONLINE.
@@ -231,7 +260,7 @@ class UnitModel:
             return False
         self._target_mw = max(
             self._spec.min_mw,
-            min(self._spec.rated_mw, float(target_mw))
+            min(self.effective_max_mw, float(target_mw))
         )
         return True
 
@@ -320,7 +349,9 @@ class UnitModel:
         else:
             self._current_mw += max_delta if delta > 0.0 else -max_delta
 
-        # Enforce output bounds.
+        # Enforce output bounds. Upper bound is rated_mw, not effective_max_mw —
+        # a fresh derate cap below current_mw must be ramped down to via
+        # target_mw (set in derate()), not snapped here in the same tick.
         self._current_mw = max(
             self._spec.min_mw,
             min(self._spec.rated_mw, self._current_mw)
@@ -416,6 +447,12 @@ class FleetModel:
         if model is not None:
             model.trip()
 
+    def derate_unit(self, label: str, cap_mw: float) -> None:
+        """Reduce a unit's dispatch ceiling to cap_mw (stays ONLINE)."""
+        model = self._units.get(label)
+        if model is not None:
+            model.derate(cap_mw)
+
     def set_unit_target(self, label: str, target_mw: float) -> bool:
         """Set dispatch target. Returns False if not found or not ONLINE."""
         model = self._units.get(label)
@@ -455,7 +492,7 @@ class FleetModel:
             return {}
 
         if delta_mw > 0:
-            weights = [max(0.0, u._spec.rated_mw - u.current_mw) for u in eligible]
+            weights = [max(0.0, u.effective_max_mw - u.current_mw) for u in eligible]
         else:
             weights = [
                 max(0.0, u.current_mw - _TECH_MIN_FRAC.get(u._spec.unit_type, MIN_OUTPUT_FRACTION) * u._spec.rated_mw)
@@ -490,7 +527,7 @@ class FleetModel:
             frac = _TECH_MIN_FRAC.get(unit._spec.unit_type, MIN_OUTPUT_FRACTION)
             current   += unit.current_mw
             min_total += unit._spec.rated_mw * frac
-            max_total += unit._spec.rated_mw
+            max_total += unit.effective_max_mw
         return current, min_total, max_total
 
     # ─────── QUERIES — INDIVIDUAL ─────────────────────────────────────────
@@ -521,11 +558,11 @@ class FleetModel:
         )
 
     def spinning_reserve_mw(self) -> float:
-        """Sum of (rated_mw - current_mw) for all ONLINE units."""
+        """Sum of (effective_max_mw - current_mw) for all ONLINE units."""
         total = 0.0
         for m in self._units.values():
             if m.state == 'ONLINE':
-                total += m._spec.rated_mw - m.current_mw
+                total += m.effective_max_mw - m.current_mw
         return total
 
     def online_unit_types(self) -> list[tuple[str, float]]:

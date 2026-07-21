@@ -1,8 +1,7 @@
 """
 src/data/profiles.py
 
-Demand profiles, renewable generation profiles, and shift specifications
-for the GRIDCOM 10-shift campaign.
+Demand profiles and renewable generation profiles for the GRIDCOM campaign.
 
 Each 150kV load substation has an explicit per-shift hourly load table (MW).
 Total system demand is the bottom-up sum of active substation demands.
@@ -13,49 +12,6 @@ See GAMEPLAY_REFERENCE.md for campaign structure.
 """
 
 from dataclasses import dataclass
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SHIFT SPECIFICATION
-# ─────────────────────────────────────────────────────────────────────────────
-
-@dataclass(frozen=True)
-class ShiftSpec:
-    """
-    Immutable specification for one shift.
-
-    Attributes:
-        shift_number:    1-10
-        start_hour:      Shift start time (decimal hours, 24h clock)
-        duration_hours:  Length of shift window in simulated hours
-        grid_size:       Number of active buses (3 → 36 across the campaign)
-        has_phase1:      True if player does Phase 1 planning before Phase 2
-        peak_demand_mw:  Peak system demand during this shift (MW)
-    """
-    shift_number:     int
-    start_hour:       float
-    duration_hours:   float
-    grid_size:        int
-    has_phase1:       bool
-    peak_demand_mw:   float
-
-
-SHIFT_SPECS: dict[int, ShiftSpec] = {
-
-    # Shift 0 is a sentinel used only by the Grid Designer test session.
-    0:  ShiftSpec(shift_number=0,  start_hour=0.0,  duration_hours=999.0, grid_size=0, has_phase1=False, peak_demand_mw=0.0),
-
-    1:  ShiftSpec(shift_number=1,  start_hour=4.0,  duration_hours=3.0,  grid_size=4,  has_phase1=False, peak_demand_mw=100.0),
-    2:  ShiftSpec(shift_number=2,  start_hour=10.0, duration_hours=4.0,  grid_size=4,  has_phase1=False, peak_demand_mw=400.0),
-    3:  ShiftSpec(shift_number=3,  start_hour=14.0, duration_hours=6.0,  grid_size=10, has_phase1=False, peak_demand_mw=1400.0),
-    4:  ShiftSpec(shift_number=4,  start_hour=20.0, duration_hours=8.0,  grid_size=16, has_phase1=False, peak_demand_mw=2600.0),
-    5:  ShiftSpec(shift_number=5,  start_hour=6.0,  duration_hours=8.0,  grid_size=23, has_phase1=True,  peak_demand_mw=3600.0),
-    6:  ShiftSpec(shift_number=6,  start_hour=12.0, duration_hours=8.0,  grid_size=27, has_phase1=True,  peak_demand_mw=5000.0),
-    7:  ShiftSpec(shift_number=7,  start_hour=6.0,  duration_hours=10.0, grid_size=36, has_phase1=True,  peak_demand_mw=6300.0),
-    8:  ShiftSpec(shift_number=8,  start_hour=0.0,  duration_hours=8.0,  grid_size=36, has_phase1=True,  peak_demand_mw=7200.0),
-    9:  ShiftSpec(shift_number=9,  start_hour=8.0,  duration_hours=12.0, grid_size=36, has_phase1=True,  peak_demand_mw=7800.0),
-    10: ShiftSpec(shift_number=10, start_hour=6.0,  duration_hours=12.0, grid_size=36, has_phase1=True,  peak_demand_mw=8000.0),
-}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,7 +165,8 @@ def get_demand_mw(sim_hour: float, peak_demand_mw: float) -> float:
 
     Args:
         sim_hour:        Current time of day (decimal hours).
-        peak_demand_mw:  Peak demand for this shift (from ShiftSpec).
+        peak_demand_mw:  Peak demand for this shift (sum of its grid's LOAD bus
+                         peak_load_mw values, from load_shift_config()).
 
     Returns:
         Forecast demand in MW (deterministic, no noise).

@@ -855,6 +855,9 @@ class GridDesigner:
     def _units_at_station(self, station_label: str) -> list[DesignerUnit]:
         return [u for u in self._units if u.station_label == station_label]
 
+    def _units_at_bus(self, bus_label: str) -> list[DesignerUnit]:
+        return [u for u in self._units if u.bus_label == bus_label]
+
     # ─── Group (marquee) selection ──────────────────────────────────────────────
 
     def _marquee_capture(self, rect: pygame.Rect) -> None:
@@ -996,11 +999,16 @@ class GridDesigner:
         self._push_undo()
         unit_type = self._palette_unit_type
         station_name = bus.name
-        station_label = label_from_name(station_name, self._used_station_labels)
-        self._used_station_labels.add(station_label)
+        existing_units = self._units_at_bus(bus.label)
+        if existing_units:
+            station_label = existing_units[0].station_label
+        else:
+            station_label = label_from_name(station_name, self._used_station_labels)
+            self._used_station_labels.add(station_label)
+        start_index = len(existing_units) + 1
         sx, sy = bus.canvas_x, max(0, bus.canvas_y - 20)
         defaults = UNIT_DEFAULTS.get(unit_type, UNIT_DEFAULTS['COAL'])
-        for i in range(1, count + 1):
+        for i in range(start_index, start_index + count):
             unit_label = f'{station_label}-{i}'
             unit = DesignerUnit(
                 label=unit_label,
@@ -1132,18 +1140,22 @@ class GridDesigner:
 
     def _remove_bus(self, bus: DesignerBus) -> None:
         lbl = bus.label
+        removed_units = [u for u in self._units if u.bus_label == lbl]
         self._buses  = [b for b in self._buses  if b.label != lbl]
         self._lines  = [l for l in self._lines
                         if l.from_bus != lbl and l.to_bus != lbl]
         self._units  = [u for u in self._units  if u.bus_label != lbl]
         self._used_bus_labels.discard(lbl)
         self._used_bus_names.discard(bus.name)
+        for u in removed_units:
+            self._used_station_labels.discard(u.station_label)
         self._used_line_labels = {l.label for l in self._lines}
         self._clear_selection()
         self._mark_dirty()
 
     def _remove_station(self, station_label: str) -> None:
         self._units = [u for u in self._units if u.station_label != station_label]
+        self._used_station_labels.discard(station_label)
         self._clear_selection()
         self._mark_dirty()
 

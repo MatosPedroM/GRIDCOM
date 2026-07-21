@@ -3,13 +3,12 @@ src/data/shift_io.py
 
 Load / save authored Shift Builder JSON (assets/shifts/<name>.json).
 
-A shift definition bundles everything gameplay/shifts/shift_NN.py + a
-SHIFT_SPECS entry provide today — the grid it runs on, starting
-conditions, per-bus hourly demand, and a scripted event timeline — into
-one self-contained, player-authorable file. shift_def_to_config() returns
-the same dict shape gameplay/shifts/loader.load_shift_config() produces,
-so both the hardcoded campaign shifts and authored JSON shifts feed
-GridSimulation identically.
+A shift definition bundles everything gameplay/shifts/shift_NN.py provides
+today — the grid it runs on, starting conditions, per-bus hourly demand,
+and a scripted event timeline — into one self-contained, player-authorable
+file. shift_def_to_config() returns the same dict shape
+gameplay/shifts/loader.load_shift_config() produces, so both the hardcoded
+campaign shifts and authored JSON shifts feed GridSimulation identically.
 
 JSON schema version 1:
   {
@@ -44,6 +43,11 @@ Event 'action' is a declarative dict or None:
   { "type": "LINE_OPEN", "line": "L09" }
   { "type": "LINE_CLOSE", "line": "L09" }
   { "type": "UNIT_TRIP", "unit": "RVSD-1" }
+  { "type": "UNIT_DERATE", "unit": "RVSD-1", "cap_mw": 105.0 }
+UNIT_DERATE reduces the unit's dispatch ceiling to cap_mw and holds it
+there — unlike UNIT_TRIP, the unit stays ONLINE and keeps producing, just
+below its nameplate rating (e.g. a cooling fault). Output snaps down
+immediately if currently above the new cap.
 Executed by GridSimulation._process_scripted_events() after the alarm
 for that event fires.
 """

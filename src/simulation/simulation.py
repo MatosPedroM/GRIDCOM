@@ -50,7 +50,7 @@ from simulation.units import FleetModel
 from simulation.demand import DemandModel
 from simulation.renewables import RenewablesModel
 from simulation.cascade import CascadeModel
-from data.profiles import SHIFT_SPECS, get_substation_demand_specs
+from data.profiles import get_substation_demand_specs
 from gameplay.shifts.loader import load_shift_config
 
 
@@ -223,14 +223,14 @@ class GridSimulation:
         # manual dispatch/AGC. Stored here for a future per-hour executor.
         self._hourly_schedule: dict[str, dict[float, float]] | None = hourly_schedule
 
-        spec = SHIFT_SPECS[shift_number]
-        self._start_hour        = start_hour if start_hour is not None else spec.start_hour
+        cfg = load_shift_config(shift_number)
+        self._start_hour        = start_hour if start_hour is not None else cfg['start_hour']
         self._duration_minutes  = (duration_hours * 60.0 if duration_hours is not None
-                                    else spec.duration_hours * 60.0)
+                                    else cfg['duration_hours'] * 60.0)
 
         # Resolve substation load table: prefer explicit arg, fall back to shift file.
         if substation_load_mw is None:
-            substation_load_mw = load_shift_config(shift_number).get('substation_load_mw', {})
+            substation_load_mw = cfg.get('substation_load_mw', {})
         substation_specs = get_substation_demand_specs(substation_load_mw)
 
         # Physics sub-models
@@ -238,7 +238,7 @@ class GridSimulation:
         self._voltage    = VoltageModel(grid)
         self._frequency  = FrequencyModel()
         self._fleet      = FleetModel(grid, initial_schedule or {}, maintenance_units)
-        self._demand     = DemandModel(spec, substation_specs)
+        self._demand     = DemandModel(cfg['peak_demand_mw'], substation_specs)
         self._renewables = RenewablesModel(grid)
         self._cascade    = CascadeModel()
 
@@ -580,9 +580,9 @@ class GridSimulation:
         No stochastic noise, no cascade, no scripted events.
         Steps at 1-minute resolution.
         """
-        spec      = SHIFT_SPECS[self._shift_number]
+        peak_demand_mw = load_shift_config(self._shift_number)['peak_demand_mw']
         fleet_fc  = FleetModel(self._grid, schedule)
-        demand_fc = DemandModel(spec)
+        demand_fc = DemandModel(peak_demand_mw)
         renew_fc  = RenewablesModel(self._grid)
         lf_fc     = DCLoadFlow(self._grid)
         vt_fc     = VoltageModel(self._grid)
@@ -961,6 +961,10 @@ class GridSimulation:
             label = action['unit']
             if self._fleet.has_unit(label):
                 self._fleet.get_unit(label).trip()
+        elif action_type == 'UNIT_DERATE':
+            label = action['unit']
+            if self._fleet.has_unit(label):
+                self._fleet.derate_unit(label, action['cap_mw'])
 
     def _process_scripted_events(self) -> None:
         """Fire any scripted events whose trigger time has been reached."""

@@ -49,7 +49,7 @@ from display.menus import (
     build_shift_select_items,
 )
 from data.layout_override import load_layout
-from data.profiles import SHIFT_SPECS, DEMAND_PROFILE_NORMALISED
+from data.profiles import DEMAND_PROFILE_NORMALISED
 from gameplay.shifts.loader import load_shift_config
 from simulation.grid import Grid
 from simulation.simulation import GridSimulation
@@ -103,11 +103,11 @@ def _menu_title_lines() -> list:
 
 # ─── Text screen content builders ────────────────────────────────────────────
 
-def build_briefing_lines(spec) -> list:
+def build_briefing_lines(shift_number: int) -> list:
     """Return list of (text, colour) pairs for the pre-shift briefing screen."""
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
-    cfg = load_shift_config(spec.shift_number)
+    cfg = load_shift_config(shift_number)
     date_str        = cfg.get('shift_date',       'MON 07 NOV 1994')
     difficulty_label = cfg.get('difficulty_label', '')
     handover_notes   = cfg.get('handover_notes',   ())
@@ -116,7 +116,7 @@ def build_briefing_lines(spec) -> list:
         (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', H),
         (' SHIFT HANDOVER RECORD', H),
         (_SEP, H),
-        (f' DATE: {date_str}    TIME: {_hm(spec.start_hour)}    SHIFT: {spec.shift_number} OF 10', B),
+        (f' DATE: {date_str}    TIME: {_hm(cfg["start_hour"])}    SHIFT: {shift_number} OF 10', B),
         (' OUTGOING: R. FERRIS, DISPATCHER GRADE 2', B),
         (f' DIFFICULTY: {difficulty_label.upper()}', B),
         (_SEP, H),
@@ -128,19 +128,20 @@ def build_briefing_lines(spec) -> list:
     lines += [
         ('', B),
         (_SEP, H),
-        (f' DURATION: {int(spec.duration_hours):02d}H 00M    PEAK FORECAST: {spec.peak_demand_mw:.0f} MW', B),
+        (f' DURATION: {int(cfg["duration_hours"]):02d}H 00M    PEAK FORECAST: {cfg["peak_demand_mw"]:.0f} MW', B),
         (_SEP, H),
     ]
     return lines
 
 
-def build_debrief_lines(spec, state) -> list:
+def build_debrief_lines(shift_number: int, state) -> list:
     """Return list of (text, colour) pairs for the end-of-shift report screen."""
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
-    date_str = load_shift_config(spec.shift_number).get('shift_date', 'MON 07 NOV 1994')
-    dur_h = int(spec.duration_hours)
-    dur_m = int((spec.duration_hours % 1) * 60)
+    cfg = load_shift_config(shift_number)
+    date_str = cfg.get('shift_date', 'MON 07 NOV 1994')
+    dur_h = int(cfg['duration_hours'])
+    dur_m = int((cfg['duration_hours'] % 1) * 60)
     trips  = sum(1 for s in state.unit_states.values() if s == 'TRIPPED')
     alarms = len(state.active_alarms)
     freq_pct = state.frequency_in_bounds_pct
@@ -157,7 +158,7 @@ def build_debrief_lines(spec, state) -> list:
         (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', H),
         (' SHIFT COMPLETION RECORD', H),
         (_SEP, H),
-        (f' SHIFT: {spec.shift_number} OF 10    DURATION: {dur_h:02d}H {dur_m:02d}M    DATE: {date_str}', B),
+        (f' SHIFT: {shift_number} OF 10    DURATION: {dur_h:02d}H {dur_m:02d}M    DATE: {date_str}', B),
         (_SEP, H),
         (' FREQUENCY PERFORMANCE:', H),
         (f'   Within \xb10.2 Hz: {freq_pct:.1f}%    Max line loading: {state.max_line_loading_seen:.0f}%', B),
@@ -230,11 +231,15 @@ def _make_sim_and_renderer(
         initial_schedule = planning_model.to_initial_schedule()
         hourly_schedule   = planning_model.to_hourly_dispatch()
 
+    # load_shift_config() already derives substation_load_mw from the grid's
+    # own per-bus peak_load_mw (GRID_SOURCE shifts) or from SUBSTATION_LOAD_MW.
+    substation_load_mw = cfg['substation_load_mw'] or None
+
     sim = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
                          initial_schedule=initial_schedule,
                          maintenance_units=cfg['maintenance_units'],
                          maintenance_lines=cfg['maintenance_lines'],
-                         substation_load_mw=cfg['substation_load_mw'] or None,
+                         substation_load_mw=substation_load_mw,
                          hourly_schedule=hourly_schedule)
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
@@ -394,7 +399,7 @@ def main() -> None:
     _planning_model  = None   # PlanningModel for the PLANNING state (Phase 1) —
                               # not currently reachable from campaign entry;
                               # set this and switch to GameState.PLANNING to test it
-    shift = 1   # default for SHIFT_SPECS.get(shift) below regardless of boot path
+    shift = 1
 
     if _const.DEBUG_SCENARIO_ACTIVE:
         sim, grid = make_debug_sim(DEBUG_SCENARIO)
@@ -403,8 +408,7 @@ def main() -> None:
         renderer.set_grid(grid)
         shift      = DEBUG_SCENARIO.shift_number
         game_state = GameState.BRIEFING
-        _spec      = SHIFT_SPECS.get(shift)
-        briefing_lines = build_briefing_lines(_spec) if _spec else []
+        briefing_lines = build_briefing_lines(shift)
         briefing_chars = 0.0
         state = sim.get_state()
     else:
@@ -458,8 +462,7 @@ def main() -> None:
     difficulty       = 'standard'
 
     # ── Briefing / debrief state ─────────────────────────────────────────────
-    _spec          = SHIFT_SPECS.get(shift)
-    briefing_lines = build_briefing_lines(_spec) if _spec else []
+    briefing_lines = build_briefing_lines(shift)
     briefing_chars = 0.0
     debrief_lines: list = []
     debrief_chars  = 0.0
@@ -661,8 +664,7 @@ def main() -> None:
                         # SKIP: campaign intro sequence disabled for now — go
                         # straight to shift 1's briefing (see CAMPAIGN_INTRO
                         # for the intro-screens flow this bypasses).
-                        _spec      = SHIFT_SPECS.get(shift)
-                        briefing_lines = build_briefing_lines(_spec) if _spec else []
+                        briefing_lines = build_briefing_lines(shift)
                         briefing_chars = 0.0
                         game_state = GameState.BRIEFING
                     elif event.key == pygame.K_ESCAPE:
@@ -730,8 +732,7 @@ def main() -> None:
                         if intro_screen_idx >= len(intro_screens):
                             # All intro screens done — start shift 1
                             shift      = 1
-                            _spec      = SHIFT_SPECS.get(shift)
-                            briefing_lines = build_briefing_lines(_spec) if _spec else []
+                            briefing_lines = build_briefing_lines(shift)
                             briefing_chars = 0.0
                             game_state = GameState.BRIEFING
 
@@ -860,9 +861,7 @@ def main() -> None:
                         _const.AGC_ENABLED = not _const.AGC_ENABLED
 
                     elif ctrl and event.key == pygame.K_n and _const.DEBUG_EVENTS and not _const.EDITOR_MODE:
-                        _spec = SHIFT_SPECS.get(shift)
-                        if _spec:
-                            debrief_lines = build_debrief_lines(_spec, sim.get_state())
+                        debrief_lines = build_debrief_lines(shift, sim.get_state())
                         game_state    = GameState.DEBRIEF
                         debrief_chars = 0.0
 
@@ -953,9 +952,7 @@ def main() -> None:
             renderer.tick(dt, state=state, speed_mult=speed)
 
             if sim.is_shift_complete():
-                _spec = SHIFT_SPECS.get(shift)
-                if _spec:
-                    debrief_lines = build_debrief_lines(_spec, sim.get_state())
+                debrief_lines = build_debrief_lines(shift, sim.get_state())
                 game_state    = GameState.DEBRIEF
                 debrief_chars = 0.0
 
@@ -1012,8 +1009,7 @@ def main() -> None:
                         sim, grid, renderer = _make_sim_and_renderer(display_surf, shift, difficulty)
                         state          = sim.get_state()
                         sim_accum      = 0.0
-                        _spec          = SHIFT_SPECS.get(shift)
-                        briefing_lines = build_briefing_lines(_spec) if _spec else []
+                        briefing_lines = build_briefing_lines(shift)
                         briefing_chars = 0.0
                         game_state     = GameState.BRIEFING
                     elif event.key == pygame.K_ESCAPE:

@@ -53,7 +53,7 @@ _METRIC_CYCLE = (
     'UNIT_ONLINE', 'SPINNING_RESERVE_MW', 'FREQUENCY_HZ', 'TIME_MIN',
 )
 _OP_CYCLE = ('<', '<=', '>', '>=', '==', '!=')
-_ACTION_TYPE_CYCLE = ('NONE', 'LINE_OPEN', 'LINE_CLOSE', 'UNIT_TRIP')
+_ACTION_TYPE_CYCLE = ('NONE', 'LINE_OPEN', 'LINE_CLOSE', 'UNIT_TRIP', 'UNIT_DERATE')
 
 
 class ShiftBuilder:
@@ -644,6 +644,8 @@ class ShiftBuilder:
             evt.action = {'type': 'LINE_CLOSE', 'line': ''}
         elif new_type == 'UNIT_TRIP':
             evt.action = {'type': 'UNIT_TRIP', 'unit': ''}
+        elif new_type == 'UNIT_DERATE':
+            evt.action = {'type': 'UNIT_DERATE', 'unit': '', 'cap_mw': 0.0}
         self._mark_dirty('events')
 
     def _commit_event_edit(self, field: str, buf: str) -> None:

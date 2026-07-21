@@ -21,7 +21,6 @@ from data.profiles import (
     get_demand_mw,
     get_profile_value,
     SubstationDemandSpec,
-    ShiftSpec,
 )
 
 # Type alias
@@ -67,23 +66,25 @@ class DemandModel:
         total_load_mw:    total_demand_mw + losses_mw — used for power balance.
 
     Usage:
-        dm = DemandModel(spec)
+        dm = DemandModel(peak_demand_mw)
         # Each tick:
         dm.update(sim_hour, total_generation_mw)
         # Query per-bus injections for load flow:
         p_load = dm.p_load_injections()   # {bus_label: -load_mw}  (negative)
     """
 
-    def __init__(self, spec: ShiftSpec, substation_specs: dict | None = None) -> None:
+    def __init__(self, peak_demand_mw: float, substation_specs: dict | None = None) -> None:
         """
         Initialise demand model for a shift.
 
         Args:
-            spec:              ShiftSpec for this shift — provides peak_demand_mw.
+            peak_demand_mw:    Forecast peak system demand for this shift (MW) —
+                               used as the fallback peak when a demand override
+                               schedule has no explicit peak of its own.
             substation_specs:  Pre-built {bus_label: SubstationDemandSpec} mapping.
                                If None, an empty dict is used (no load buses active).
         """
-        self._spec = spec
+        self._peak_demand_mw = peak_demand_mw
 
         self._substation_specs: dict[BusLabel, SubstationDemandSpec] = (
             substation_specs if substation_specs is not None else {}
@@ -142,7 +143,7 @@ class DemandModel:
             # Override mode: total MW is prescribed; distribute across substations
             # proportional to their profile weights at this hour.
             override_total = _interpolate_override(
-                self._demand_override, sim_hour, self._spec.peak_demand_mw)
+                self._demand_override, sim_hour, self._peak_demand_mw)
             weights = {
                 bus: get_profile_value(spec.profile, sim_hour) * spec.peak_mw
                 for bus, spec in self._substation_specs.items()
@@ -220,7 +221,7 @@ class DemandModel:
         self._demand_override = dict(schedule) if schedule else None
         if self._demand_override and sim_hour is not None:
             seeded = _interpolate_override(
-                self._demand_override, sim_hour, self._spec.peak_demand_mw)
+                self._demand_override, sim_hour, self._peak_demand_mw)
             self._total_demand_mw = seeded
 
     # ─────── QUERIES ──────────────────────────────────────────────────────

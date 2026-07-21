@@ -495,29 +495,21 @@ def label_from_name(name: str, used_labels: set[str]) -> str:
     always comes from whichever name was already assigned.
 
     First word only (for multi-word pool entries like 'Windrush Fell'),
-    letters only, uppercased. On collision, shortens the letter prefix and
-    appends a digit (mirrors the campaign's own AR01-AR04/BR01-BR03 digit-
-    suffix convention) rather than slicing into the middle of the word,
-    which would produce unreadable fragments.
+    letters only, uppercased. Station/bus labels never carry a numeric
+    suffix. On collision (two different names sharing the same first four
+    letters, e.g. 'Riverside' / 'Rivenholt'), slide the 4-letter window
+    further into the same name (letters only, across the full name — not
+    just the first word — so short first words still have room to slide)
+    until a free code is found. This keeps the code visibly derived from
+    the real name rather than resorting to digits or an unrelated word.
     """
-    letters = ''.join(ch for ch in name.split(' ', 1)[0] if ch.isalpha()).upper()
-    if not letters:
-        letters = 'GRID'
-    letters = (letters + 'XXXX')[:4] if len(letters) < 4 else letters
+    all_letters = ''.join(ch for ch in name if ch.isalpha()).upper()
+    if not all_letters:
+        all_letters = 'GRID'
+    padded = (all_letters + 'XXXX')
 
-    candidate = letters[:4]
-    if candidate not in used_labels:
-        return candidate
-
-    prefix = letters[:3]
-    for n in range(2, 10):
-        candidate = f'{prefix}{n}'
-        if candidate not in used_labels:
-            return candidate
-
-    prefix = letters[:2]
-    for n in range(10, 100):
-        candidate = f'{prefix}{n}'
+    for start in range(0, len(padded) - 3):
+        candidate = padded[start:start + 4]
         if candidate not in used_labels:
             return candidate
 

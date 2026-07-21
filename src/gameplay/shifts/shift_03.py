@@ -1,110 +1,102 @@
 """
 src/gameplay/shifts/shift_03.py
 
-Shift 3 scenario — N-1 line redundancy on the capital ring.
+Shift 3 scenario definition — "Reserve": AGC and regulation margin.
 
 Narrative:
-  The capital grid expands to 10 buses. HART-1 nuclear (680 MW) at STHW is
-  the dominant source, feeding the Ashford area via L09 (STHW↔ASHF
-  transformer, very low reactance). ASHF carries the LD02 load centre
-  through the STAN 150kV substation. A scheduled maintenance outage on L09
-  at 16:00 forces all STHW→ASHF power onto the 220kV capital ring
-  (L10→WRNT, L16→FAIR, L15→ASHF). Without pre-emptive redispatch, L15/L16
-  climb through 90% and overload as the evening ramp builds. Ramping
-  ASHG-1 (the CCGT at ASHF itself) before 16:00 keeps the ring below ~70%
-  and the grid N-1 secure.
+  RIVE now runs two coal units. RIVE-1 sits at technical minimum (105 MW) —
+  deliberately under-dispatched, held as reserve. RIVE-2 carries the bulk of
+  RIVE's normal output. ASHC-1 (fast hydro) sits low, near its own minimum —
+  the grid's regulation "shock absorber," with maximal headroom deliberately
+  available. AGC is on for the first time this shift.
 
-Teaching goal: N-1 security. The player must pre-position generation near
-load (ASHG-1 at ASHF) before a planned outage removes the dominant supply
-path (L09).
+  A new branch off RIVE (SUTT -> RAVE, mirroring the GREY/OAKE redundant-pair
+  pattern) raises total system demand to a 500 MW combined peak across three
+  load buses (GREY 150 MW, OAKE 200 MW, RAVE 150 MW — each bus's saved peak
+  from assets/designer_grids/shift3.json), so that if RIVE-1 is left parked
+  at minimum, ASHC-1 alone cannot cover a generation shortfall on top of the
+  demand ramp.
 
-MAINTENANCE_LINES: L50 (DUND↔LD02) starts this shift open. LD02 is now fed
-exclusively via ASHF/STAN (L29→L33). Campaign code opens L50 at shift
-initialisation before the first load-flow solve. L49 (DUND↔LD01) remains
-in service — LD01 still hangs off DUND until the south mesh closes in
-Shift 4.
+  Mid-shift, RIVE-2 develops a cooling problem and permanently derates to its
+  own 105 MW minimum. AGC reacts by driving ASHC-1 upward to cover the
+  shortfall — correctly doing its job, but silently consuming ASHC's
+  headroom with no awareness of how much is left. If the player does
+  nothing, ASHC-1 is driven toward and past its 250 MW ceiling as demand
+  keeps climbing, and frequency genuinely degrades. The fix is to raise
+  RIVE-1 off its minimum — the reserve that was there the whole time — which
+  lets AGC relax ASHC-1 back down and restores real regulation headroom.
+
+  Demand is derived at load time from GREY/OAKE/RAVE's saved peak_load_mw in
+  shift3.json (500 MW combined) scaled by the campaign's shared
+  DEMAND_PROFILE_NORMALISED curve (src/data/profiles.py) — not authored here.
+  Across this shift's 14:00-18:00 played window that curve runs 425 -> 435 ->
+  455 -> 480 -> 500 MW.
+
+  NOTE: INITIAL_SCHEDULE dispatches 545 MW (105+300+140) against a 14:00
+  demand checkpoint of 425 MW — a ~120 MW oversupply at shift start,
+  narrowing as demand climbs toward the 500 MW end-of-shift peak. Not
+  rebalanced here; flagged for a separate gameplay-balance pass.
+
+Teaching goal: AGC corrects deviation in real time but has no concept of
+"running low" — a dispatcher must watch where reserve is going and fix root
+causes, not just watch a frequency number that currently looks fine.
+
+Grid: RIVE (slack) --L01--> ASHC --{L02,L03}--> GREY, ASHC --{L04,L05}--> OAKE,
+      RIVE --L06--> SUTT --{L07,L08}--> RAVE
+      (6 buses, 8 lines, 3 units: RIVE-1, RIVE-2, ASHC-1)
+
+GRID_SOURCE below points this shift at the hand-authored Grid Designer grid
+(assets/designer_grids/shift3.json) instead of the campaign's topology.py/
+fleet.py — see shift_02.py / shift_10.py for the same pattern.
 """
 
 from __future__ import annotations
 
 
-SHIFT_DATE: str = 'MON 07 NOV 1994'
+GRID_SOURCE: str = 'shift3'
+
+SHIFT_DATE: str = 'TUE 08 NOV 1994'
 
 DIFFICULTY_LABEL: str = 'Tutorial'
 
+START_HOUR: float = 14.0
+
+DURATION_HOURS: float = 4.0
+
 HANDOVER_NOTES: tuple[str, ...] = (
-    'Afternoon handover, 14:00.',
-    'Capital grid expansion energised. STHW and CNTR 400kV on the spine.',
-    'HART-1 nuclear on-line at 680 MW at STHW. HART-2 on planned outage (relay checks).',
-    'RVSD-1 120 MW, RVSD-2 returned from maintenance at 50 MW.',
-    'ASHG-1 on-line at 80 MW at ASHF — your key redispatch tool.',
-    'WRNG-1 on-line at 80 MW at WRNT. Second CCGT units available — cold start 60 min.',
-    'DUND-1/2 hydro on-line at 20 MW each (fast regulation reserve).',
-    'DUNH-1/2 pumped hydro on-line at 15 MW each at MDBY (fast reserve).',
-    'LD01 load centre active at ~350 MW (via DUND/L49 path).',
-    'LD02 main load at ~700 MW via ASHF/STAN — evening ramp toward 950 MW.',
-    'AGC active.',
-    'L09 STHW↔ASHF: SCHEDULED MAINTENANCE at 16:00. Outage window 16:00–19:00.',
-    'Action required: ramp ASHG-1 before 16:00 to pre-position generation at ASHF.',
+    'Mid-morning handover.',
+    'Riverside now runs two units. RIVE-1 on-line at 105 MW (technical minimum — held in reserve).',
+    'RIVE-2 on-line at 165 MW — carrying the bulk of Riverside output.',
+    'Ashcombe Hydro Unit 1 (ASHC-1) on-line at 140 MW.',
+    'AGC on for the first time — small deviations correct automatically.',
+    'Demand rising through the shift across Greymoor, Oakendale, and Ravensmere.',
 )
 
-# Units on planned outage at shift start.
-MAINTENANCE_UNITS: set[str] = {'HART-2', 'ASHG-2', 'WRNG-2'}
-
-# Lines that start this shift electrically OPEN (maintenance/outage).
-# Campaign code applies these before the first load-flow solve.
-# L50 DUND↔LD02: LD02 now served via ASHF/STAN exclusively. The south
-# 150kV mesh takes over both load subs in Shift 4 (L49 opens then too).
-MAINTENANCE_LINES: set[str] = {'L50'}
+# Units on planned maintenance — visible on canvas but cannot be started.
+MAINTENANCE_UNITS: set[str] = set()
 
 AGC_ENABLED: bool = True
 
-# Per-bus hourly load table (MW).
-# LD02: main capital load centre, served via STHW→ASHF→STAN path.
-# LD01: western load centre, served via MDBY→DUND→LD01 path.
-SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
-    'LD02': {
-         0.0:   420,  1.0:   400,  2.0:   385,  3.0:   380,  4.0:   385,
-         5.0:   400,  6.0:   460,  7.0:   550,  8.0:   640,  9.0:   700,
-        10.0:   730, 11.0:   750, 12.0:   740, 13.0:   720, 14.0:   700,
-        15.0:   760, 16.0:   820, 17.0:   880, 18.0:   950, 19.0:   920,
-        20.0:   860, 21.0:   780, 22.0:   680, 23.0:   560, 24.0:   460,
-    },
-    'LD01': {
-         0.0:   200,  1.0:   190,  2.0:   183,  3.0:   180,  4.0:   182,
-         5.0:   190,  6.0:   217,  7.0:   260,  8.0:   307,  9.0:   340,
-        10.0:   360, 11.0:   373, 12.0:   387, 13.0:   395, 14.0:   350,
-        15.0:   375, 16.0:   400, 17.0:   425, 18.0:   450, 19.0:   435,
-        20.0:   410, 21.0:   390, 22.0:   350, 23.0:   290, 24.0:   240,
-    },
-}
-
 # Starting dispatch — units absent from this dict start OFFLINE.
-# Total ≈ 1,080 MW against ~1,050 MW demand + losses at 14:00.
-# DUND and DUNH units are dispatched low to provide regulation headroom.
+# Total 545 MW (105+300+140) — see NOTE in the module docstring re: oversupply
+# vs the 14:00 combined-load checkpoint (425 MW).
 INITIAL_SCHEDULE: dict[str, float] = {
-    'HART-1':  680.0,   # Hartwell Nuclear 1 — baseload, primary L09 source
-    'RVSD-1':  120.0,   # Riverside Coal 1   — carry-forward from Shift 2
-    'RVSD-2':   50.0,   # Riverside Coal 2   — returned from relay maintenance
-    'ASHG-1':   80.0,   # Ashford CCGT 1     — key redispatch tool at ASHF
-    'WRNG-1':   80.0,   # Wrentham CCGT 1    — secondary tool at WRNT
-    'DUND-1':   20.0,   # Dunmore Lower 1    — fast regulation
-    'DUND-2':   20.0,   # Dunmore Lower 2    — fast regulation
-    'DUNH-1':   15.0,   # Dunmore Upper 1    — fast regulation at MDBY
-    'DUNH-2':   15.0,   # Dunmore Upper 2    — fast regulation at MDBY
+    'RIVE-1': 105.0,   # Riverside Coal Unit 1 — 300 MW rated, 105 MW min — the reserve
+    'RIVE-2': 300.0,   # Riverside Coal Unit 2 — 300 MW rated, 105 MW min — the workhorse
+    'ASHC-1': 140.0,   # Ashcombe Hydro Unit 1  — 250 MW rated, 25 MW min — the shock absorber
 }
 
 
 # ── Conditions (declarative — see src/data/shift_io.py for the schema) ────────
 
-_ASHG1_BELOW_250MW: dict = {
-    'metric': 'UNIT_OUTPUT_MW', 'target': 'ASHG-1', 'op': '<', 'value': 250.0,
+_ASHC1_ABOVE_200MW: dict = {
+    'metric': 'UNIT_OUTPUT_MW', 'target': 'ASHC-1', 'op': '>', 'value': 200.0,
 }
-_L15_HIGH_LOAD: dict = {
-    'metric': 'LINE_LOADING', 'target': 'L15', 'op': '>', 'value': 85.0,
+_RIVE1_STILL_AT_MIN: dict = {
+    'metric': 'UNIT_OUTPUT_MW', 'target': 'RIVE-1', 'op': '<', 'value': 115.0,
 }
-_L15_NOT_HIGH_LOAD: dict = {
-    'metric': 'LINE_LOADING', 'target': 'L15', 'op': '<=', 'value': 85.0,
+_ASHC1_RECOVERED: dict = {
+    'metric': 'UNIT_OUTPUT_MW', 'target': 'ASHC-1', 'op': '<=', 'value': 160.0,
 }
 
 
@@ -112,122 +104,73 @@ _L15_NOT_HIGH_LOAD: dict = {
 
 SCRIPTED_EVENTS: list[dict] = [
     {
-        # T+0 (14:00) — shift start briefing
-        'trigger_min':  0.0,
-        'priority':    'INFO',
-        'message':     'Capital ring energised. L09 carrying HART-1 output to Ashford.',
-        'detail':      ('STHW and CNTR 400kV are now on the spine. HART-1 nuclear '
-                        '(680 MW) is the dominant generator. L09 (STHW↔ASHF '
-                        'transformer) carries ~90% of the STHW→ASHF flow due to '
-                        'its very low reactance. The ring (L10, L16, L15) is '
-                        'lightly loaded in normal operation.'),
-        'element':     'L09',
+        'trigger_min': 0.0,
+        'priority':    'TUTOR',
+        'message':     'RIVE-1, RIVE-2 and ASHC-1 on-line. AGC on for the first time.',
+        'detail':      ('AGC is now active — it will automatically nudge fast-response '
+                        'units (like ASHC-1) to correct small frequency deviations. '
+                        'RIVE-1 is deliberately parked at its 105 MW technical minimum '
+                        '— that is your reserve. Watch where AGC draws from, not just '
+                        'the frequency number.'),
+        'element':     None,
         'condition':   None,
     },
     {
-        # T+60 (15:00) — one-hour maintenance warning
-        'trigger_min':  60.0,
+        'trigger_min': 30.0,
+        'priority':    'TUTOR',
+        'message':     'Demand rising across three load centres.',
+        'detail':      ('Greymoor, Oakendale and Ravensmere are all climbing. AGC will '
+                        'track small deviations on ASHC-1 automatically — you should '
+                        'still expect to ramp RIVE-2 yourself as the base load rises.'),
+        'element':     None,
+        'condition':   None,
+    },
+    {
+        'trigger_min': 60.0,
         'priority':    'WARNING',
-        'message':     'L09 STHW↔ASHF: scheduled maintenance at 16:00.',
-        'detail':      ('L09 will open at 16:00 for transformer inspection '
-                        '(window 16:00–19:00). When L09 opens, all STHW→ASHF '
-                        'power must reroute via the 220kV ring '
-                        '(L10→WRNT, L16→FAIR, L15→ASHF). With ASHG-1 at 80 MW '
-                        'the ring will exceed 90% as the evening ramp builds. '
-                        'Ramp ASHG-1 now — generation at ASHF directly reduces '
-                        'what must transit the ring.'),
-        'element':     'L09',
+        'message':     'RIVE-2: cooling fault. Output derated to 105 MW.',
+        'detail':      ('RIVE-2 has developed a cooling problem and its output has been '
+                        'capped at 105 MW for the rest of the shift — a real, permanent '
+                        'loss of ~60 MW from Riverside. AGC will pick up the shortfall '
+                        'automatically via ASHC-1. That is not a fix — it is borrowing '
+                        'from your regulation reserve.'),
+        'element':     'RIVE-2',
         'condition':   None,
+        'action':      {'type': 'UNIT_DERATE', 'unit': 'RIVE-2', 'cap_mw': 105.0},
     },
     {
-        # T+90 (15:30) — conditional 30-min reminder if player has not acted
-        'trigger_min':  90.0,
+        'trigger_min': 90.0,
+        'priority':    'TUTOR',
+        'message':     'ASHC-1 climbing toward its ceiling. RIVE-1 is still at minimum.',
+        'detail':      ('AGC has been raising ASHC-1 to cover both the RIVE-2 shortfall '
+                        'and the ongoing demand ramp. ASHC-1 has only 250 MW rated — if '
+                        'it is driven to its ceiling, there is no reserve left for '
+                        'anything else. RIVE-1 is still sitting at its 105 MW minimum. '
+                        'Raise RIVE-1 to take the permanent load off ASHC-1 and restore '
+                        'real headroom.'),
+        'element':     'ASHC-1',
+        'condition':   _ASHC1_ABOVE_200MW,
+    },
+    {
+        'trigger_min': 120.0,
         'priority':    'WARNING',
-        'message':     '30 min to L09 outage. ASHG-1 still below 250 MW.',
-        'detail':      ('L09 opens in 30 minutes. ASHG-1 output is currently low. '
-                        'Ramp ASHG-1 toward 350–400 MW to cover the LD02 load '
-                        'locally at ASHF. Each additional 100 MW at ASHG-1 '
-                        'reduces ring loading by approximately 12% post-outage.'),
-        'element':     'ASHG-1',
-        'condition':   _ASHG1_BELOW_250MW,
+        'message':     'ASHC-1 near ceiling and RIVE-1 still at minimum. Reserve exhausted.',
+        'detail':      ('Frequency may still look nominal, but ASHC-1 has little or no '
+                        'headroom left — the grid has no meaningful spinning reserve. '
+                        'Raise RIVE-1 now. A dispatcher who only watches frequency will '
+                        'miss this until it is too late.'),
+        'element':     'RIVE-1',
+        'condition':   _RIVE1_STILL_AT_MIN,
     },
     {
-        # T+120 (16:00) — open L09 for maintenance
-        'trigger_min': 120.0,
-        'priority':    'MAINTENANCE',
-        'message':     'L09 STHW↔ASHF: opening for scheduled maintenance.',
-        'detail':      ('L09 is now open. Maintenance window: 16:00–19:00. '
-                        'Monitor L15 and L16 loading. If either exceeds 85%, '
-                        'ramp ASHG-1 further. Reducing HART-1 also helps, but '
-                        'note its very slow ramp rate (1%/min). '
-                        'L09 will return to service at 19:00.'),
-        'element':     'L09',
-        'condition':   None,
-        'action':      {'type': 'LINE_OPEN', 'line': 'L09'},
-    },
-    {
-        # T+120 (16:00) — alarm branch: ring overloaded
-        'trigger_min': 120.0,
-        'priority':    'ALARM',
-        'message':     'L15 ASHF↔FAIR — HIGH LOAD. Ramp ASHG-1 to reduce ring loading.',
-        'detail':      ('L15 is above 85% loading following the L09 opening. '
-                        'Ramp ASHG-1 to supply the Ashford load locally and '
-                        'reduce the power transiting WRNT→FAIR→ASHF. The evening '
-                        'ramp will push the ring over 100% within the hour if '
-                        'you do not act.'),
-        'element':     'L15',
-        'condition':   _L15_HIGH_LOAD,
-    },
-    {
-        # T+120 (16:00) — nominal branch: player prepared correctly
-        'trigger_min': 120.0,
-        'priority':    'INFO',
-        'message':     'L09 open. Ring loading nominal.',
-        'detail':      ('L09 is open for maintenance. ASHG pre-dispatch has kept '
-                        'L15 and L16 within normal limits. The grid is operating '
-                        'N-1 secure. L09 returns at 19:00.'),
-        'element':     'L09',
-        'condition':   _L15_NOT_HIGH_LOAD,
-    },
-    {
-        # T+300 (19:00) — restore L09
-        'trigger_min': 300.0,
-        'priority':    'INFO',
-        'message':     'L09 STHW↔ASHF: returned to service.',
-        'detail':      ('L09 maintenance is complete. The transformer is back in '
-                        'service and taking load. L15 and L16 loading will reduce '
-                        'as flow reverts to the low-reactance L09 path. '
-                        'You may ramp ASHG-1 back down if desired.'),
-        'element':     'L09',
-        'condition':   None,
-        'action':      {'type': 'LINE_CLOSE', 'line': 'L09'},
+        'trigger_min': 150.0,
+        'priority':    'TUTOR',
+        'message':     'RIVE-1 picking up the slack. ASHC-1 relaxing back down.',
+        'detail':      ('With RIVE-1 carrying more of the base load, AGC no longer needs '
+                        'to hold ASHC-1 so high — regulation headroom is being restored. '
+                        'This is the new normal: RIVE now runs both units to cover the '
+                        'derated RIVE-2.'),
+        'element':     'ASHC-1',
+        'condition':   _ASHC1_RECOVERED,
     },
 ]
-
-
-# ── Scoring hooks ──────────────────────────────────────────────────────────────
-#
-# BONUS_N1_SECURE: awarded if L15 and L16 never exceed 80% during the L09
-#   outage window (16:00–19:00, sim minutes 120–300).
-#
-# PENALTY_RING_CONGESTION: applied per simulated minute that L15 or L16 is
-#   above 85% during the L09 outage window.
-#
-# Standard KPIs also apply: frequency deviation, max line loading, min VSI.
-
-SCORING_HOOKS: dict = {
-    'bonus_n1_secure': {
-        'description': 'L15 and L16 never exceed 80% during L09 outage window',
-        'window_min':  (120.0, 300.0),
-        'lines':       ('L15', 'L16'),
-        'threshold':   80.0,
-        'points':      200,
-    },
-    'penalty_ring_congestion': {
-        'description': 'Per-minute penalty when L15 or L16 exceeds 85%',
-        'window_min':  (120.0, 300.0),
-        'lines':       ('L15', 'L16'),
-        'threshold':   85.0,
-        'points_per_minute': -15,
-    },
-}

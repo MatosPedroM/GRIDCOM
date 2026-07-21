@@ -1,74 +1,9 @@
 """
 src/gameplay/shifts/shift_05.py
 
-Shift 5 scenario definition — placeholder.
+Shift 5 scenario definition — placeholder, pending rebuild on the Shift 3
+grid/pattern. No constants defined; load_shift_config() falls back to its
+defaults (empty schedule, AGC off, zero peak demand) if this shift is loaded.
 """
 
 from __future__ import annotations
-
-
-SHIFT_DATE: str = 'TUE 08 NOV 1994'
-
-DIFFICULTY_LABEL: str = 'Standard'
-
-HANDOVER_NOTES: tuple[str, ...] = (
-    'Full 32-node grid active from this shift.',
-    'Phase 1 planning required before shift start.',
-    'Interconnector scheduling now available.',
-    'River cascade hydro available — check river flow forecast.',
-)
-
-INITIAL_SCHEDULE: dict[str, float] = {}
-
-MAINTENANCE_UNITS: set[str] = set()
-
-AGC_ENABLED: bool = False
-
-# Per-bus hourly load table (MW). Shift 5: all 6 buses, peak 5800 MW.
-# Full grid, morning ramp to midday.
-SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
-    'LD01': {
-         0.0:  366,  1.0:  336,  2.0:  313,  3.0:  298,  4.0:  305,
-         5.0:  351,  6.0:  488,  7.0:  701,  8.0:  946,  9.0: 1144,
-        10.0: 1251, 11.0: 1297, 12.0: 1267, 13.0: 1221, 14.0: 1206,
-        15.0: 1251, 16.0: 1357, 17.0: 1464, 18.0: 1525, 19.0: 1494,
-        20.0: 1373, 21.0: 1206, 22.0:  945, 23.0:  625, 24.0:  396,
-    },
-    'LD02': {
-         0.0:  410,  1.0:  379,  2.0:  353,  3.0:  341,  4.0:  348,
-         5.0:  385,  6.0:  484,  7.0:  620,  8.0:  782,  9.0:  924,
-        10.0: 1020, 11.0: 1069, 12.0: 1094, 13.0: 1106, 14.0: 1094,
-        15.0: 1081, 16.0: 1069, 17.0: 1094, 18.0: 1131, 19.0: 1119,
-        20.0: 1020, 21.0:  911, 22.0:  732, 23.0:  534, 24.0:  410,
-    },
-    'LD03': {
-         0.0:  192,  1.0:  181,  2.0:  177,  3.0:  177,  4.0:  181,
-         5.0:  214,  6.0:  361,  7.0:  731,  8.0:  969,  9.0: 1025,
-        10.0: 1061, 11.0: 1073, 12.0: 1050, 13.0: 1038, 14.0: 1050,
-        15.0: 1073, 16.0: 1050, 17.0:  993, 18.0:  844, 19.0:  610,
-        20.0:  384, 21.0:  282, 22.0:  248, 23.0:  237, 24.0:  214,
-    },
-    'LD04': {
-         0.0:  236,  1.0:  215,  2.0:  202,  3.0:  195,  4.0:  202,
-         5.0:  236,  6.0:  346,  7.0:  508,  8.0:  691,  9.0:  822,
-        10.0:  889, 11.0:  930, 12.0:  943, 13.0:  943, 14.0:  930,
-        15.0:  916, 16.0:  916, 17.0:  930, 18.0:  916, 19.0:  848,
-        20.0:  739, 21.0:  616, 22.0:  481, 23.0:  331, 24.0:  242,
-    },
-    'LD05': {
-         0.0:  253,  1.0:  234,  2.0:  219,  3.0:  209,  4.0:  212,
-         5.0:  238,  6.0:  305,  7.0:  417,  8.0:  541,  9.0:  638,
-        10.0:  688, 11.0:  709, 12.0:  701, 13.0:  683, 14.0:  674,
-        15.0:  688, 16.0:  721, 17.0:  762, 18.0:  819, 19.0:  794,
-        20.0:  745, 21.0:  688, 22.0:  574, 23.0:  410, 24.0:  295,
-    },
-    'LD06': {
-         0.0:  172,  1.0:  159,  2.0:  148,  3.0:  142,  4.0:  145,
-         5.0:  165,  6.0:  214,  7.0:  282,  8.0:  364,  9.0:  438,
-        10.0:  474, 11.0:  491, 12.0:  502, 13.0:  497, 14.0:  502,
-        15.0:  531, 16.0:  565, 17.0:  537, 18.0:  565, 19.0:  559,
-        20.0:  502, 21.0:  449, 22.0:  367, 23.0:  271, 24.0:  201,
-    },
-}
-
-SCRIPTED_EVENTS: list[dict] = []

@@ -956,16 +956,16 @@ def test_demand_model() -> bool:
 
     try:
         from simulation.demand import DemandModel
-        from data.profiles import SHIFT_SPECS, get_substation_demand_specs
+        from data.profiles import get_substation_demand_specs
         from gameplay.shifts.loader import load_shift_config
 
-        spec = SHIFT_SPECS[7]   # shift 7 uses the full LD01-LD06 load substations
-        substation_specs = get_substation_demand_specs(
-            load_shift_config(7)['substation_load_mw'])
+        cfg = load_shift_config(2)   # shift 2 uses the GREY/OAKE load substations
+        peak_demand_mw = cfg['peak_demand_mw']
+        substation_specs = get_substation_demand_specs(cfg['substation_load_mw'])
 
         # ── Deterministic forecast matches profile ─────────────────────────
         try:
-            dm = DemandModel(spec, substation_specs)
+            dm = DemandModel(peak_demand_mw, substation_specs)
             dm.update(9.0, total_generation_mw=2000.0)
             forecast = dm.get_forecast_mw(9.0)
             assert abs(dm.total_demand_mw - forecast) < 0.01, \
@@ -986,7 +986,7 @@ def test_demand_model() -> bool:
 
         # ── Morning > night (profile shape) ───────────────────────────────
         try:
-            dm = DemandModel(spec, substation_specs)
+            dm = DemandModel(peak_demand_mw, substation_specs)
             dm.update(9.0, total_generation_mw=2000.0)
             morning = dm.total_demand_mw
             dm.update(3.0, total_generation_mw=1000.0)
@@ -1000,27 +1000,27 @@ def test_demand_model() -> bool:
 
         # ── Load shed reduces effective demand ─────────────────────────────
         try:
-            dm = DemandModel(spec, substation_specs)
+            dm = DemandModel(peak_demand_mw, substation_specs)
             dm.update(9.0, total_generation_mw=2000.0)
             before_shed = dm.total_demand_mw
-            ld01_before = dm.get_bus_demand_mw('LD01')
+            grey_before = dm.get_bus_demand_mw('GREY')
 
-            dm.shed_load('LD01', 0.5)   # shed 50% of LD01
+            dm.shed_load('GREY', 0.5)   # shed 50% of GREY
             dm.update(9.0, total_generation_mw=2000.0)
             after_shed = dm.total_demand_mw
-            ld01_after = dm.get_bus_demand_mw('LD01')
+            grey_after = dm.get_bus_demand_mw('GREY')
 
             assert after_shed < before_shed, \
                 f"Shed should reduce total demand: {after_shed:.1f} >= {before_shed:.1f}"
-            assert abs(ld01_after - ld01_before * 0.5) < 0.1, \
-                f"LD01 after 50% shed: expected {ld01_before * 0.5:.1f}, " \
-                f"got {ld01_after:.1f}"
+            assert abs(grey_after - grey_before * 0.5) < 0.1, \
+                f"GREY after 50% shed: expected {grey_before * 0.5:.1f}, " \
+                f"got {grey_after:.1f}"
 
             # Unknown bus returns False
             assert not dm.shed_load('MDBY', 0.5), \
                 "shed_load on transmission bus should return False"
 
-            print(f"  Load shed: LD01 {ld01_before:.1f} -> {ld01_after:.1f} MW "
+            print(f"  Load shed: GREY {grey_before:.1f} -> {grey_after:.1f} MW "
                   f"(50% shed) -- PASS")
         except AssertionError as e:
             print(f"  Load shed: FAIL -- {e}")
@@ -1029,7 +1029,7 @@ def test_demand_model() -> bool:
         # ── Losses scale with generation ───────────────────────────────────
         try:
             from simulation.constants import LOSSES_FRACTION
-            dm = DemandModel(spec, substation_specs)
+            dm = DemandModel(peak_demand_mw, substation_specs)
             gen_mw = 2000.0
             dm.update(9.0, total_generation_mw=gen_mw)
             expected_losses = gen_mw * LOSSES_FRACTION
@@ -1367,7 +1367,7 @@ def test_simulation_model() -> bool:
     try:
         from simulation.simulation import GridSimulation, SimulationState
         from simulation.grid import Grid
-        from data.profiles import SHIFT_SPECS
+        from gameplay.shifts.loader import load_shift_config
 
         # ── Initialises without error ─────────────────────────────────────
         try:
@@ -1446,8 +1446,8 @@ def test_simulation_model() -> bool:
         try:
             g1 = Grid(1)
             sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
-            spec = SHIFT_SPECS[1]
-            duration_s = spec.duration_hours * 3600.0
+            duration_hours = load_shift_config(1)['duration_hours']
+            duration_s = duration_hours * 3600.0
 
             assert not sim.is_shift_complete(), \
                 "is_shift_complete() should be False at t=0"
@@ -1455,10 +1455,10 @@ def test_simulation_model() -> bool:
             # Advance just past duration
             sim.tick(duration_s + 1.0)
             assert sim.is_shift_complete(), \
-                f"is_shift_complete() should be True after {spec.duration_hours}h elapsed"
+                f"is_shift_complete() should be True after {duration_hours}h elapsed"
 
             print(f"  is_shift_complete(): False at t=0, "
-                  f"True after {spec.duration_hours}h — PASS")
+                  f"True after {duration_hours}h — PASS")
         except AssertionError as e:
             print(f"  is_shift_complete(): FAIL — {e}")
             all_passed = False

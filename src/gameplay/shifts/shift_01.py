@@ -5,11 +5,15 @@ Shift 1 scenario definition — single-unit dispatch tutorial.
 
 Narrative:
   ASHC-1 (Ashcombe Hydro Unit 1, 250 MW) is the sole online unit, feeding
-  Oakendale substation via Greymoor. AGC is off — the player observes basic
-  frequency and load behaviour and must manually correct ASHC-1's output to
-  hold frequency nominal as demand ramps.
+  Greymoor substation. AGC is off — the player observes basic frequency and
+  load behaviour and must manually correct ASHC-1's output to hold frequency
+  nominal as demand ramps.
 
-Grid: RIVE ──L01──► ASHC ──L02──► GREY ──L03──► OAKE   (4 buses, 3 lines)
+  Demand is derived at load time from GREY's saved peak_load_mw in
+  shift1.json (100 MW) scaled by the campaign's shared
+  DEMAND_PROFILE_NORMALISED curve (src/data/profiles.py) — not authored here.
+
+Grid: RIVE ──L01──► ASHC ──L02──► GREY   (3 buses, 2 lines)
 
 GRID_SOURCE below points this shift at the hand-authored Grid Designer grid
 (assets/designer_grids/shift1.json) instead of the campaign's topology.py/
@@ -24,6 +28,10 @@ GRID_SOURCE: str = 'shift1'
 SHIFT_DATE: str = 'MON 07 NOV 1994'
 
 DIFFICULTY_LABEL: str = 'Tutorial'
+
+START_HOUR: float = 4.0
+
+DURATION_HOURS: float = 3.0
 
 HANDOVER_NOTES: tuple[str, ...] = (
     'Night handover from R. Ferris.',
@@ -43,18 +51,6 @@ MAINTENANCE_UNITS: set[str] = set()
 
 AGC_ENABLED: bool = False
 
-# Per-bus hourly load table (MW). Shift 1: OAKE only, peak 100 MW.
-# Pre-dawn trough into early morning ramp. Single hydro unit.
-SUBSTATION_LOAD_MW: dict[str, dict[float, float]] = {
-    'OAKE': {
-         0.0:  31,  1.0:  29,  2.0:  27,  3.0:  27,  4.0:  27,
-         5.0:  31,  6.0:  38,  7.0:  49,  8.0:  65,  9.0:  80,
-        10.0:  91, 11.0:  95, 12.0:  93, 13.0:  89, 14.0:  87,
-        15.0:  91, 16.0:  95, 17.0:  98, 18.0: 100, 19.0:  98,
-        20.0:  95, 21.0:  87, 22.0:  75, 23.0:  55, 24.0:  36,
-    },
-}
-
 SCRIPTED_EVENTS: list[dict] = [
     {
         'trigger_min': 0.0,
@@ -72,7 +68,7 @@ SCRIPTED_EVENTS: list[dict] = [
         'trigger_min': 60.0,
         'priority':    'TUTOR',
         'message':     'Demand is rising. Raise ASHC-1 output to hold frequency.',
-        'detail':      ('Load at Oakendale is climbing through the pre-dawn ramp. '
+        'detail':      ('Load at Greymoor is climbing through the pre-dawn ramp. '
                         'If frequency has started drifting low, increase ASHC-1\'s '
                         'target output — hydro responds almost immediately.'),
         'element':     'ASHC-1',

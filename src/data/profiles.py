@@ -59,6 +59,7 @@ class SubstationDemandSpec:
     """Demand specification for one 150kV load substation."""
     peak_mw: float
     profile: dict[float, float]   # 25 hourly values (0.0–24.0), normalised 0.0–1.0
+    substation_type: str = 'MIXED'   # 'INDUSTRIAL' | 'RESIDENTIAL' | 'MIXED' — determines power factor
 
 
 
@@ -184,21 +185,47 @@ def get_solar_mw(sim_hour: float, rated_mw: float) -> float:
     return get_profile_value(SOLAR_PROFILE_NORMALISED, sim_hour) * rated_mw
 
 
-def get_substation_demand_specs(mw_table: dict) -> dict[str, SubstationDemandSpec]:
+def get_substation_demand_specs(
+    mw_table: dict,
+    substation_types: dict[str, str] | None = None,
+) -> dict[str, SubstationDemandSpec]:
     """
     Build SubstationDemandSpec objects from a per-bus hourly MW table.
 
     Args:
         mw_table: {bus_label: {hour: mw}} — raw MW values per bus per hour.
                   Typically comes from the shift file's SUBSTATION_LOAD_MW.
+        substation_types: Optional {bus_label: 'INDUSTRIAL'|'RESIDENTIAL'|'MIXED'}.
+                  Buses not present default to 'MIXED'.
 
     Returns:
         {bus_label: SubstationDemandSpec} where peak_mw is the max hourly value
         and profile is the normalised shape derived from it.
     """
+    substation_types = substation_types or {}
     result: dict[str, SubstationDemandSpec] = {}
     for label, hourly in mw_table.items():
         peak = float(max(hourly.values()))
         profile = {h: v / peak for h, v in hourly.items()}
-        result[label] = SubstationDemandSpec(peak_mw=peak, profile=profile)
+        result[label] = SubstationDemandSpec(
+            peak_mw=peak,
+            profile=profile,
+            substation_type=substation_types.get(label, 'MIXED'),
+        )
     return result
+
+
+def default_substation_types(bus_labels) -> dict[str, str]:
+    """
+    Deterministically assign a substation type to each load bus label,
+    cycling INDUSTRIAL / RESIDENTIAL / MIXED in sorted label order.
+
+    Runtime-seeding helper for sessions with no authored substation types
+    (Designer/DESIGNER_TEST grids) — not used for campaign shifts, which
+    may author types explicitly in the shift file in a future pass.
+    """
+    cycle = ('INDUSTRIAL', 'RESIDENTIAL', 'MIXED')
+    return {
+        label: cycle[i % len(cycle)]
+        for i, label in enumerate(sorted(bus_labels))
+    }

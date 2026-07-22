@@ -52,6 +52,54 @@ V_WATCH_LOW:      float = 0.90  # Watch threshold
 V_WARNING_LOW:    float = 0.85  # Warning threshold — collapse acceleration begins
 V_CRITICAL_LOW:   float = 0.70  # Blackout threshold
 V_COLLAPSE_GAIN:  float = 2.0   # Gain factor for voltage collapse acceleration
+V_COLLAPSE_SEVERITY_LOW:   float = 0.85  # Severity = 0 at this voltage (== V_WARNING_LOW)
+V_COLLAPSE_SEVERITY_FLOOR: float = 0.70  # Severity = 1 at this voltage (== V_CRITICAL_LOW)
+V_COLLAPSE_RECOVERY_PU_S:  float = 0.02  # Offset decay rate toward 0 when voltage recovers (pu/s)
+
+# ─────────────────────────────────────────────
+# REACTIVE POWER / SUBSTATION LOAD TYPES
+# ─────────────────────────────────────────────
+# Power factor by load-substation type — determines each type's reactive
+# (MVAr) draw relative to its active (MW) load: Q = P * tan(acos(PF)).
+PF_INDUSTRIAL: float = 0.85  # low PF — heavy inductive motor load, sags voltage most
+PF_RESIDENTIAL: float = 0.97  # high PF — mostly resistive/electronic load
+PF_MIXED:       float = 0.92  # blended commercial/residential
+
+SUBSTATION_TYPE_PF: dict = {
+    'INDUSTRIAL': PF_INDUSTRIAL,
+    'RESIDENTIAL': PF_RESIDENTIAL,
+    'MIXED': PF_MIXED,
+}
+
+# Generator AVR voltage setpoint (per-unit) — player-editable range.
+GEN_VOLTAGE_SETPOINT_DEFAULT_PU: float = 1.02
+GEN_VOLTAGE_SETPOINT_MIN_PU:     float = 0.95
+GEN_VOLTAGE_SETPOINT_MAX_PU:     float = 1.05
+
+# ─────────────────────────────────────────────
+# REACTIVE DEVICES — automatic shunt banks / tap changers, manual SVC
+# ─────────────────────────────────────────────
+# Automatic shunt capacitor/reactor bank: discrete steps, +cap/-reactor MVAr,
+# deadband + hysteresis + minimum dwell time between switches to prevent hunting.
+SHUNT_BANK_MVAR_PER_STEP: float = 50.0
+SHUNT_BANK_MAX_STEPS:     int   = 4
+SHUNT_DEADBAND_LOW_PU:    float = 0.97
+SHUNT_DEADBAND_HIGH_PU:   float = 1.03
+SHUNT_SWITCH_DWELL_S:     float = 30.0  # minimum simulated seconds between switches
+
+# Automatic transformer tap changer: discrete ratio steps approximated as a
+# corrective Q injection (see reactive_devices.py). Same deadband/hysteresis pattern.
+TAP_STEP_RATIO:      float = 0.0125
+TAP_N_STEPS:          int   = 8
+TAP_NEUTRAL_STEP:     int   = 0
+TAP_DEADBAND_LOW_PU:  float = 0.98
+TAP_DEADBAND_HIGH_PU: float = 1.02
+TAP_DWELL_S:          float = 30.0
+
+# Manual continuous SVC/STATCOM — player-set MVAr setpoint.
+SVC_Q_MIN_MVAR:  float = -150.0
+SVC_Q_MAX_MVAR:  float =  150.0
+SVC_Q_STEP_MVAR: float =   10.0  # per keyboard adjust command
 
 # ─────────────────────────────────────────────
 # FREQUENCY THRESHOLDS (Hz)
@@ -247,6 +295,15 @@ CONTEXT_OVERLAY_W:     int = 240   # panel width in px
 CONTEXT_OVERLAY_PAD:   int = 6     # inner padding
 CONTEXT_OVERLAY_ROW_H: int = 16    # text row height
 CONTEXT_OVERLAY_HDR_H: int = 18    # header row height
+
+# ─────────────────────────────────────────────
+# VSI VOLTAGE HALOS + REACTIVE DEVICE GLYPHS
+# ─────────────────────────────────────────────
+VSI_HALO_RADIUS_PX: int   = 20     # px — halo ring radius around a substation symbol
+VSI_HALO_WIDTH_PX:  int   = 2      # px — halo ring stroke width
+VSI_HALO_BLINK_HZ:  float = 2.0    # CRITICAL tier halo blink rate (matches ALARM_BLINK_RATE_HZ)
+DEVICE_GLYPH_SIZE_PX: int = 5      # px — shunt/tap/SVC glyph size at a bus
+DEVICE_GLYPH_OFFSET_PX: int = 12   # px — offset from bus centre for each device glyph slot
 
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANEL LAYOUT

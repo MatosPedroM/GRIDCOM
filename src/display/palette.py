@@ -111,9 +111,18 @@ COL_INTERCONNECT:   Colour = (255,  0, 255)     # Interconnector marker — brig
 # ─────────────────────────────────────────────
 # VSI VOLTAGE HALOS
 # ─────────────────────────────────────────────
-COL_VSI_WATCH:      Colour = (255,255,   0)     # 0.90-0.95: bright yellow watch
-COL_VSI_WARNING:    Colour = (255,  0,   0)     # 0.85-0.90: bright red warning
-COL_VSI_CRITICAL:   Colour = (255,  0,   0)     # <0.85: bright red critical
+COL_VSI_HEALTHY:    Colour = (0,    0,   0)     # >=0.90: no halo drawn — placeholder, unused for drawing
+COL_VSI_WATCH:      Colour = (255,255,   0)     # 0.90-0.85: bright yellow watch
+COL_VSI_WARNING:    Colour = (255,  0,   0)     # 0.85-0.70: bright red warning
+COL_VSI_CRITICAL:   Colour = (255,  0, 255)     # <0.70: bright magenta critical — distinct from WARNING's red
+
+# ─────────────────────────────────────────────
+# REACTIVE DEVICE GLYPHS
+# ─────────────────────────────────────────────
+COL_SHUNT_CAP:      Colour = (0,  255,   0)     # Auto shunt bank, capacitive step (+) — bright green
+COL_SHUNT_REACTOR:  Colour = (0,    0, 255)     # Auto shunt bank, reactive step (-) — bright blue
+COL_SVC:            Colour = (255,  0, 255)     # Manual SVC/STATCOM — bright magenta
+COL_TAP:            Colour = (0,  255, 255)     # Auto transformer tap — bright cyan
 
 # ─────────────────────────────────────────────
 # FLOW MARKERS

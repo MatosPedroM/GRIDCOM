@@ -222,7 +222,21 @@ Three bus types define how each node participates in the voltage solution:
 | PV       | Controlled | Bounded (Q limits) | Generator with AVR (voltage control) |
 | PQ       | Free       | Fixed              | Load bus, no voltage control         |
 
-PV buses (generators with Automatic Voltage Regulators) hold their terminal voltage at a setpoint by injecting or absorbing reactive power. This is the primary voltage control mechanism.
+PV buses (generators with Automatic Voltage Regulators) hold their terminal voltage at a per-unit-editable setpoint (`GEN_VOLTAGE_SETPOINT_DEFAULT_PU = 1.02`, range `[0.95, 1.05]`) by injecting or absorbing reactive power — this is Manual Lever #1 (see §5.7). Where multiple units share a bus, the bus target is the mean of their individual setpoints (physically sound: paralleled AVRs share a bus voltage).
+
+### 5.3b Reactive Load — Per-Substation-Type Power Factor
+
+Load buses draw reactive power as well as active power. Each load substation carries a `type` (`INDUSTRIAL` / `RESIDENTIAL` / `MIXED`), which determines its power factor and hence its reactive draw:
+
+```
+Q_load = P_load * tan(acos(PF))
+
+PF_INDUSTRIAL  = 0.85   # heavy inductive motor load — sags voltage most
+PF_RESIDENTIAL = 0.97   # mostly resistive/electronic load
+PF_MIXED       = 0.92   # blended commercial/residential
+```
+
+Industrial buses draw noticeably more MVAr per MW than residential ones, so under comparable load they sag further — this is the primary forcing function that makes voltage move at all. Substation types are runtime-seeded (not yet authored into the Grid Designer JSON schema); some types also carry an automatic shunt bank (see §5.7).
 
 ### 5.4 Reactive Limits and PV→PQ Conversion
 
@@ -252,51 +266,67 @@ After conversion, re-solve the voltage equations with the updated bus types. Max
 
 ### 5.5 Voltage Stability Index (VSI)
 
-A per-bus voltage stability index drives both the display and the collapse mechanic:
+A per-bus voltage stability index drives both the display and the collapse mechanic. `constants.py` is authoritative for these thresholds:
 
 ```
-VSI = V_bus / V_nominal
+VSI = V_bus / V_nominal   (bus_vsi in SimulationState — identical to bus_voltages,
+                            both carry the collapse-adjusted effective voltage, §5.6)
 
-VSI ranges and meaning:
-  > 0.95         Healthy — normal operation
-  0.90 - 0.95    Watch — monitoring warranted
-  0.85 - 0.90    Warning — corrective action recommended
-  0.80 - 0.85    Critical — corrective action urgent
-  < 0.80         Collapse zone — cascade imminent
+VSI tiers (bus_vsi_tier):
+  >= 0.90        HEALTHY   — normal operation (V_WATCH_LOW)
+  0.85 - 0.90    WATCH     — monitoring warranted (V_WARNING_LOW)
+  0.70 - 0.85    WARNING   — collapse acceleration begins (V_CRITICAL_LOW)
+  < 0.70         CRITICAL  — cascade imminent
 ```
 
 ### 5.6 Voltage Collapse Acceleration
 
-The linear decoupled model underestimates how rapidly voltage deteriorates near collapse. A nonlinear correction is applied in the collapse zone only:
+The linear decoupled model underestimates how rapidly voltage deteriorates near collapse. A nonlinear correction is applied in the collapse zone only. Because the solver itself is a stateless, pure matrix solve, this correction is implemented as a **stateful post-solve overlay owned by the simulation**, not inside the solver:
 
 ```python
-COLLAPSE_THRESHOLD = 0.85
-COLLAPSE_FLOOR = 0.70
+V_COLLAPSE_SEVERITY_LOW   = 0.85   # == V_WARNING_LOW — severity 0 here
+V_COLLAPSE_SEVERITY_FLOOR = 0.70   # == V_CRITICAL_LOW — severity 1 here
+V_COLLAPSE_GAIN = 2.0
+V_COLLAPSE_RECOVERY_PU_S = 0.02    # offset decay rate when voltage recovers
 
-if vsi < COLLAPSE_THRESHOLD:
-    # Accelerate deterioration nonlinearly
-    severity = (COLLAPSE_THRESHOLD - vsi) / (COLLAPSE_THRESHOLD - COLLAPSE_FLOOR)
-    acceleration = severity ** 2 * COLLAPSE_GAIN
-    voltage[bus] -= acceleration * dt
-    
-if voltage[bus] < COLLAPSE_FLOOR:
-    trigger_voltage_collapse(bus)
+# Once per tick, after the solve, per bus:
+if solved_v < V_WARNING_LOW:
+    severity = clamp((V_COLLAPSE_SEVERITY_LOW - solved_v) /
+                      (V_COLLAPSE_SEVERITY_LOW - V_COLLAPSE_SEVERITY_FLOOR), 0, 1)
+    accel = severity ** 2 * V_COLLAPSE_GAIN
+    offset -= accel * dt
+else:
+    offset = min(0.0, offset + V_COLLAPSE_RECOVERY_PU_S * dt)   # decays back to 0
+
+v_effective = max(0.0, solved_v + offset)
 ```
 
-This produces the correct phenomenology: slow degradation in the warning zone, then rapidly accelerating collapse below a critical point. Players experience it as realistic because the shape is correct, even though the exact numbers are approximate.
+`v_effective` (never the raw solve) is what alarms, crisis detection, `min_voltage_seen`, and the display all see. The offset persists tick-to-tick in `GridSimulation._v_collapse_offset` — this produces the correct phenomenology (slow degradation in the warning zone, then rapidly accelerating collapse below the critical point) and lets a mismanaged bus keep worsening even though the underlying solve is instantaneous and stateless. The offset resets to 0 for any bus that enters a blackout zone, and decays back toward 0 once the operator relieves the underlying reactive deficiency (raises a generator setpoint, switches in a shunt, or the auto-regulators catch up) — it does not require player action to "clear," only for the voltage to genuinely recover.
 
-### 5.7 Reactive Compensation Assets
+### 5.7 Reactive Compensation Assets — Automatic Regulators and Manual Levers
 
-Shunt compensation assets inject or absorb reactive power at a bus without generating MW:
+Reactive compensation is **local** — it cannot be transported across the network the way MW can. A sagging region can only be supported by generation or a device *in that region*. This is the central gameplay implication of voltage physics: the grid must be managed regionally, not just kept fully connected.
 
-| Asset Type         | MVAr        | Control          |
-|--------------------|-------------|------------------|
-| Shunt capacitor    | Positive    | Switched (on/off)|
-| Shunt reactor      | Negative    | Switched (on/off)|
-| SVC / STATCOM      | ±Variable   | Continuous       |
-| Transformer tap    | Voltage ratio| Discrete steps  |
+All devices are modelled as Q injections at a bus (never as B' edits — switching a device never re-factorises the voltage matrix):
 
-These are the player's tools for voltage management in later game levels.
+| Asset Type          | MVAr          | Control                          | Player interaction        |
+|----------------------|---------------|-----------------------------------|----------------------------|
+| Shunt capacitor/reactor bank | ±discrete steps | Deadband + hysteresis auto-switching | **Read-only** — automatic |
+| Transformer tap changer | Voltage-ratio approximation, discrete steps | Deadband + hysteresis auto-stepping | **Read-only** — automatic |
+| Generator AVR setpoint | Continuous, bounded by `q_max`/`q_min` | Per-unit setpoint, `[0.95, 1.05]` pu | **Manual — Lever #1** |
+| SVC / STATCOM        | ±150 MVAr continuous | Direct setpoint | **Manual — Lever #2** |
+
+**Automatic regulators** (shunt banks, tap changers) absorb the grid's routine daily reactive drift so the player isn't fighting minor fluctuations continuously. Both use the same control pattern to avoid hunting:
+- A **deadband** (e.g. shunt banks: switch in below 0.97 pu, switch out above 1.03 pu) so they don't react to noise around the setpoint.
+- **Hysteresis** implicit in the deadband width itself.
+- A **minimum dwell time** between switches (`SHUNT_SWITCH_DWELL_S`, `TAP_DWELL_S`) so a device that has just moved doesn't immediately reverse.
+- A **one-tick lag**: automatics act on the *previous* tick's solved voltage, evaluated once per tick before that tick's Q injections are built — never inside the solve itself. This means there is no algebraic loop with the solver, and at the simulation's 10 Hz tick rate the lag is imperceptible to the player.
+
+**The two manual levers** are the tools the player actively works:
+1. **Generator voltage setpoint** — supports a sagging region from nearby generation. Raising a unit's setpoint increases its Q injection (visible via `unit_q_injections_mvar`) until it hits `q_max_mvar`, at which point the bus converts from PV to PQ (`unit_bus_types` flips) and further setpoint increases have no effect — the generator has exhausted its reactive reserve (`unit_q_reserve_mvar` reaches 0). This PV→PQ conversion, made visible to the player, is the same phenomenon described in §5.4.
+2. **Manual SVC/STATCOM** — a continuous, player-set MVAr source at a specific bus, for regions with no nearby generation to lean on.
+
+`set_unit_q_target` (raw MVAr on a single unit) remains callable but has no dedicated UI — the two levers above are the intended player-facing controls.
 
 ---
 

@@ -262,6 +262,21 @@ class VoltageModel:
 
         return result
 
+    # ─────── ACCESSORS ────────────────────────────────────────────────────
+
+    def b_diag(self, bus_label: BusLabel) -> float:
+        """
+        Return B'[i,i] (self-susceptance, per-unit) for a bus — the same
+        diagonal term used internally by the PV bus correction pass.
+        Used by reactive_devices.py's transformer-tap Q approximation to
+        convert a desired ΔV into a corrective ΔQ via
+        ΔQ_mvar = b_diag * ΔV_pu * S_BASE (see solve()'s PV correction, above).
+        """
+        idx = self._bus_index.get(bus_label)
+        if idx is None:
+            return 0.0
+        return float(self._b_prime[idx, idx])
+
     # ─────── REBUILD ──────────────────────────────────────────────────────
 
     def rebuild(self, lines_in_service: list | None = None) -> None:

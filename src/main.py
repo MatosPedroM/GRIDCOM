@@ -49,7 +49,7 @@ from display.menus import (
     build_shift_select_items,
 )
 from data.layout_override import load_layout
-from data.profiles import DEMAND_PROFILE_NORMALISED
+from data.profiles import DEMAND_PROFILE_NORMALISED, default_substation_types
 from gameplay.shifts.loader import load_shift_config
 from simulation.grid import Grid
 from simulation.simulation import GridSimulation
@@ -273,6 +273,7 @@ def _make_designer_test(
         for b in buses
         if b.bus_type == 'LOAD' and b.peak_load_mw > 0
     }
+    substation_types = default_substation_types(substation_load_mw.keys())
 
     initial_schedule = {
         u.label: (u.start_mw if u.start_mw >= 0 else u.rated_mw * 0.5)
@@ -287,9 +288,11 @@ def _make_designer_test(
         maintenance_units=maintenance_units,
         maintenance_lines=set(),
         substation_load_mw=substation_load_mw,
+        substation_types=substation_types,
         start_hour=start_hour,
         duration_hours=duration_hours,
     )
+    sim.seed_default_reactive_devices(substation_types)
     # Renderer uses shift=1 as a safe sentinel — the canvas will show shift-1
     # topology but the simulation state (frequency, dispatch, alarms) is live.
     renderer = Renderer(display_surf, shift=1,
@@ -1224,10 +1227,34 @@ def main() -> None:
                         _rend.on_tab()
                     elif event.key == pygame.K_l and not _rend._input_active:
                         _const.VOLTAGE_COLOUR_VIEW = not _const.VOLTAGE_COLOUR_VIEW
+                    elif (event.key == pygame.K_COMMA and not _rend._input_active
+                          and not _rend._setpoint_active):
+                        _rend.on_svc_adjust(_sim, -1)
+                    elif (event.key == pygame.K_PERIOD and not _rend._input_active
+                          and not _rend._setpoint_active):
+                        _rend.on_svc_adjust(_sim, +1)
+                    elif (event.key == pygame.K_v and not _rend._input_active
+                          and not ctrl):
+                        _rend.on_setpoint_toggle()
                     elif event.key == pygame.K_BACKSPACE:
-                        _rend.on_backspace()
+                        if _rend._setpoint_active:
+                            _rend.on_setpoint_backspace()
+                        else:
+                            _rend.on_backspace()
                     elif event.key == pygame.K_RETURN:
-                        _rend.on_enter(_sim)
+                        if _rend._setpoint_active:
+                            _rend.on_setpoint_enter(_sim)
+                        else:
+                            _rend.on_enter(_sim)
+                    elif (not ctrl and not shift_held
+                          and event.key in (
+                              pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3,
+                              pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7,
+                              pygame.K_8, pygame.K_9, pygame.K_PERIOD,
+                          )
+                          and _rend._setpoint_active):
+                        ch = '.' if event.key == pygame.K_PERIOD else pygame.key.name(event.key)
+                        _rend.on_setpoint_digit(ch)
                     elif (not ctrl and not shift_held
                           and event.key in (
                               pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3,

@@ -20,6 +20,8 @@ from simulation.constants import (
     LOAD_TRIANGLE_PCT_1, LOAD_TRIANGLE_PCT_2, LOAD_TRIANGLE_PCT_3,
     LOAD_TRIANGLE_SIZE, LOAD_TRIANGLE_SPACING,
     UNIT_BORDER_W_PX, UNIT_BORDER_W_SELECTED_PX,
+    VSI_HALO_RADIUS_PX, VSI_HALO_WIDTH_PX,
+    DEVICE_GLYPH_SIZE_PX, DEVICE_GLYPH_OFFSET_PX,
 )
 from display.palette import (
     COL_BACKGROUND,
@@ -34,6 +36,8 @@ from display.palette import (
     COL_LINE_HYDRAULIC, COL_LOAD_SUB,
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
     COL_SELECTION,
+    COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL,
+    COL_SHUNT_CAP, COL_SHUNT_REACTOR, COL_SVC, COL_TAP,
 )
 
 # Symbol size constants
@@ -512,6 +516,78 @@ def draw_hydraulic_connector(
     """
     _draw_dashed_line(surf, COL_LINE_HYDRAULIC, (x1, y1), (x2, y2),
                       dash=3, gap=2, width=1)
+
+
+# ─────── VSI VOLTAGE HALO ─────────────────────────────────────────────────────
+
+_VSI_TIER_COLOUR = {
+    'WATCH':    COL_VSI_WATCH,
+    'WARNING':  COL_VSI_WARNING,
+    'CRITICAL': COL_VSI_CRITICAL,
+}
+
+
+def draw_vsi_halo(
+    surf: pygame.Surface,
+    cx: int,
+    cy: int,
+    tier: str,
+    blink_on: bool = True,
+    scale: float = 1.0,
+) -> None:
+    """
+    Draw a voltage-sag halo ring around a substation symbol. Only called for
+    WATCH/WARNING/CRITICAL tiers — HEALTHY draws nothing (see COL_VSI_HEALTHY,
+    an unused placeholder). CRITICAL blinks at VSI_HALO_BLINK_HZ; WATCH/WARNING
+    are steady, matching the alarm panel's own severity-blink convention.
+    """
+    if tier == 'HEALTHY' or tier not in _VSI_TIER_COLOUR:
+        return
+    if tier == 'CRITICAL' and not blink_on:
+        return
+    radius = max(2, int(VSI_HALO_RADIUS_PX * scale))
+    width  = max(1, int(VSI_HALO_WIDTH_PX * scale))
+    pygame.draw.circle(surf, _VSI_TIER_COLOUR[tier], (cx, cy), radius, width)
+
+
+# ─────── REACTIVE DEVICE GLYPHS ───────────────────────────────────────────────
+
+def draw_shunt_glyph(surf: pygame.Surface, cx: int, cy: int, step: int, scale: float = 1.0) -> None:
+    """
+    Draw an automatic shunt bank glyph: horizontal capacitor-style bars,
+    coloured by direction (green = capacitive/+step, blue = reactive/-step).
+    Bar count reflects |step| (1 to SHUNT_BANK_MAX_STEPS), read-only display.
+    """
+    if step == 0:
+        return
+    col = COL_SHUNT_CAP if step > 0 else COL_SHUNT_REACTOR
+    sz  = max(3, int(DEVICE_GLYPH_SIZE_PX * scale))
+    n   = min(4, abs(step))
+    for i in range(n):
+        y = cy - sz + i * (sz // 2 + 1)
+        pygame.draw.line(surf, col, (cx - sz // 2, y), (cx + sz // 2, y), 1)
+
+
+def draw_tap_glyph(surf: pygame.Surface, cx: int, cy: int, step: int, scale: float = 1.0) -> None:
+    """
+    Draw an automatic transformer tap glyph: small arrow, pointing up for a
+    positive (voltage-raising) tap step, down for negative. Read-only display.
+    """
+    if step == 0:
+        return
+    sz = max(3, int(DEVICE_GLYPH_SIZE_PX * scale))
+    if step > 0:
+        pts = [(cx, cy - sz), (cx - sz // 2, cy), (cx + sz // 2, cy)]
+    else:
+        pts = [(cx, cy + sz), (cx - sz // 2, cy), (cx + sz // 2, cy)]
+    pygame.draw.polygon(surf, COL_TAP, pts)
+
+
+def draw_svc_glyph(surf: pygame.Surface, cx: int, cy: int, scale: float = 1.0) -> None:
+    """Draw the manual SVC/STATCOM glyph: a filled diamond, at any bus hosting one."""
+    sz = max(3, int(DEVICE_GLYPH_SIZE_PX * scale))
+    pts = [(cx, cy - sz), (cx + sz, cy), (cx, cy + sz), (cx - sz, cy)]
+    pygame.draw.polygon(surf, COL_SVC, pts)
 
 
 # ─────── TRANSMISSION LINE ───────────────────────────────────────────────────

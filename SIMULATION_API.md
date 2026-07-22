@@ -79,14 +79,52 @@ class SimulationState:
     bus_voltages: dict[str, float]
     # {bus_label: voltage_pu} for all active buses.
     # Per-unit. Nominal = 1.0. Healthy range: 0.95 to 1.05.
+    # This is v_effective — the raw voltage solve plus the persistent
+    # collapse-acceleration offset (see GRID_SIMULATION_MECHANICS.md §5.6).
+    # Never the raw solver output directly.
 
     bus_angles: dict[str, float]
     # {bus_label: angle_rad} for all active buses.
     # Slack bus (MDBY) = 0.0 always.
 
     bus_vsi: dict[str, float]
-    # {bus_label: vsi} Voltage Stability Index = voltage_pu (same value).
-    # Kept separate for semantic clarity in display code.
+    # {bus_label: vsi} Voltage Stability Index = voltage_pu (same value as
+    # bus_voltages — both carry v_effective). Kept separate for semantic
+    # clarity in display code.
+
+    bus_vsi_tier: dict[str, str]
+    # {bus_label: tier} where tier is 'HEALTHY' | 'WATCH' | 'WARNING' | 'CRITICAL'.
+    # Derived from bus_vsi against constants.py's V_WATCH_LOW / V_WARNING_LOW /
+    # V_CRITICAL_LOW thresholds — display must read this, never recompute it.
+
+    # ─────────────────────────────────────────────
+    # NETWORK — REACTIVE DEVICES
+    # ─────────────────────────────────────────────
+    bus_shunt_step: dict[str, int]
+    # {bus_label: step} automatic shunt bank position, signed
+    # (+capacitive .. -reactive). Present only for buses with a shunt bank.
+    # Read-only — no player method; the device is fully automatic.
+
+    bus_shunt_mvar: dict[str, float]
+    # {bus_label: mvar} automatic shunt bank's current MVAr injection
+    # (step * SHUNT_BANK_MVAR_PER_STEP). Read-only.
+
+    bus_svc_mvar: dict[str, float]
+    # {bus_label: mvar} manual SVC's current setpoint. Present only for
+    # buses hosting an SVC. Player-settable via set_svc_setpoint().
+
+    bus_svc_limits: dict[str, tuple[float, float]]
+    # {bus_label: (q_min_mvar, q_max_mvar)} for buses hosting an SVC.
+
+    transformer_taps: dict[str, tuple[str, int]]
+    # {tap_label: (regulated_bus, step)} automatic transformer tap position.
+    # Read-only — no player method; the device is fully automatic. Modelled
+    # as a Q-injection approximation, not a true voltage-ratio change.
+
+    bus_q_injection_mvar: dict[str, float]
+    # {bus_label: mvar} total reactive device Q injection at each bus
+    # (shunt + SVC + tap-approximation combined). Does not include load Q
+    # or generator Q — those are separate (see bus_loads, unit_q_injections_mvar).
 
     # ─────────────────────────────────────────────
     # NETWORK — LINES
@@ -126,7 +164,10 @@ class SimulationState:
     unit_q_injections_mvar: dict[str, float]
     # {unit_label: q_mvar}
     # Reactive power injection. Positive = injection. Negative = absorption.
-    # 0.0 for non-voltage-controlling units.
+    # For PV/PQ (non-renewable, ONLINE) units this is the voltage solver's
+    # actual q_injections_used for the unit's bus (split evenly across
+    # co-located units) — not just whatever set_unit_q_target() last set.
+    # 0.0 for OFFLINE/renewable units.
 
     unit_start_progress: dict[str, float]
     # {unit_label: progress_fraction} for STARTING units only.
@@ -136,6 +177,17 @@ class SimulationState:
     unit_bus_types: dict[str, str]
     # {unit_label: bus_type} where bus_type is 'PV' or 'PQ'
     # PQ means unit has hit reactive limit and lost voltage control.
+
+    unit_v_setpoint_pu: dict[str, float]
+    # {unit_label: v_pu} AVR voltage setpoint. Default GEN_VOLTAGE_SETPOINT_DEFAULT_PU
+    # (1.02), editable range [0.95, 1.05] via set_generator_voltage_setpoint().
+    # Where multiple units share a bus, the bus's PV target is the mean of
+    # their individual setpoints — this field is always per-unit.
+
+    unit_q_reserve_mvar: dict[str, float]
+    # {unit_label: mvar} headroom to q_max_mvar (max(0, q_max_mvar - current_q)).
+    # 0.0 for OFFLINE units. Lets the display show which generators can still
+    # support voltage before a setpoint increase has no further effect.
 
     reservoir_levels: dict[str, float]
     # {station_label: level_fraction} for hydro stations only.
@@ -364,6 +416,54 @@ class GridSimulation:
             True if command accepted (unit is ONLINE and voltage-controlling).
             False otherwise.
         """
+        # Kept callable for direct MVAr control, but has no dedicated UI —
+        # set_generator_voltage_setpoint() below is the intended player lever.
+
+    def set_generator_voltage_setpoint(self, unit_label: str, v_pu: float) -> bool:
+        """
+        Set a generator's AVR voltage setpoint (per-unit). Manual voltage
+        lever #1 — supports a sagging region from nearby generation.
+
+        Args:
+            v_pu: Target voltage, clamped to
+                  [GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU]
+                  (0.95-1.05).
+
+        Returns:
+            True if command accepted (unit is ONLINE).
+            False otherwise.
+
+        Side effects:
+            Feeds into pv_bus_constraints() as this unit's v_target on the
+            next voltage solve. Where units share a bus, the bus's PV target
+            becomes the mean of all their setpoints. If the resulting Q
+            requirement exceeds the unit's q_max_mvar/q_min_mvar, the bus
+            converts PV->PQ (unit_bus_types flips) and unit_q_reserve_mvar
+            reaches 0 — further setpoint increases have no additional effect.
+        """
+
+    def set_svc_setpoint(self, bus_label: str, q_mvar: float) -> bool:
+        """
+        Set a bus's manual SVC/STATCOM reactive power setpoint. Manual
+        voltage lever #2 — for regions with no nearby generation to lean on.
+
+        Args:
+            q_mvar: Target injection, clamped to
+                    [SVC_Q_MIN_MVAR, SVC_Q_MAX_MVAR] (±150 MVAr).
+
+        Returns:
+            True if command accepted (bus hosts an SVC).
+            False if the bus has no SVC.
+
+        Side effects:
+            Feeds directly into the next tick's Q injections at that bus.
+        """
+
+    # Note: automatic shunt banks and transformer taps have no player-facing
+    # set_* method — they are stepped internally by
+    # ReactiveDevices.step_automatics() each tick and are read-only from the
+    # player's perspective (see bus_shunt_step/bus_shunt_mvar/transformer_taps
+    # in SimulationState above).
 
     def set_pumped_storage_mode(self, station_label: str, mode: str) -> bool:
         """

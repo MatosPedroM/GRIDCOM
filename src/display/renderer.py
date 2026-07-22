@@ -60,6 +60,7 @@ from simulation.constants import (
     MENU_FONT_SIZE, MENU_ROW_H, MENU_TOP_MARGIN,
     PERF_DEBUG_LOG, PERF_LOG_INTERVAL_S,
     TARGET_FPS, FREQ_HISTORY_WINDOW_S,
+    SVC_Q_STEP_MVAR,
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
@@ -179,6 +180,14 @@ class Renderer:
         # TRIP/CLOSE button keyboard focus
         self._line_cmd_active: bool = False
 
+        # AVR setpoint input state (generator voltage setpoint — separate
+        # from the MW target buffer so the two commands never collide)
+        self._setpoint_buffer: str  = ''
+        self._setpoint_active: bool = False
+
+        # SVC adjust command keyboard focus
+        self._svc_cmd_active: bool = False
+
         # Debug state
         self._mouse_pos:       tuple[int, int] = (0, 0)
         self._click_pos:       tuple[int, int] | None = None
@@ -238,6 +247,9 @@ class Renderer:
         self._input_active    = False
         self._cmd_active      = False
         self._line_cmd_active = False
+        self._setpoint_buffer = ''
+        self._setpoint_active = False
+        self._svc_cmd_active  = False
 
     def _get_selected_unit(self):
         """Return the GenerationUnit for _selected_label if it is a unit, else None."""
@@ -346,6 +358,69 @@ class Renderer:
         sim.close_line(line.label)
         self._line_cmd_active = False
 
+    def _get_selected_bus(self):
+        """Return the Bus dataclass for _selected_label if it is a bus, else None."""
+        if self._selected_label is None:
+            return None
+        return self._canvas._bus_map.get(self._selected_label)
+
+    def on_setpoint_toggle(self) -> None:
+        """Enter AVR setpoint edit mode for the selected dispatchable unit."""
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        self._setpoint_active = True
+
+    def on_setpoint_digit(self, ch: str) -> None:
+        """Feed one character (digit or '.') to the AVR setpoint input buffer."""
+        if self._get_selected_unit() is None:
+            return
+        self._setpoint_active = True
+        if len(self._setpoint_buffer) < 5:
+            self._setpoint_buffer += ch
+
+    def on_setpoint_backspace(self) -> None:
+        if self._setpoint_active and self._setpoint_buffer:
+            self._setpoint_buffer = self._setpoint_buffer[:-1]
+
+    def on_setpoint_enter(self, sim) -> None:
+        """
+        Commit the AVR setpoint buffer as a generator voltage setpoint.
+        Activates edit mode if Enter is pressed with no buffer — mirrors
+        on_enter()'s MW-target behaviour, kept as a separate flag/buffer
+        pair so the two input modes never collide.
+        """
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        if not self._setpoint_active or not self._setpoint_buffer:
+            self._setpoint_active = True
+            return
+        try:
+            v_pu = float(self._setpoint_buffer)
+        except ValueError:
+            self._setpoint_buffer = ''
+            return
+        sim.set_generator_voltage_setpoint(unit.label, v_pu)
+        self._setpoint_buffer = ''
+        self._setpoint_active = False
+
+    def on_svc_adjust(self, sim, direction: int) -> None:
+        """
+        Adjust the selected bus's manual SVC setpoint by one step
+        (direction = +1 or -1) via SVC_Q_STEP_MVAR. No-op if the selected
+        bus hosts no SVC.
+        """
+        bus = self._get_selected_bus()
+        if bus is None:
+            return
+        state = sim.get_state()
+        if state is None or bus.label not in state.bus_svc_mvar:
+            return
+        self._svc_cmd_active = True
+        current = state.bus_svc_mvar.get(bus.label, 0.0)
+        sim.set_svc_setpoint(bus.label, current + direction * SVC_Q_STEP_MVAR)
+
     def on_ack_alarm(self, sim) -> None:
         """Acknowledge the first unacknowledged alarm."""
         state = sim.get_state()
@@ -389,6 +464,9 @@ class Renderer:
         self._input_buffer   = ''
         self._input_active   = False
         self._cmd_active     = False
+        self._setpoint_buffer = ''
+        self._setpoint_active = False
+        self._svc_cmd_active  = False
 
     def on_escape(self) -> None:
         """
@@ -398,10 +476,15 @@ class Renderer:
         if self._input_active:
             self._input_buffer = ''
             self._input_active = False
+        elif self._setpoint_active:
+            self._setpoint_buffer = ''
+            self._setpoint_active = False
         elif self._cmd_active:
             self._cmd_active = False
         elif self._line_cmd_active:
             self._line_cmd_active = False
+        elif self._svc_cmd_active:
+            self._svc_cmd_active = False
         elif self._selected_label is not None:
             self.clear_selection()
 
@@ -797,13 +880,20 @@ class Renderer:
                 cmd_active=self._cmd_active,
                 font_scale=_fs,
                 is_maintenance=selected_unit.label in state.unit_maintenance,
+                v_setpoint_pu=state.unit_v_setpoint_pu.get(selected_unit.label),
+                bus_type=state.unit_bus_types.get(selected_unit.label),
+                q_mvar=state.unit_q_injections_mvar.get(selected_unit.label),
+                q_reserve_mvar=state.unit_q_reserve_mvar.get(selected_unit.label),
+                setpoint_buffer=self._setpoint_buffer,
+                setpoint_active=self._setpoint_active,
             )
             native_changed = True
         elif self._selected_label is not None:
             selected_bus = self._canvas._bus_map.get(self._selected_label)
             if selected_bus is not None:
                 draw_bus_context(self._canvas_surf, self._font,
-                                 bus=selected_bus, state=state, font_scale=_fs)
+                                 bus=selected_bus, state=state, font_scale=_fs,
+                                 svc_cmd_active=self._svc_cmd_active)
                 native_changed = True
             else:
                 selected_line = next(

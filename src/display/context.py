@@ -21,6 +21,7 @@ from display.palette import (
     COL_CONTEXT_FIELD_BG, COL_CONTEXT_FIELD_ACTIVE, COL_CONTEXT_CURSOR,
     COL_ALARM_CRIT, COL_ALARM_WARN,
     COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT, COL_LINE_TRIPPED,
+    COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL, COL_SVC,
 )
 from simulation.constants import (
     CONTEXT_OVERLAY_X, CONTEXT_OVERLAY_Y,
@@ -50,6 +51,12 @@ def draw_unit_context(
     cmd_active:     bool  = False,
     font_scale:     float = 1.0,
     is_maintenance: bool  = False,
+    v_setpoint_pu:  float | None = None,
+    bus_type:       str | None   = None,
+    q_mvar:         float | None = None,
+    q_reserve_mvar: float | None = None,
+    setpoint_buffer: str  = '',
+    setpoint_active: bool = False,
 ) -> None:
     """
     Draw the unit context panel at the top-left of the canvas surface.
@@ -66,6 +73,13 @@ def draw_unit_context(
         blink_on:     Current 1Hz blink phase (for cursor).
         cmd_active:   Whether the START/STOP button has keyboard focus.
         font_scale:   Display scale factor.
+        v_setpoint_pu:  AVR voltage setpoint (unit_v_setpoint_pu), None to hide the row.
+        bus_type:       'PV' or 'PQ' (unit_bus_types) — voltage-control status.
+        q_mvar:         Current reactive injection (unit_q_injections_mvar).
+        q_reserve_mvar: Headroom to q_max_mvar (unit_q_reserve_mvar).
+        setpoint_buffer: Digits typed so far for the AVR setpoint field.
+        setpoint_active: Whether the AVR setpoint field has keyboard focus
+                        (mirrors input_active/input_buffer for the MW target).
     """
     fs  = font_scale
     x   = int(CONTEXT_OVERLAY_X   * fs)
@@ -78,6 +92,7 @@ def draw_unit_context(
 
     is_dispatchable = unit_state in ('ONLINE', 'STARTING', 'SHUTDOWN')
     is_renewable    = unit.unit_type in ('WIND', 'SOLAR')
+    show_avr        = is_dispatchable and not is_renewable and v_setpoint_pu is not None
 
     show_start      = unit_state == 'OFFLINE' and not is_renewable and not is_maintenance
     show_stop       = unit_state == 'ONLINE'  and not is_renewable
@@ -85,7 +100,7 @@ def draw_unit_context(
     show_maintenance = is_maintenance and unit_state == 'OFFLINE'
 
     if is_dispatchable:
-        n_rows = 4
+        n_rows = 4 + (3 if show_avr else 0)
     elif show_start or show_transition or show_maintenance:
         n_rows = 3
     else:
@@ -159,7 +174,48 @@ def draw_unit_context(
         hint = f'[{unit.min_mw:.0f} – {unit.rated_mw:.0f} MW]'
         font.render_to(surf, (x + pad, _ry(2)), hint, COL_TEXT_DIM, size=sz)
 
-        _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(3),
+        cmd_row = 3
+        if show_avr:
+            avr_row_y = _ry(3)
+            avr_label_w = font.get_rect('AVR: ', size=sz).width
+            pu_str  = ' pu'
+            pu_w    = font.get_rect(pu_str, size=sz).width
+            avr_field_x = x + pad + avr_label_w
+            avr_field_w = w - pad - (avr_field_x - x) - pu_w - pad
+            avr_field_h = rh - 2
+
+            font.render_to(surf, (x + pad, avr_row_y), 'AVR:', COL_TEXT_PRIMARY, size=sz)
+
+            avr_field_rect = pygame.Rect(avr_field_x, avr_row_y - 1, avr_field_w, avr_field_h)
+            pygame.draw.rect(surf, COL_CONTEXT_FIELD_BG, avr_field_rect)
+            avr_border_col = COL_CONTEXT_FIELD_ACTIVE if setpoint_active else COL_PANEL_BORDER
+            pygame.draw.rect(surf, avr_border_col, avr_field_rect, 1)
+
+            avr_display = setpoint_buffer if setpoint_active else f'{v_setpoint_pu:.3f}'
+            if avr_display:
+                font.render_to(surf, (avr_field_x + 2, avr_row_y), avr_display, COL_TEXT_VALUE, size=sz)
+            if setpoint_active and blink_on:
+                avr_text_w = font.get_rect(avr_display, size=sz).width if avr_display else 0
+                avr_cur_rect = pygame.Rect(avr_field_x + 2 + avr_text_w, avr_row_y, 1, avr_field_h - 2)
+                pygame.draw.rect(surf, COL_CONTEXT_CURSOR, avr_cur_rect)
+            font.render_to(surf, (avr_field_x + avr_field_w + 2, avr_row_y), pu_str, COL_TEXT_DIM, size=sz)
+
+            pv_pq_row_y = _ry(4)
+            font.render_to(surf, (x + pad, pv_pq_row_y), 'Voltage ctrl:', COL_TEXT_PRIMARY, size=sz)
+            bt = bus_type or 'PV'
+            bt_col = COL_UNIT_ONLINE if bt == 'PV' else COL_ALARM_WARN
+            bt_rect = font.get_rect(bt, size=sz)
+            font.render_to(surf, (x + w - pad - bt_rect.width, pv_pq_row_y), bt, bt_col, size=sz)
+
+            q_row_y = _ry(5)
+            font.render_to(surf, (x + pad, q_row_y), 'Q:', COL_TEXT_PRIMARY, size=sz)
+            q_str = f'{(q_mvar or 0.0):+.0f} / {(q_reserve_mvar or 0.0):.0f} rsv'
+            q_rect = font.get_rect(q_str, size=sz)
+            font.render_to(surf, (x + w - pad - q_rect.width, q_row_y), q_str, COL_TEXT_VALUE, size=sz)
+
+            cmd_row = 6
+
+        _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(cmd_row),
                       show_start, show_stop, show_transition,
                       unit_state, cmd_active)
 
@@ -177,14 +233,31 @@ def draw_unit_context(
                           unit_state=unit_state, cmd_active=cmd_active)
 
 
+_VSI_TIER_TEXT_COL: dict[str, tuple] = {
+    'HEALTHY':  COL_UNIT_ONLINE,
+    'WATCH':    COL_VSI_WATCH,
+    'WARNING':  COL_VSI_WARNING,
+    'CRITICAL': COL_VSI_CRITICAL,
+}
+
+
 def draw_bus_context(
-    surf:       pygame.Surface,
-    font:       pygame.freetype.Font,
+    surf:         pygame.Surface,
+    font:         pygame.freetype.Font,
     bus,
     state,
-    font_scale: float = 1.0,
+    font_scale:   float = 1.0,
+    svc_cmd_active: bool = False,
 ) -> None:
-    """Draw a read-only bus context panel at the top-left of the canvas surface."""
+    """
+    Draw a bus context panel at the top-left of the canvas surface. Mostly
+    read-only (voltage, VSI tier, Q, auto shunt/tap state) — the SVC row is
+    the one interactive affordance, shown only for a bus hosting one.
+
+    Args:
+        svc_cmd_active: Whether the SVC adjust command has keyboard focus
+                        (mirrors the line TRIP/CLOSE cmd_active convention).
+    """
     fs  = font_scale
     x   = int(CONTEXT_OVERLAY_X   * fs)
     y   = int(CONTEXT_OVERLAY_Y   * fs)
@@ -195,7 +268,19 @@ def draw_bus_context(
     sz  = int(FONT_SIZE_CONTEXT * fs)
 
     is_load_bus = (bus.bus_type == 'LOAD')
-    n_rows  = 3 if is_load_bus else 2
+
+    has_shunt = state is not None and state.bus_shunt_step.get(bus.label, 0) != 0
+    tap_entry = None
+    if state is not None:
+        for tap_label, (regulated_bus, step) in state.transformer_taps.items():
+            if regulated_bus == bus.label and step != 0:
+                tap_entry = (tap_label, step)
+                break
+    has_svc = state is not None and bus.label in state.bus_svc_mvar
+
+    # Rows: Voltage level, V, VSI tier, Q, [Load], [Shunt], [Tap], [SVC]
+    n_rows  = 4 + (1 if is_load_bus else 0) + (1 if has_shunt else 0) \
+                + (1 if tap_entry else 0) + (1 if has_svc else 0)
     panel_h = hdh + n_rows * rh + pad * 2
 
     panel_rect = pygame.Rect(x, y, w, panel_h)
@@ -228,16 +313,64 @@ def draw_bus_context(
     v_rect = font.get_rect(v_str, size=sz)
     font.render_to(surf, (x + w - pad - v_rect.width, _ry(1)), v_str, COL_TEXT_VALUE, size=sz)
 
+    font.render_to(surf, (x + pad, _ry(2)), 'VSI:', COL_TEXT_PRIMARY, size=sz)
+    if state is not None:
+        tier = state.bus_vsi_tier.get(bus.label, 'HEALTHY')
+        tier_col = _VSI_TIER_TEXT_COL.get(tier, COL_TEXT_DIM)
+    else:
+        tier, tier_col = '--', COL_TEXT_DIM
+    tier_rect = font.get_rect(tier, size=sz)
+    font.render_to(surf, (x + w - pad - tier_rect.width, _ry(2)), tier, tier_col, size=sz)
+
+    font.render_to(surf, (x + pad, _ry(3)), 'Q:', COL_TEXT_PRIMARY, size=sz)
+    if state is not None:
+        q_mvar = state.bus_q_injection_mvar.get(bus.label)
+        q_str = f'{q_mvar:+.0f} MVAr' if q_mvar is not None else '--'
+    else:
+        q_str = '--'
+    q_rect = font.get_rect(q_str, size=sz)
+    font.render_to(surf, (x + w - pad - q_rect.width, _ry(3)), q_str, COL_TEXT_VALUE, size=sz)
+
+    row = 4
     if is_load_bus:
-        font.render_to(surf, (x + pad, _ry(2)), 'Load:', COL_TEXT_PRIMARY, size=sz)
+        font.render_to(surf, (x + pad, _ry(row)), 'Load:', COL_TEXT_PRIMARY, size=sz)
         if state is not None:
             load_mw = state.bus_loads.get(bus.label)
             load_str = f'{load_mw:.1f} MW' if load_mw is not None else '--'
         else:
             load_str = '--'
         load_rect = font.get_rect(load_str, size=sz)
-        font.render_to(surf, (x + w - pad - load_rect.width, _ry(2)),
+        font.render_to(surf, (x + w - pad - load_rect.width, _ry(row)),
                        load_str, COL_TEXT_VALUE, size=sz)
+        row += 1
+
+    if has_shunt:
+        step, mvar = state.bus_shunt_step[bus.label], state.bus_shunt_mvar[bus.label]
+        font.render_to(surf, (x + pad, _ry(row)), 'Shunt (auto):', COL_TEXT_PRIMARY, size=sz)
+        shunt_str = f'step {step:+d} ({mvar:+.0f} MVAr)'
+        shunt_rect = font.get_rect(shunt_str, size=sz)
+        font.render_to(surf, (x + w - pad - shunt_rect.width, _ry(row)),
+                       shunt_str, COL_TEXT_DIM, size=sz)
+        row += 1
+
+    if tap_entry:
+        tap_label, tap_step = tap_entry
+        font.render_to(surf, (x + pad, _ry(row)), 'Tap (auto):', COL_TEXT_PRIMARY, size=sz)
+        tap_str = f'{tap_label} step {tap_step:+d}'
+        tap_rect = font.get_rect(tap_str, size=sz)
+        font.render_to(surf, (x + w - pad - tap_rect.width, _ry(row)),
+                       tap_str, COL_TEXT_DIM, size=sz)
+        row += 1
+
+    if has_svc:
+        q_setpoint = state.bus_svc_mvar.get(bus.label, 0.0)
+        label_str = 'SVC [,/.]:'
+        label_col = COL_SVC if svc_cmd_active else COL_TEXT_PRIMARY
+        font.render_to(surf, (x + pad, _ry(row)), label_str, label_col, size=sz)
+        svc_str = f'{q_setpoint:+.0f} MVAr'
+        svc_rect = font.get_rect(svc_str, size=sz)
+        font.render_to(surf, (x + w - pad - svc_rect.width, _ry(row)),
+                       svc_str, COL_SVC, size=sz)
 
 
 def draw_line_context(

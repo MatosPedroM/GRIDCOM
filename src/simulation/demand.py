@@ -12,10 +12,12 @@ See DOMAIN_GLOSSARY.md — "Demand Model" for definitions.
 """
 
 import logging
+import math
 
 from simulation.constants import (
     LOSSES_FRACTION,
     DEBUG_SIMULATION,
+    SUBSTATION_TYPE_PF,
 )
 from data.profiles import (
     get_demand_mw,
@@ -104,6 +106,13 @@ class DemandModel:
         self._losses_mw: float = 0.0
 
         self._demand_override: dict[float, float] | None = None
+
+        # Reactive-load tangent per bus, cached from each bus's substation type:
+        # Q = P * tan(acos(PF)). Computed once here rather than per-tick.
+        self._bus_q_tan: dict[BusLabel, float] = {
+            bus: math.tan(math.acos(SUBSTATION_TYPE_PF.get(spec.substation_type, SUBSTATION_TYPE_PF['MIXED'])))
+            for bus, spec in self._substation_specs.items()
+        }
 
     # ─────── PROPERTIES ───────────────────────────────────────────────────
 
@@ -245,6 +254,21 @@ class DemandModel:
         in the load flow convention).
         """
         return {bus: -mw for bus, mw in self._bus_demand.items()}
+
+    def q_load_injections(self) -> dict[BusLabel, float]:
+        """
+        Return {bus_label: -q_mvar} for all load buses.
+
+        Q = P * tan(acos(PF)), where PF is the bus's substation-type power
+        factor (cached in _bus_q_tan). Negative because load buses absorb
+        reactive power, mirroring p_load_injections()'s sign convention.
+        Callers are responsible for blackout-zone filtering, exactly as for
+        p_load_injections() (see simulation.py::_build_p_injections).
+        """
+        return {
+            bus: -mw * self._bus_q_tan.get(bus, 0.0)
+            for bus, mw in self._bus_demand.items()
+        }
 
     def forecast_by_hour(
         self,

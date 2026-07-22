@@ -29,13 +29,16 @@ import numpy as np
 from dataclasses import dataclass
 
 from simulation.constants import (
+    S_BASE,
     F_NOMINAL,
     F_ALERT_LOW, F_ALERT_HIGH,
     F_CRITICAL_LOW, F_CRITICAL_HIGH,
     F_TRIP_ISLAND_HIGH, F_TRIP_ISLAND_LOW,
     F_IN_BOUNDS_TOL,
     OVERLOAD_WARN_PCT, OVERLOAD_CRIT_PCT,
-    V_WARNING_LOW, V_CRITICAL_LOW,
+    V_WATCH_LOW, V_WARNING_LOW, V_CRITICAL_LOW,
+    V_COLLAPSE_GAIN, V_COLLAPSE_SEVERITY_LOW, V_COLLAPSE_SEVERITY_FLOOR,
+    V_COLLAPSE_RECOVERY_PU_S,
     ALARM_MESSAGE_MAX_LEN,
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION, SIM_DEBUG_LOG,
@@ -50,6 +53,7 @@ from simulation.units import FleetModel
 from simulation.demand import DemandModel
 from simulation.renewables import RenewablesModel
 from simulation.cascade import CascadeModel
+from simulation.reactive_devices import ReactiveDevices
 from data.profiles import get_substation_demand_specs
 from gameplay.shifts.loader import load_shift_config
 
@@ -121,6 +125,15 @@ class SimulationState:
     bus_voltages:            dict
     bus_angles:              dict
     bus_vsi:                 dict
+    bus_vsi_tier:            dict   # {bus_label: 'HEALTHY'|'WATCH'|'WARNING'|'CRITICAL'}
+
+    # Reactive devices — automatic (read-only to player) and manual
+    bus_shunt_step:          dict   # {bus_label: int} automatic shunt bank step, signed
+    bus_shunt_mvar:          dict   # {bus_label: float} automatic shunt bank MVAr
+    bus_svc_mvar:            dict   # {bus_label: float} manual SVC setpoint, buses hosting one
+    bus_svc_limits:          dict   # {bus_label: (q_min_mvar, q_max_mvar)}
+    transformer_taps:        dict   # {tap_label: (regulated_bus, step)} automatic, read-only
+    bus_q_injection_mvar:    dict   # {bus_label: float} total device Q injection
 
     # Network — lines
     line_flows_mw:           dict
@@ -136,6 +149,8 @@ class SimulationState:
     unit_start_progress:     dict
     unit_bus_types:          dict
     unit_maintenance:        frozenset   # labels of units on planned maintenance
+    unit_v_setpoint_pu:      dict   # {unit_label: float} AVR voltage setpoint
+    unit_q_reserve_mvar:     dict   # {unit_label: float} headroom to q_max (0 if not ONLINE)
     reservoir_levels:        dict
     pumped_storage_modes:    dict
 
@@ -207,6 +222,7 @@ class GridSimulation:
         maintenance_units: set | None = None,
         maintenance_lines: set | None = None,
         substation_load_mw: dict | None = None,
+        substation_types: dict[str, str] | None = None,
         scripted_events: list[dict] | None = None,
         start_hour: float | None = None,
         duration_hours: float | None = None,
@@ -231,7 +247,7 @@ class GridSimulation:
         # Resolve substation load table: prefer explicit arg, fall back to shift file.
         if substation_load_mw is None:
             substation_load_mw = cfg.get('substation_load_mw', {})
-        substation_specs = get_substation_demand_specs(substation_load_mw)
+        substation_specs = get_substation_demand_specs(substation_load_mw, substation_types)
 
         # Physics sub-models
         self._loadflow   = DCLoadFlow(grid)
@@ -241,6 +257,7 @@ class GridSimulation:
         self._demand     = DemandModel(cfg['peak_demand_mw'], substation_specs)
         self._renewables = RenewablesModel(grid)
         self._cascade    = CascadeModel()
+        self._reactive   = ReactiveDevices()
 
         # Interconnector injections (positive = import into grid)
         self._intc_schedule: dict = {
@@ -262,6 +279,14 @@ class GridSimulation:
 
         # Overload timer state (owned here, passed to CascadeModel each tick)
         self._overload_timers: dict = {}
+
+        # Voltage collapse acceleration — stateful post-solve overlay (see
+        # _apply_collapse_acceleration). {bus_label: offset_pu}, offset <= 0.
+        self._v_collapse_offset: dict = {}
+
+        # Previous tick's solved bus voltages — fed to ReactiveDevices.step_automatics()
+        # so automatic shunts/taps act with a one-tick lag (no algebraic loop).
+        self._prev_bus_voltages: dict = {}
 
         # Alarm state
         self._alarms:     list  = []
@@ -388,13 +413,17 @@ class GridSimulation:
         if _sim_const.AGC_ENABLED:
             self._apply_agc(dt_sim_seconds)
 
+        # 5c. Automatic reactive devices (shunts, taps) act on the previous
+        # tick's solved voltage — one-tick lag, no algebraic loop with the solver.
+        self._reactive.step_automatics(self._prev_bus_voltages, dt_sim_seconds)
+
         # 6. Build injection vectors (exclude load on buses already blacked out)
         in_service = self._get_in_service_lines()
         _active_gen_buses = self._get_active_generation_buses()
         _islands_pre      = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
         _blackout_pre     = self._cascade.get_blackout_zones(_islands_pre, _active_gen_buses)
         p_injections         = self._build_p_injections(_blackout_pre)
-        q_injections, pv_buses = self._build_q_injections()
+        q_injections, pv_buses = self._build_q_injections(_blackout_pre)
 
         # 7. DC load flow
         lf_result  = self._loadflow.solve(p_injections)
@@ -442,15 +471,23 @@ class GridSimulation:
 
         blackout_zones = self._cascade.get_blackout_zones(islands, _active_gen_buses_post)
 
+        # 11b. Voltage collapse acceleration overlay — stateful, applied once
+        # per tick after topology is final. v_eff (never the raw solve) feeds
+        # every downstream consumer (alarms, crisis, min-voltage, snapshot).
+        for bus_label in blackout_zones:
+            self._reset_collapse_offset(bus_label)
+        v_eff = self._apply_collapse_acceleration(vr_result.bus_voltages, dt_sim_seconds)
+        self._prev_bus_voltages = dict(vr_result.bus_voltages)
+
         # 12. Alarms
         self._update_loading_alarms(lf_result.line_loading_pct)
-        self._update_voltage_alarms(vr_result.bus_voltages)
+        self._update_voltage_alarms(v_eff)
         self._update_frequency_alarms()
         self._process_scripted_events()
         self._expire_alarms()
 
         # 13. Crisis state
-        self._update_crisis(lf_result.line_loading_pct, vr_result.bus_voltages)
+        self._update_crisis(lf_result.line_loading_pct, v_eff)
 
         # 14. Performance counters
         self._total_ticks += 1
@@ -458,12 +495,12 @@ class GridSimulation:
             self._ticks_in_bounds += 1
         max_load = max(lf_result.line_loading_pct.values(), default=0.0)
         self._max_line_loading = max(self._max_line_loading, max_load)
-        min_v = min(vr_result.bus_voltages.values(), default=1.0)
+        min_v = min(v_eff.values(), default=1.0)
         self._min_voltage = min(self._min_voltage, min_v)
 
         # 15. Snapshot
         self._state = self._build_state(
-            sim_hour, lf_result, vr_result, islands, blackout_zones,
+            sim_hour, lf_result, vr_result, islands, blackout_zones, v_eff,
         )
 
         if DEBUG_SIMULATION:
@@ -488,6 +525,44 @@ class GridSimulation:
 
     def set_unit_q_target(self, unit_label: str, q_target_mvar: float) -> bool:
         return self._fleet.set_unit_q_target(unit_label, q_target_mvar)
+
+    def set_generator_voltage_setpoint(self, unit_label: str, v_pu: float) -> bool:
+        """Set a generator's AVR voltage setpoint (per-unit). Manual lever #1."""
+        return self._fleet.set_unit_voltage_setpoint(unit_label, v_pu)
+
+    def set_svc_setpoint(self, bus_label: str, q_mvar: float) -> bool:
+        """Set a bus's manual SVC MVAr setpoint. Manual lever #2. False if no SVC there."""
+        return self._reactive.set_svc_setpoint(bus_label, q_mvar)
+
+    def seed_default_reactive_devices(self, substation_types: dict[str, str]) -> None:
+        """
+        Seed automatic shunt banks and one manual SVC at runtime, driven by
+        each load bus's substation type — used by DESIGNER_TEST sessions
+        that have no authored device layout in their grid JSON. Industrial
+        buses get an automatic shunt bank (heaviest reactive load); a manual
+        SVC is placed at the weakest bus with no nearby generation, if one
+        can be identified.
+
+        Args:
+            substation_types: {bus_label: 'INDUSTRIAL'|'RESIDENTIAL'|'MIXED'}
+        """
+        from simulation.reactive_devices import ShuntBank, SVC
+
+        load_bus_labels = {b.label for b in self._grid.get_active_buses()
+                            if b.bus_type == 'LOAD'}
+        gen_bus_labels = {u.bus_label for u in self._grid.get_active_units()}
+
+        for bus_label, sub_type in substation_types.items():
+            if bus_label not in load_bus_labels:
+                continue
+            if sub_type == 'INDUSTRIAL':
+                self._reactive.add_shunt_bank(ShuntBank(bus=bus_label))
+
+        # Manual SVC at a load bus with no on-bus generation — a region that
+        # can only be supported by a device, not nearby generator setpoints.
+        candidates = sorted(load_bus_labels - gen_bus_labels)
+        if candidates:
+            self._reactive.add_svc(SVC(bus=candidates[0]))
 
     def set_pumped_storage_mode(self, station_label: str, mode: str) -> bool:
         return False  # deferred to Shift 8 mechanics
@@ -623,6 +698,8 @@ class GridSimulation:
 
             pv = fleet_fc.pv_bus_constraints()
             q_inj = {b.label: 0.0 for b in self._grid.get_active_buses()}
+            for bus_label, mvar in demand_fc.q_load_injections().items():
+                q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
 
             lf_r = lf_fc.solve(p_inj)
             vt_r = vt_fc.solve(q_inj, pv_buses=pv)
@@ -685,8 +762,22 @@ class GridSimulation:
             p['MDBY'] = p.get('MDBY', 0.0) + mw
         return p
 
-    def _build_q_injections(self) -> tuple:
+    def _build_q_injections(self, blackout_zones: frozenset = frozenset()) -> tuple:
         q_inj  = {b.label: 0.0 for b in self._grid.get_active_buses()}
+        for bus_label, mvar in self._demand.q_load_injections().items():
+            if bus_label not in blackout_zones:
+                q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
+
+        # Transformer taps: convert each tap's approximate ΔV into a
+        # corrective ΔQ via B'_diag (see VoltageModel.b_diag() docstring).
+        tap_q_mvar = {
+            regulated_bus: self._voltage.b_diag(regulated_bus) * delta_v * S_BASE
+            for _label, (regulated_bus, delta_v) in self._reactive.tap_delta_v().items()
+        }
+        for bus_label, mvar in self._reactive.q_injections(tap_q_mvar).items():
+            if bus_label not in blackout_zones:
+                q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
+
         pv_buses = self._fleet.pv_bus_constraints()
         return q_inj, pv_buses
 
@@ -1014,6 +1105,47 @@ class GridSimulation:
                 self._seen_warn.discard(lbl)
                 self._seen_crit.discard(lbl)
 
+    # ─────── VOLTAGE COLLAPSE OVERLAY ──────────────────────────────────────
+
+    def _apply_collapse_acceleration(self, solved_v: dict, dt_sim_seconds: float) -> dict:
+        """
+        Stateful post-solve overlay: buses sustained below V_WARNING_LOW
+        accelerate downward (nonlinear in severity); buses at or above it
+        decay their offset back toward 0. Returns {bus_label: v_eff} —
+        solved_v + offset, clamped to >= 0. The voltage solver itself stays
+        pure; this is the only stateful piece in the voltage path.
+        """
+        v_eff: dict = {}
+        for bus_label, v in solved_v.items():
+            offset = self._v_collapse_offset.get(bus_label, 0.0)
+            if v < V_WARNING_LOW:
+                severity = max(0.0, min(1.0,
+                    (V_COLLAPSE_SEVERITY_LOW - v) /
+                    (V_COLLAPSE_SEVERITY_LOW - V_COLLAPSE_SEVERITY_FLOOR)
+                ))
+                accel = severity ** 2 * V_COLLAPSE_GAIN
+                offset -= accel * dt_sim_seconds
+            else:
+                if offset < 0.0:
+                    offset = min(0.0, offset + V_COLLAPSE_RECOVERY_PU_S * dt_sim_seconds)
+            self._v_collapse_offset[bus_label] = offset
+            v_eff[bus_label] = max(0.0, v + offset)
+        return v_eff
+
+    def _reset_collapse_offset(self, bus_label: str) -> None:
+        """Reset a bus's collapse offset to 0 — called on blackout entry."""
+        self._v_collapse_offset[bus_label] = 0.0
+
+    @staticmethod
+    def _vsi_tier(v: float) -> str:
+        if v < V_CRITICAL_LOW:
+            return 'CRITICAL'
+        if v < V_WARNING_LOW:
+            return 'WARNING'
+        if v < V_WATCH_LOW:
+            return 'WATCH'
+        return 'HEALTHY'
+
     def _update_voltage_alarms(self, voltages: dict) -> None:
         for bus_label, v in voltages.items():
             if v < V_CRITICAL_LOW:
@@ -1122,7 +1254,7 @@ class GridSimulation:
 
         p_inj          = self._build_p_injections()
         q_inj, pv_buses = self._build_q_injections()
-        lf_r = self._loadflow.solve(p_inj)
+        lf_r = self._loadflow.solve(p_inj)  # no blackout zones known yet at t=0
         vr_r = self._voltage.solve(q_inj, pv_buses=pv_buses)
 
         islands = self._cascade.find_islands(
@@ -1141,7 +1273,13 @@ class GridSimulation:
         vr_result,
         islands: list,
         blackout_zones: frozenset,
+        v_eff: dict | None = None,
     ) -> SimulationState:
+        # v_eff is the collapse-overlay-adjusted voltage (see
+        # _apply_collapse_acceleration); None only at t=0 init snapshot,
+        # before any overlay has run — falls back to the raw solve.
+        if v_eff is None:
+            v_eff = dict(vr_result.bus_voltages)
         freq    = self._frequency.frequency_hz
         total_gen  = self._fleet.total_generation_mw()
         total_load = self._demand.total_load_mw
@@ -1151,11 +1289,29 @@ class GridSimulation:
         )
         raw_snap = self._fleet.get_state_snapshot()
 
-        # Mark buses that hit Q limit as PQ (from voltage solver result)
+        # Mark buses that hit Q limit as PQ (from voltage solver result), and
+        # reflect the solver's actual per-bus Q (q_injections_used — includes
+        # the PV correction pass, which UnitModel.q_injection_mvar never sees)
+        # back onto each co-located unit, split evenly like pv_bus_constraints()
+        # sums their limits. q_reserve_mvar is recomputed against this real Q.
         for bus_label in vr_result.pq_buses:
             for unit in self._grid.get_units_at_bus(bus_label):
                 if unit.label in raw_snap:
                     raw_snap[unit.label]['bus_type'] = 'PQ'
+        for bus_label, q_used_mvar in vr_result.q_injections_used.items():
+            bus_units = [
+                u for u in self._grid.get_units_at_bus(bus_label)
+                if u.label in raw_snap and raw_snap[u.label]['state'] == 'ONLINE'
+                and not self._fleet.get_unit(u.label).is_renewable
+            ]
+            if not bus_units:
+                continue
+            q_share = q_used_mvar / len(bus_units)
+            for unit in bus_units:
+                raw_snap[unit.label]['q_mvar'] = q_share
+                raw_snap[unit.label]['q_reserve_mvar'] = max(
+                    0.0, unit.q_max_mvar - q_share
+                )
 
         # Transpose per-unit dict into per-field dicts for SimulationState
         snap = {
@@ -1165,6 +1321,8 @@ class GridSimulation:
             'q_injections_mvar':{lbl: d['q_mvar']         for lbl, d in raw_snap.items()},
             'start_progress':   {lbl: d['start_progress'] for lbl, d in raw_snap.items()},
             'bus_types':        {lbl: d['bus_type']        for lbl, d in raw_snap.items()},
+            'v_setpoint_pu':    {lbl: d['v_setpoint_pu']   for lbl, d in raw_snap.items()},
+            'q_reserve_mvar':   {lbl: d['q_reserve_mvar']  for lbl, d in raw_snap.items()},
         }
 
         # Generation mix by fuel type (online units only)
@@ -1209,6 +1367,16 @@ class GridSimulation:
             for l in self._grid.get_active_lines()
         }
 
+        # Reactive device state (read-only auto shunts/taps, manual SVC)
+        shunt_state = self._reactive.get_shunt_state()
+        tap_state   = self._reactive.get_tap_state()
+        svc_state   = self._reactive.get_svc_state()
+        tap_q_mvar_snap = {
+            regulated_bus: self._voltage.b_diag(regulated_bus) * delta_v * S_BASE
+            for _label, (regulated_bus, delta_v) in self._reactive.tap_delta_v().items()
+        }
+        device_q_by_bus = self._reactive.q_injections(tap_q_mvar_snap)
+
         return SimulationState(
             sim_time_min=self._sim_time_min,
             sim_hour=sim_hour,
@@ -1230,9 +1398,17 @@ class GridSimulation:
             agc_max_mw=agc_max,
             agc_min_mw=agc_min,
 
-            bus_voltages=dict(vr_result.bus_voltages),
+            bus_voltages=dict(v_eff),
             bus_angles=dict(lf_result.bus_angles),
-            bus_vsi=dict(vr_result.bus_voltages),
+            bus_vsi=dict(v_eff),
+            bus_vsi_tier={bus: self._vsi_tier(v) for bus, v in v_eff.items()},
+
+            bus_shunt_step={bus: step for bus, (step, _mvar) in shunt_state.items()},
+            bus_shunt_mvar={bus: mvar for bus, (_step, mvar) in shunt_state.items()},
+            bus_svc_mvar={bus: q for bus, (q, _qmin, _qmax) in svc_state.items()},
+            bus_svc_limits={bus: (qmin, qmax) for bus, (_q, qmin, qmax) in svc_state.items()},
+            transformer_taps=dict(tap_state),
+            bus_q_injection_mvar=dict(device_q_by_bus),
 
             line_flows_mw=dict(lf_result.line_flows_mw),
             line_loading_pct=dict(lf_result.line_loading_pct),
@@ -1247,6 +1423,8 @@ class GridSimulation:
             unit_start_progress=snap['start_progress'],
             unit_bus_types=snap['bus_types'],
             unit_maintenance=self._fleet.get_maintenance_units(),
+            unit_v_setpoint_pu=snap['v_setpoint_pu'],
+            unit_q_reserve_mvar=snap['q_reserve_mvar'],
             reservoir_levels={},
             pumped_storage_modes={},
 

@@ -39,6 +39,9 @@ import logging
 from simulation.constants import (
     MIN_OUTPUT_FRACTION,
     DEBUG_SIMULATION,
+    GEN_VOLTAGE_SETPOINT_DEFAULT_PU,
+    GEN_VOLTAGE_SETPOINT_MIN_PU,
+    GEN_VOLTAGE_SETPOINT_MAX_PU,
 )
 import simulation.constants as _sim_const
 from data.fleet import GenerationUnit
@@ -113,6 +116,7 @@ class UnitModel:
         self._q_injection_mvar: float = 0.0
         self._maintenance: bool = False
         self._derate_cap_mw: float | None = None   # None = not derated
+        self._v_setpoint_pu: float = GEN_VOLTAGE_SETPOINT_DEFAULT_PU
 
     # ─────── READ-ONLY PROPERTIES ─────────────────────────────────────────
 
@@ -142,6 +146,10 @@ class UnitModel:
     @property
     def q_injection_mvar(self) -> float:
         return self._q_injection_mvar
+
+    @property
+    def v_setpoint_pu(self) -> float:
+        return self._v_setpoint_pu
 
     @property
     def is_renewable(self) -> bool:
@@ -280,6 +288,26 @@ class UnitModel:
         self._q_injection_mvar = max(
             self._spec.q_min_mvar,
             min(self._spec.q_max_mvar, float(q_mvar))
+        )
+        return True
+
+    def set_voltage_setpoint(self, v_pu: float) -> bool:
+        """
+        Set AVR voltage setpoint. Only valid when ONLINE.
+
+        Args:
+            v_pu: Target voltage in per-unit. Clamped to
+                  [GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU].
+
+        Returns:
+            True if accepted (unit is ONLINE).
+            False otherwise.
+        """
+        if self._state != 'ONLINE':
+            return False
+        self._v_setpoint_pu = max(
+            GEN_VOLTAGE_SETPOINT_MIN_PU,
+            min(GEN_VOLTAGE_SETPOINT_MAX_PU, float(v_pu))
         )
         return True
 
@@ -467,6 +495,13 @@ class FleetModel:
             return False
         return model.set_q_target(q_mvar)
 
+    def set_unit_voltage_setpoint(self, label: str, v_pu: float) -> bool:
+        """Set AVR voltage setpoint. Returns False if not found or not ONLINE."""
+        model = self._units.get(label)
+        if model is None:
+            return False
+        return model.set_voltage_setpoint(v_pu)
+
     def set_renewable_output(self, label: str, output_mw: float) -> None:
         """Set renewable unit output. Has no effect on non-renewable units."""
         model = self._units.get(label)
@@ -621,7 +656,7 @@ class FleetModel:
             bus = m._spec.bus_label
             if bus not in bus_data:
                 bus_data[bus] = [[], 0.0, 0.0]
-            bus_data[bus][0].append(1.0)  # nominal voltage target for all buses
+            bus_data[bus][0].append(m.v_setpoint_pu)
             bus_data[bus][1] += m._spec.q_max_mvar
             bus_data[bus][2] += m._spec.q_min_mvar
 
@@ -645,6 +680,8 @@ class FleetModel:
                 'q_mvar': float,
                 'start_progress': float,
                 'bus_type': 'PV' or 'PQ',
+                'v_setpoint_pu': float,
+                'q_reserve_mvar': float,  # headroom to q_max_mvar; 0.0 if not ONLINE
             }}
         """
         snapshot = {}
@@ -656,6 +693,11 @@ class FleetModel:
                 'q_mvar': m.q_injection_mvar,
                 'start_progress': m.start_progress,
                 'bus_type': 'PV',  # PQ conversion is set by voltage model
+                'v_setpoint_pu': m.v_setpoint_pu,
+                'q_reserve_mvar': (
+                    max(0.0, m._spec.q_max_mvar - m.q_injection_mvar)
+                    if m.state == 'ONLINE' else 0.0
+                ),
             }
         return snapshot
 

@@ -255,20 +255,68 @@ Displayed as actual voltage (e.g. 1.024 pu or 99.2% nominal).
 **VSI (Voltage Stability Index)**
 VSI = V_bus / V_nominal
 In GRIDCOM: V_nominal = 1.0 pu (by definition of per-unit system).
-Therefore VSI = V_bus (in pu).
-Thresholds:
-- VSI > 0.95: healthy
-- 0.90-0.95: watch
-- 0.85-0.90: warning
-- < 0.85: critical — collapse acceleration applies
-- < 0.70: blackout threshold
+Therefore VSI = V_bus (in pu) — `bus_vsi` carries the collapse-adjusted
+effective voltage (`v_eff`), identical to `bus_voltages`. `constants.py` is
+authoritative for the thresholds below; `bus_vsi_tier` names the tier directly
+so display never recomputes it.
+Tiers (`bus_vsi_tier`):
+- HEALTHY: VSI >= 0.90
+- WATCH: 0.85-0.90
+- WARNING: 0.70-0.85 — collapse acceleration applies below 0.85
+- CRITICAL: < 0.70 (V_CRITICAL_LOW — blackout threshold)
 
 **Voltage Collapse Acceleration**
-A deliberate nonlinear fudge applied below VSI 0.85 to make collapse feel
-realistic (slow degradation then rapid failure). Not real physics.
+A deliberate nonlinear fudge applied below V_WARNING_LOW (0.85) to make
+collapse feel realistic (slow degradation then rapid failure). Not real
+physics. Implemented as a stateful post-solve overlay owned by
+`GridSimulation` (the solver itself stays pure/stateless) —
+`self._v_collapse_offset: {bus: offset_pu}`, persisted tick-to-tick:
 severity = (0.85 - VSI) / (0.85 - 0.70)
 acceleration = severity² × COLLAPSE_GAIN
-voltage -= acceleration × dt
+offset -= acceleration × dt   (or decays toward 0 once VSI recovers above 0.85)
+v_effective = max(0.0, solved_v + offset)
+Reset to 0 on blackout entry. Everything downstream (alarms, crisis,
+`min_voltage_seen`, the snapshot) reads `v_effective`, never the raw solve.
+
+**Power Factor / Substation Type**
+Each load substation has a `type` (INDUSTRIAL / RESIDENTIAL / MIXED)
+determining its power factor (PF) and hence its reactive draw:
+Q_load = P_load × tan(acos(PF)). PF_INDUSTRIAL = 0.85 (heaviest reactive
+draw), PF_RESIDENTIAL = 0.97 (lightest), PF_MIXED = 0.92. This is the
+forcing function that makes voltage move — with all-zero reactive load,
+every bus solves to exactly 1.0 pu regardless of topology.
+
+**AVR Setpoint**
+The per-unit voltage target a generator's Automatic Voltage Regulator holds
+its bus at (`GEN_VOLTAGE_SETPOINT_DEFAULT_PU = 1.02`, editable range
+`[0.95, 1.05]`). One of the player's two manual voltage-management levers.
+Where multiple units share a bus, the bus's PV target is the mean of their
+individual setpoints.
+
+**Q-Reserve**
+A generator's remaining headroom to its reactive limit: `q_max_mvar -
+current_q_mvar` (0 once the unit has hit its limit and converted PV→PQ).
+Shown to the player (`unit_q_reserve_mvar`) so they can see which nearby
+generators can still help support a sagging region before raising a setpoint
+further has no effect.
+
+**Shunt Bank (Automatic)**
+A capacitor (+MVAr) or reactor (−MVAr) bank at a bus, switched in discrete
+steps by an automatic controller — not player-controlled. Steps toward a
+voltage deadband (0.97-1.03 pu) with hysteresis and a minimum dwell time
+between switches, to avoid hunting. Absorbs routine daily reactive drift.
+
+**Transformer Tap Changer (Automatic)**
+An automatic voltage-ratio regulator at a bus, modelled as an approximate
+corrective Q injection (`ΔQ ≈ B'_diag × tap_step × TAP_STEP_RATIO × S_BASE`)
+rather than a true ratio change to B' — a documented simplification. Same
+deadband/hysteresis/dwell-time control pattern as the shunt bank. Not
+player-controlled.
+
+**SVC / STATCOM (Manual)**
+A continuous, player-set reactive power source at a bus (`±150 MVAr`,
+`set_svc_setpoint`). The player's second manual voltage-management lever,
+used where no nearby generation exists to raise a setpoint on.
 
 ---
 
@@ -372,9 +420,10 @@ player's monitor resolution at the end of each frame.
 of power flow. Speed proportional to line loading.
 
 **VSI Halo**
-A semi-transparent coloured ring drawn around a substation symbol indicating
-its voltage stability index. Colour encodes severity (none/yellow/orange/red).
-Visible from Shift 7 onward.
+A ring drawn around a substation symbol indicating its voltage stability
+tier — no ring for HEALTHY, yellow for WATCH, red for WARNING, blinking
+magenta for CRITICAL (`COL_VSI_WATCH`/`WARNING`/`CRITICAL`). Drawn for every
+bus whenever its tier is WATCH or worse.
 
 ---
 
@@ -384,7 +433,9 @@ To prevent Claude Code from adding these:
 
 - **AC power flow**: No iterative Newton-Raphson. No voltage-angle coupling.
 - **Reactive losses**: No I²R or I²X losses on lines.
-- **Transformer tap changers**: Substations handle voltage transformation implicitly.
+- **True transformer tap-ratio modelling**: Automatic tap changers are approximated as a
+  corrective Q injection (`VoltageModel.b_diag()`), not an actual voltage-ratio change to
+  B' — see "Transformer Tap Changer" above. A flagged follow-up, not this pass.
 - **Protection systems**: Line trips are simplified timer-based, not relay coordination.
 - **Fault currents**: No short circuit calculations.
 - **Three-phase analysis**: Single-phase equivalent only (standard for transmission).

@@ -177,14 +177,14 @@ def draw_unit_context(
         cmd_row = 3
         if show_avr:
             avr_row_y = _ry(3)
-            avr_label_w = font.get_rect('AVR: ', size=sz).width
+            avr_label_w = font.get_rect('AVR [V]: ', size=sz).width
             pu_str  = ' pu'
             pu_w    = font.get_rect(pu_str, size=sz).width
             avr_field_x = x + pad + avr_label_w
             avr_field_w = w - pad - (avr_field_x - x) - pu_w - pad
             avr_field_h = rh - 2
 
-            font.render_to(surf, (x + pad, avr_row_y), 'AVR:', COL_TEXT_PRIMARY, size=sz)
+            font.render_to(surf, (x + pad, avr_row_y), 'AVR [V]:', COL_TEXT_PRIMARY, size=sz)
 
             avr_field_rect = pygame.Rect(avr_field_x, avr_row_y - 1, avr_field_w, avr_field_h)
             pygame.draw.rect(surf, COL_CONTEXT_FIELD_BG, avr_field_rect)

@@ -15,6 +15,8 @@ Controls (PLAYING state):
     Ctrl+N          End current shift immediately (go to debrief) [debug]
     S               Save layout (EDITOR_MODE) / Start selected unit (Play mode)
     X               Stop selected unit
+    V               Edit AVR voltage setpoint of selected generator (then digits + Enter)
+    , / .           Adjust manual SVC MVAr at selected bus (down / up)
     T               Trip selected line (if IN SERVICE)
     C               Close selected line (if TRIPPED)
     A               Acknowledge top alarm

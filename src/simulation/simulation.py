@@ -332,6 +332,13 @@ class GridSimulation:
         self._agc_log_headers:     list[str] | None = None
         self._agc_log_flush_counter: int = 0
 
+        # Sim state log (used when SIM_STATE_LOG is True)
+        self._state_log_file           = None
+        self._state_log_writer         = None
+        self._state_log_bus_labels:  list[str] | None = None
+        self._state_log_unit_labels: list[str] | None = None
+        self._state_log_flush_counter: int = 0
+
         # Forecast cache (recomputed only when sim hour integer changes)
         self._cached_demand_fc:    dict = {}
         self._cached_renew_fc:     dict = {}
@@ -506,6 +513,9 @@ class GridSimulation:
         if DEBUG_SIMULATION:
             self._print_debug(lf_result, vr_result)
 
+        if _sim_const.SIM_STATE_LOG:
+            self._write_sim_state_log()
+
     # ─────── PUBLIC INTERFACE ─────────────────────────────────────────────
 
     def get_state(self) -> SimulationState:
@@ -563,6 +573,32 @@ class GridSimulation:
         candidates = sorted(load_bus_labels - gen_bus_labels)
         if candidates:
             self._reactive.add_svc(SVC(bus=candidates[0]))
+
+    def resize_shunt_bank(self, bus_label: str, max_steps: int | None = None,
+                          mvar_per_step: float | None = None,
+                          initial_step: int | None = None) -> bool:
+        """
+        Resize an existing automatic shunt bank at a bus (e.g. undersized so
+        it cannot fully compensate a sag alone and a manual SVC is genuinely
+        needed). No-op (returns False) if the bus has no shunt bank. Called
+        after seed_default_reactive_devices(); unspecified args keep the
+        bank's current value. initial_step pre-engages the bank (e.g. already
+        at its ceiling at handover, consistent with "the automatic has been
+        holding routine drift" rather than starting from an unregulated
+        raw-solve tick before it first switches).
+        """
+        from simulation.reactive_devices import ShuntBank
+
+        bank = self._reactive._shunt_banks.get(bus_label)
+        if bank is None:
+            return False
+        self._reactive.add_shunt_bank(ShuntBank(
+            bus=bus_label,
+            mvar_per_step=bank.mvar_per_step if mvar_per_step is None else mvar_per_step,
+            max_steps=bank.max_steps if max_steps is None else max_steps,
+            step=bank.step if initial_step is None else initial_step,
+        ))
+        return True
 
     def set_pumped_storage_mode(self, station_label: str, mode: str) -> bool:
         return False  # deferred to Shift 8 mechanics
@@ -859,9 +895,72 @@ class GridSimulation:
             self._agc_log_file.flush()
             self._agc_log_flush_counter = 0
 
+    def _write_sim_state_log(self) -> None:
+        """
+        Write one CSV row of the full per-tick SimulationState snapshot —
+        every bus's voltage/reactive state and every unit's dispatch/AVR/Q
+        state — to logs/sim_state.csv. Gated by SIM_STATE_LOG (see
+        constants.py); off by default, purely a debugging aid for tuning
+        voltage/reactive shifts without hand-estimating network behaviour.
+        """
+        state = self._state
+        if self._state_log_file is None:
+            log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+            os.makedirs(log_dir, exist_ok=True)
+            path = os.path.join(log_dir, os.path.basename(_sim_const.SIM_STATE_LOG_PATH))
+            self._state_log_file = open(path, 'w', newline='')
+            self._state_log_writer = csv.writer(self._state_log_file)
+            self._state_log_bus_labels = sorted(state.bus_voltages)
+            self._state_log_unit_labels = sorted(state.unit_outputs_mw)
+
+            header = ['sim_time_min', 'sim_hour', 'frequency_hz',
+                      'total_generation_mw', 'total_load_mw', 'net_imbalance_mw']
+            for bus in self._state_log_bus_labels:
+                header += [f'bus_{bus}_voltage_pu', f'bus_{bus}_vsi_tier',
+                           f'bus_{bus}_q_injection_mvar', f'bus_{bus}_shunt_step',
+                           f'bus_{bus}_shunt_mvar', f'bus_{bus}_svc_mvar']
+            for unit in self._state_log_unit_labels:
+                header += [f'unit_{unit}_output_mw', f'unit_{unit}_target_mw',
+                           f'unit_{unit}_q_injection_mvar', f'unit_{unit}_v_setpoint_pu',
+                           f'unit_{unit}_bus_type', f'unit_{unit}_q_reserve_mvar']
+            self._state_log_writer.writerow(header)
+
+        row = [
+            f'{state.sim_time_min:.4f}', f'{state.sim_hour:.4f}',
+            f'{state.frequency_hz:.6f}',
+            f'{state.total_generation_mw:.2f}', f'{state.total_load_mw:.2f}',
+            f'{state.net_imbalance_mw:.2f}',
+        ]
+        for bus in self._state_log_bus_labels:
+            row += [
+                f'{state.bus_voltages.get(bus, 0.0):.4f}',
+                state.bus_vsi_tier.get(bus, ''),
+                f'{state.bus_q_injection_mvar.get(bus, 0.0):.2f}',
+                state.bus_shunt_step.get(bus, ''),
+                f'{state.bus_shunt_mvar.get(bus, 0.0):.2f}' if bus in state.bus_shunt_mvar else '',
+                f'{state.bus_svc_mvar.get(bus, 0.0):.2f}' if bus in state.bus_svc_mvar else '',
+            ]
+        for unit in self._state_log_unit_labels:
+            row += [
+                f'{state.unit_outputs_mw.get(unit, 0.0):.2f}',
+                f'{state.unit_targets_mw.get(unit, 0.0):.2f}',
+                f'{state.unit_q_injections_mvar.get(unit, 0.0):.2f}',
+                f'{state.unit_v_setpoint_pu.get(unit, 0.0):.4f}' if unit in state.unit_v_setpoint_pu else '',
+                state.unit_bus_types.get(unit, ''),
+                f'{state.unit_q_reserve_mvar.get(unit, 0.0):.2f}' if unit in state.unit_q_reserve_mvar else '',
+            ]
+        self._state_log_writer.writerow(row)
+
+        self._state_log_flush_counter += 1
+        if self._state_log_flush_counter >= 10:
+            self._state_log_file.flush()
+            self._state_log_flush_counter = 0
+
     def __del__(self) -> None:
         if self._agc_log_file is not None:
             self._agc_log_file.close()
+        if self._state_log_file is not None:
+            self._state_log_file.close()
 
     # ─────── TOPOLOGY HELPERS ─────────────────────────────────────────────
 
@@ -1014,6 +1113,8 @@ class GridSimulation:
 
         if metric == 'LINE_LOADING':
             current = self._state.line_loading_pct.get(target, 0.0) if self._state else 0.0
+        elif metric == 'VOLTAGE_PU':
+            current = self._state.bus_voltages.get(target, 1.0) if self._state else 1.0
         elif metric == 'UNIT_OUTPUT_MW':
             current = self._fleet.get_unit(target).current_mw if self._fleet.has_unit(target) else 0.0
         elif metric == 'UNIT_OUTPUT_MW_SUM':

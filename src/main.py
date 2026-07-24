@@ -165,6 +165,7 @@ def build_debrief_lines(shift_number: int, state) -> list:
         ('', B),
         (' NETWORK SECURITY:', H),
         (f'   Cascade events: {state.cascade_events}    Load shed events: {state.load_shed_events}    Unit trips: {trips}', B),
+        (f'   Minimum bus voltage: {state.min_voltage_seen:.3f} pu', B),
         ('', B),
         (' ALARMS:', H),
         (f'   Total active: {alarms}', B),
@@ -235,12 +236,36 @@ def _make_sim_and_renderer(
     # own per-bus peak_load_mw (GRID_SOURCE shifts) or from SUBSTATION_LOAD_MW.
     substation_load_mw = cfg['substation_load_mw'] or None
 
+    # Substation types (and the reactive devices they seed) are opt-in per
+    # shift via SUBSTATION_TYPES — shifts that declare none get None here,
+    # which reproduces the pre-existing all-MIXED/no-devices default exactly.
+    substation_types = cfg.get('substation_types') or None
+
     sim = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
                          initial_schedule=initial_schedule,
                          maintenance_units=cfg['maintenance_units'],
                          maintenance_lines=cfg['maintenance_lines'],
                          substation_load_mw=substation_load_mw,
+                         substation_types=substation_types,
                          hourly_schedule=hourly_schedule)
+    if substation_types:
+        sim.seed_default_reactive_devices(substation_types)
+        # Optional per-bus resizing of an automatic shunt bank the seeding
+        # above just created (e.g. undersized so it cannot fully compensate
+        # a sag alone, and a manual SVC is genuinely needed) — opt-in via
+        # the shift file's SHUNT_BANK_OVERRIDES, empty for every shift that
+        # declares none.
+        for _bus, _overrides in cfg.get('shunt_bank_overrides', {}).items():
+            sim.resize_shunt_bank(_bus, max_steps=_overrides.get('max_steps'),
+                                  mvar_per_step=_overrides.get('mvar_per_step'),
+                                  initial_step=_overrides.get('initial_step'))
+
+    # Optional per-unit AVR setpoint at handover, overriding the default
+    # GEN_VOLTAGE_SETPOINT_DEFAULT_PU (1.02) — opt-in via the shift file's
+    # INITIAL_VOLTAGE_SETPOINTS, empty for every shift that declares none.
+    for _unit, _v_pu in cfg.get('initial_voltage_setpoints', {}).items():
+        sim.set_generator_voltage_setpoint(_unit, _v_pu)
+
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
     if grid_source:
@@ -888,6 +913,18 @@ def main() -> None:
                           and not renderer._input_active):
                         _const.VOLTAGE_COLOUR_VIEW = not _const.VOLTAGE_COLOUR_VIEW
 
+                    elif (event.key == pygame.K_COMMA and not _const.EDITOR_MODE
+                          and not renderer._input_active and not renderer._setpoint_active):
+                        renderer.on_svc_adjust(sim, -1)
+
+                    elif (event.key == pygame.K_PERIOD and not _const.EDITOR_MODE
+                          and not renderer._input_active and not renderer._setpoint_active):
+                        renderer.on_svc_adjust(sim, +1)
+
+                    elif (event.key == pygame.K_v and not _const.EDITOR_MODE
+                          and not renderer._input_active and not ctrl):
+                        renderer.on_setpoint_toggle()
+
                     elif event.key == pygame.K_d:
                         _const.DEBUG_DISPLAY = not _const.DEBUG_DISPLAY
 
@@ -904,6 +941,16 @@ def main() -> None:
                         shift = 5
                         sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
                         state = sim.get_state(); sim_accum = 0.0
+
+                    elif (not _const.EDITOR_MODE and not ctrl and not shift_held
+                          and event.key in (
+                              pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3,
+                              pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7,
+                              pygame.K_8, pygame.K_9, pygame.K_PERIOD,
+                          )
+                          and renderer._setpoint_active):
+                        ch = '.' if event.key == pygame.K_PERIOD else pygame.key.name(event.key)
+                        renderer.on_setpoint_digit(ch)
 
                     elif (not _const.EDITOR_MODE and not ctrl and not shift_held
                           and event.key in (
@@ -927,10 +974,16 @@ def main() -> None:
                         renderer.on_silence_alarm()
 
                     elif not _const.EDITOR_MODE and event.key == pygame.K_BACKSPACE:
-                        renderer.on_backspace()
+                        if renderer._setpoint_active:
+                            renderer.on_setpoint_backspace()
+                        else:
+                            renderer.on_backspace()
 
                     elif not _const.EDITOR_MODE and event.key == pygame.K_RETURN:
-                        renderer.on_enter(sim)
+                        if renderer._setpoint_active:
+                            renderer.on_setpoint_enter(sim)
+                        else:
+                            renderer.on_enter(sim)
 
                 elif event.type == pygame.MOUSEMOTION:
                     renderer.on_mouse_move(_to_native(event.pos, renderer._letterbox_rect, renderer._scale))

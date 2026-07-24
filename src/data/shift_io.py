@@ -35,7 +35,8 @@ Supported metrics: LINE_LOADING (target=line label), UNIT_OUTPUT_MW
 (target=unit label), UNIT_OUTPUT_MW_SUM (targets=[unit label, ...] —
 sum of current_mw across all listed units), UNIT_ONLINE (target=unit
 label), SPINNING_RESERVE_MW (target ignored), FREQUENCY_HZ (target
-ignored), TIME_MIN (target ignored).
+ignored), TIME_MIN (target ignored), VOLTAGE_PU (target=bus label —
+reads the collapse-adjusted effective voltage, SimulationState.bus_voltages).
 Supported ops: '<', '<=', '>', '>=', '==', '!='.
 condition may be None (unconditional).
 

@@ -136,6 +136,8 @@ AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when T
 SIM_DEBUG_LOG:     str   = 'logs/sim_debug.log'  # DEBUG_SIMULATION output destination
 PERF_DEBUG_LOG:    str   = 'logs/perf_debug.log'  # DEBUG_PERF output destination
 PERF_LOG_INTERVAL_S: float = 1.0  # seconds between perf-log summary lines
+SIM_STATE_LOG:      bool = False  # Write full per-tick bus/unit state to sim_state.csv when True
+SIM_STATE_LOG_PATH: str  = 'logs/sim_state.csv'
 
 # ─────────────────────────────────────────────
 # LOSSES

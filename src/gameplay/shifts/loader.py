@@ -46,6 +46,25 @@ def load_shift_config(shift_number: int) -> dict:
                                                           scaling each LOAD bus's peak_load_mw by the
                                                           shared DEMAND_PROFILE_NORMALISED curve; empty
                                                           if the shift has no grid_source
+        substation_types    dict[str, str]            — optional {bus_label: 'INDUSTRIAL'|
+                                                          'RESIDENTIAL'|'MIXED'} from the shift file's
+                                                          SUBSTATION_TYPES; empty if the shift declares
+                                                          none (defaults to all-MIXED, no reactive
+                                                          devices — see _make_sim_and_renderer())
+        shunt_bank_overrides dict[str, dict]          — optional {bus_label: {'max_steps': int,
+                                                          'mvar_per_step': float, 'initial_step': int}}
+                                                          from the shift file's SHUNT_BANK_OVERRIDES,
+                                                          applied after seed_default_reactive_devices()
+                                                          to resize an individual bus's automatic shunt
+                                                          bank (e.g. undersized so it cannot fully
+                                                          compensate a sag alone) and optionally
+                                                          pre-engage it at handover; empty if the
+                                                          shift declares none
+        initial_voltage_setpoints dict[str, float]    — optional {unit_label: v_pu} from the shift
+                                                          file's INITIAL_VOLTAGE_SETPOINTS, applied
+                                                          at handover instead of every unit's default
+                                                          GEN_VOLTAGE_SETPOINT_DEFAULT_PU (1.02); empty
+                                                          if the shift declares none
         grid_source         str | None                — saved Grid Designer grid name
                                                           (assets/designer_grids/<grid_source>.json)
                                                           to use instead of topology.py/fleet.py,
@@ -79,6 +98,9 @@ def load_shift_config(shift_number: int) -> dict:
         'maintenance_lines':       getattr(mod, 'MAINTENANCE_LINES',       set()),
         'agc_enabled':             getattr(mod, 'AGC_ENABLED',             False),
         'substation_load_mw':      substation_load_mw,
+        'substation_types':        dict(getattr(mod, 'SUBSTATION_TYPES', {})),
+        'shunt_bank_overrides':    dict(getattr(mod, 'SHUNT_BANK_OVERRIDES', {})),
+        'initial_voltage_setpoints': dict(getattr(mod, 'INITIAL_VOLTAGE_SETPOINTS', {})),
         'grid_source':             grid_source,
     }
 

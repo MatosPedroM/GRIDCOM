@@ -30,7 +30,7 @@ from data.designer_io import (
     list_designer_grids,
     next_line_label,
     next_bus_name, label_from_name,
-    UNIT_DEFAULTS,
+    UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS,
     designer_buses_to_topology, designer_lines_to_topology, designer_units_to_fleet,
     import_shift_as_designer_grid,
 )
@@ -189,6 +189,7 @@ class GridDesigner:
         self._palette_voltage:      float = 400.0    # for MODE_BUS
         self._palette_load_toggle:  bool  = False    # for MODE_BUS — place a 150kV LOAD bus
         self._palette_unit_type:    str   = 'COAL'   # for MODE_UNIT
+        self._palette_hydro_size:   str   = 'LARGE'  # for MODE_UNIT, HYDRO only — SMALL/MEDIUM/LARGE
 
         # Line-draw state
         self._line_first_bus: DesignerBus | None = None
@@ -405,7 +406,10 @@ class GridDesigner:
         elif self._palette_mode == MODE_UNIT:
             bus = self._hit_bus(native_pos)
             if bus is not None:
-                self._ask_unit_count(bus)
+                if self._palette_unit_type == 'HYDRO':
+                    self._ask_hydro_size(bus)
+                else:
+                    self._ask_unit_count(bus)
 
         elif self._palette_mode == MODE_LINE:
             bus = self._hit_bus(native_pos)
@@ -996,6 +1000,18 @@ class GridDesigner:
         self._palette_mode  = MODE_SELECT
         self._mark_dirty()
 
+    def _ask_hydro_size(self, bus: DesignerBus) -> None:
+        self._dialog_prompt   = f'Hydro plant size at {bus.label}? (S)mall/50MW  (M)edium/150MW  (L)arge/250MW'
+        self._dialog_buffer   = 'L'
+        self._dialog_active   = True
+        self._dialog_callback = lambda s: self._finish_hydro_size(bus, s)
+
+    def _finish_hydro_size(self, bus: DesignerBus, size_str: str) -> None:
+        size_map = {'S': 'SMALL', 'M': 'MEDIUM', 'L': 'LARGE'}
+        key = size_str.strip().upper()[:1]
+        self._palette_hydro_size = size_map.get(key, 'LARGE')
+        self._ask_unit_count(bus)
+
     def _ask_unit_count(self, bus: DesignerBus) -> None:
         self._dialog_prompt  = f'How many {self._palette_unit_type} units at {bus.label}?'
         self._dialog_buffer  = '1'
@@ -1019,6 +1035,8 @@ class GridDesigner:
         start_index = len(existing_units) + 1
         sx, sy = bus.canvas_x, max(0, bus.canvas_y - 20)
         defaults = UNIT_DEFAULTS.get(unit_type, UNIT_DEFAULTS['COAL'])
+        if unit_type == 'HYDRO':
+            defaults = {**defaults, **HYDRO_SIZE_DEFAULTS[self._palette_hydro_size]}
         for i in range(start_index, start_index + count):
             unit_label = f'{station_label}-{i}'
             unit = DesignerUnit(
@@ -1272,9 +1290,19 @@ class GridDesigner:
                 self._selected_bus.is_slack = True
                 self._mark_dirty()
 
-        elif action == 'edit_reactance_pu':
+        elif action == 'prop_substation_type_toggle':
+            if self._selected_bus is not None and self._selected_bus.bus_type == 'LOAD':
+                cycle = ('MIXED', 'INDUSTRIAL', 'RESIDENTIAL')
+                idx = cycle.index(self._selected_bus.substation_type)
+                self._selected_bus.substation_type = cycle[(idx + 1) % len(cycle)]
+                self._mark_dirty()
+
+        elif action == 'edit_length_km':
             if self._selected_line is not None:
-                self._start_edit('reactance_pu', f'{self._selected_line.reactance_pu:.4f}')
+                len_val = self._selected_line.length_km
+                if len_val is None:
+                    len_val = 0.0
+                self._start_edit('length_km', f'{len_val:.1f}')
 
         elif action == 'edit_peak_load_mw':
             if self._selected_bus is not None:
@@ -1762,7 +1790,9 @@ class GridDesigner:
         hint_map = {
             MODE_SELECT: select_hint,
             MODE_BUS:    bus_hint,
-            MODE_UNIT:   f'PLACE UNIT  {self._palette_unit_type}  (click a bus)',
+            MODE_UNIT:   (f'PLACE UNIT  HYDRO  (click a bus, then choose size)'
+                          if self._palette_unit_type == 'HYDRO'
+                          else f'PLACE UNIT  {self._palette_unit_type}  (click a bus)'),
             MODE_LINE:   ('Click first bus' if self._line_first_bus is None
                           else f'Click second bus  (from {self._line_first_bus.label})'),
             MODE_DELETE: 'DELETE MODE  (click element)',

@@ -8,10 +8,11 @@ JSON schema version 1:
   {
     "version": 1,
     "buses": [ { label, name, voltage_kv, bus_type, canvas_x, canvas_y,
-                 active_from_shift, is_slack, peak_load_mw } ],
+                 active_from_shift, is_slack, peak_load_mw, label_anchor,
+                 substation_type } ],
     "lines": [ { label, from_bus, to_bus, reactance_pu, rating_mw,
                  active_from_shift, active_until_shift, voltage_kv, parallel,
-                 from_port_override, to_port_override } ],
+                 from_port_override, to_port_override, length_km } ],
     "units": [ { label, station_label, bus_label, unit_type, rated_mw, min_mw,
                  ramp_pct_per_min, inertia_h, cold_start_min,
                  q_max_mvar, q_min_mvar, can_pump, active_from_shift, description,
@@ -25,6 +26,17 @@ JSON schema version 1:
   behaves like being placed on that session's maintenance list). Both
   fields are consumed only by the Grid Designer's "test in shift" launch
   path, not by campaign topology/fleet data.
+
+  substation_type: 'MIXED' (default) | 'INDUSTRIAL' | 'RESIDENTIAL' — only
+  meaningful for LOAD buses; drives per-bus power factor / reactive load and
+  automatic-shunt-bank eligibility (see simulation.constants.SUBSTATION_TYPE_PF,
+  GridSimulation.seed_default_reactive_devices()). TRANSMISSION buses carry
+  the field (dataclass default) but it has no effect for them.
+
+  length_km: physical span in km — the basis reactance_pu is derived from
+  (see simulation.constants.reactance_pu_per_km() / display.designer's
+  reactance_pu_per_km() helper). None only for legacy data predating this
+  field.
 """
 
 from __future__ import annotations
@@ -126,6 +138,19 @@ UNIT_DEFAULTS: dict[str, dict] = {
                    'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
 }
 
+# Size variants for the plain HYDRO palette entry (not HYDRO_ROR/HYDRO_PUMP,
+# which are already distinct fixed-size types). Only rated_mw/min_mw/
+# q_max_mvar/q_min_mvar vary by size — ramp_pct_per_min, inertia_h,
+# cold_start_min, min_up_time_h, min_down_time_h are shared, taken from
+# UNIT_DEFAULTS['HYDRO']. LARGE matches UNIT_DEFAULTS['HYDRO'] exactly, so
+# an untouched HYDRO placement (default size) is unchanged from before this
+# was added.
+HYDRO_SIZE_DEFAULTS: dict[str, dict] = {
+    'SMALL':  {'rated_mw': 50.0,  'min_mw': 5.0,  'q_max_mvar': 24.0,  'q_min_mvar': -8.0},
+    'MEDIUM': {'rated_mw': 150.0, 'min_mw': 15.0, 'q_max_mvar': 72.0,  'q_min_mvar': -24.0},
+    'LARGE':  {'rated_mw': 250.0, 'min_mw': 25.0, 'q_max_mvar': 120.0, 'q_min_mvar': -40.0},
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DESIGNER DATA STRUCTURES
@@ -145,6 +170,10 @@ class DesignerBus:
     is_slack:          bool = False
     peak_load_mw:      float = 0.0  # only for LOAD buses; 0 for transmission
     label_anchor:      str = 'right'
+    # 'MIXED' | 'INDUSTRIAL' | 'RESIDENTIAL' — only meaningful for LOAD buses;
+    # drives per-bus power factor / reactive load and automatic shunt-bank
+    # eligibility. See seed_default_reactive_devices() / SUBSTATION_TYPE_PF.
+    substation_type:   str = 'MIXED'
 
 
 @dataclass

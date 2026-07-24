@@ -49,7 +49,7 @@ from display.menus import (
     build_shift_select_items,
 )
 from data.layout_override import load_layout
-from data.profiles import DEMAND_PROFILE_NORMALISED, default_substation_types
+from data.profiles import DEMAND_PROFILE_NORMALISED
 from gameplay.shifts.loader import load_shift_config
 from simulation.grid import Grid
 from simulation.simulation import GridSimulation
@@ -273,7 +273,12 @@ def _make_designer_test(
         for b in buses
         if b.bus_type == 'LOAD' and b.peak_load_mw > 0
     }
-    substation_types = default_substation_types(substation_load_mw.keys())
+    # Read each bus's own authored substation_type (Grid Designer, click-to-cycle
+    # field) directly — every bus always has an explicit value (defaulting to
+    # MIXED), so there is no hole left to fill with a random assignment.
+    substation_types = {
+        b.label: b.substation_type for b in buses if b.label in substation_load_mw
+    }
 
     initial_schedule = {
         u.label: (u.start_mw if u.start_mw >= 0 else u.rated_mw * 0.5)

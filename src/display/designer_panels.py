@@ -308,6 +308,15 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
                 _hit_rects.append(('edit_peak_load_mw', pk_rect))
             y += ROW_H + 2
 
+            # Substation type — click-to-cycle MIXED -> INDUSTRIAL -> RESIDENTIAL
+            type_rect = _r(PAD, y, 130, ROW_H + 2)
+            _draw_rect(surf, (0, 0, 0), type_rect)
+            _draw_rect(surf, COL_PANEL_BORDER, type_rect, 1)
+            _label(surf, font, PAD + 4, y + 2,
+                   f'TYPE: {bus.substation_type}', COL_TEXT_VALUE)
+            _hit_rects.append(('prop_substation_type_toggle', type_rect))
+            y += ROW_H + 4
+
             if designer._sidebar_mode == 'analysis':
                 editing_al = (designer._editing_field == 'analysis_bus_load_mw')
                 al_mw = designer._analysis_bus_load_mw.get(bus.label, bus.peak_load_mw)

@@ -215,17 +215,3 @@ def get_substation_demand_specs(
     return result
 
 
-def default_substation_types(bus_labels) -> dict[str, str]:
-    """
-    Deterministically assign a substation type to each load bus label,
-    cycling INDUSTRIAL / RESIDENTIAL / MIXED in sorted label order.
-
-    Runtime-seeding helper for sessions with no authored substation types
-    (Designer/DESIGNER_TEST grids) — not used for campaign shifts, which
-    may author types explicitly in the shift file in a future pass.
-    """
-    cycle = ('INDUSTRIAL', 'RESIDENTIAL', 'MIXED')
-    return {
-        label: cycle[i % len(cycle)]
-        for i, label in enumerate(sorted(bus_labels))
-    }

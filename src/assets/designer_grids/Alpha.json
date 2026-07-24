@@ -699,7 +699,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 45.5
     },
     {
       "label": "L02",
@@ -718,7 +719,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 46.8
     },
     {
       "label": "L04",
@@ -734,7 +736,8 @@
       "to_port_override": [
         "S",
         1
-      ]
+      ],
+      "length_km": 49.6
     },
     {
       "label": "L05",
@@ -747,7 +750,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 4.9
     },
     {
       "label": "L06",
@@ -760,7 +764,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 7.8
     },
     {
       "label": "L07",
@@ -776,7 +781,8 @@
         "W",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 3.6
     },
     {
       "label": "L08",
@@ -795,7 +801,8 @@
       "to_port_override": [
         "W",
         1
-      ]
+      ],
+      "length_km": 5.8
     },
     {
       "label": "L09",
@@ -808,7 +815,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 4.4
     },
     {
       "label": "L10",
@@ -824,7 +832,8 @@
         "E",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 5.8
     },
     {
       "label": "L11",
@@ -837,7 +846,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 3.0
     },
     {
       "label": "L12",
@@ -853,7 +863,8 @@
       "to_port_override": [
         "N",
         1
-      ]
+      ],
+      "length_km": 6.2
     },
     {
       "label": "L13",
@@ -869,7 +880,8 @@
       "to_port_override": [
         "W",
         1
-      ]
+      ],
+      "length_km": 3.6
     },
     {
       "label": "L14",
@@ -885,7 +897,8 @@
       "to_port_override": [
         "N",
         1
-      ]
+      ],
+      "length_km": 7.0
     },
     {
       "label": "L31",
@@ -904,7 +917,8 @@
       "to_port_override": [
         "W",
         1
-      ]
+      ],
+      "length_km": 1.8
     },
     {
       "label": "L32",
@@ -917,7 +931,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.8
     },
     {
       "label": "L33",
@@ -933,7 +948,8 @@
         "E",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.0
     },
     {
       "label": "L34",
@@ -946,7 +962,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.8
     },
     {
       "label": "L35",
@@ -962,7 +979,8 @@
       "to_port_override": [
         "E",
         0
-      ]
+      ],
+      "length_km": 2.1
     },
     {
       "label": "L36",
@@ -975,7 +993,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.7
     },
     {
       "label": "L37",
@@ -988,7 +1007,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 3.0
     },
     {
       "label": "L38",
@@ -1004,7 +1024,8 @@
       "to_port_override": [
         "N",
         0
-      ]
+      ],
+      "length_km": 6.2
     },
     {
       "label": "L15",
@@ -1020,7 +1041,8 @@
         "S",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L16",
@@ -1033,7 +1055,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.5
     },
     {
       "label": "L17",
@@ -1046,7 +1069,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.4
     },
     {
       "label": "L18",
@@ -1062,7 +1086,8 @@
         "S",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.3
     },
     {
       "label": "L19",
@@ -1078,7 +1103,8 @@
         "S",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.0
     },
     {
       "label": "L20",
@@ -1091,7 +1117,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.3
     },
     {
       "label": "L23",
@@ -1110,7 +1137,8 @@
       "to_port_override": [
         "E",
         0
-      ]
+      ],
+      "length_km": 5.6
     },
     {
       "label": "L25",
@@ -1123,7 +1151,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.5
     },
     {
       "label": "L26",
@@ -1136,7 +1165,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.7
     },
     {
       "label": "L27",
@@ -1149,7 +1179,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L28",
@@ -1162,7 +1193,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L29",
@@ -1178,7 +1210,8 @@
         "N",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.3
     },
     {
       "label": "L30",
@@ -1191,7 +1224,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.0
     },
     {
       "label": "L39",
@@ -1204,7 +1238,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.3
     },
     {
       "label": "L40",
@@ -1220,7 +1255,8 @@
         "W",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.1
     },
     {
       "label": "L41",
@@ -1236,7 +1272,8 @@
         "E",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.9
     },
     {
       "label": "L42",
@@ -1249,7 +1286,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.0
     },
     {
       "label": "L43",
@@ -1265,7 +1303,8 @@
         "N",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 0.9
     },
     {
       "label": "L44",
@@ -1284,7 +1323,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 3.2
     },
     {
       "label": "L46",
@@ -1303,7 +1343,8 @@
       "to_port_override": [
         "N",
         1
-      ]
+      ],
+      "length_km": 1.4
     },
     {
       "label": "L47",
@@ -1319,7 +1360,8 @@
       "to_port_override": [
         "N",
         1
-      ]
+      ],
+      "length_km": 2.3
     },
     {
       "label": "L48",
@@ -1335,7 +1377,8 @@
       "to_port_override": [
         "E",
         0
-      ]
+      ],
+      "length_km": 1.2
     },
     {
       "label": "L49",
@@ -1348,7 +1391,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.3
     },
     {
       "label": "L50",
@@ -1364,7 +1408,8 @@
       "to_port_override": [
         "E",
         0
-      ]
+      ],
+      "length_km": 1.0
     },
     {
       "label": "L51",
@@ -1380,7 +1425,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 2.5
     },
     {
       "label": "L55",
@@ -1393,7 +1439,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.4
     },
     {
       "label": "L56",
@@ -1409,7 +1456,8 @@
         "N",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.3
     },
     {
       "label": "L57",
@@ -1428,7 +1476,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 5.0
     },
     {
       "label": "L58",
@@ -1447,7 +1496,8 @@
       "to_port_override": [
         "W",
         1
-      ]
+      ],
+      "length_km": 6.8
     },
     {
       "label": "L60",
@@ -1463,7 +1513,8 @@
         "N",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.0
     },
     {
       "label": "L63",
@@ -1482,7 +1533,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 12.2
     },
     {
       "label": "L70",
@@ -1501,7 +1553,8 @@
       "to_port_override": [
         "N",
         1
-      ]
+      ],
+      "length_km": 1.1
     },
     {
       "label": "L80",
@@ -1514,7 +1567,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.7
     },
     {
       "label": "L81",
@@ -1527,7 +1581,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L82",
@@ -1540,7 +1595,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.7
     },
     {
       "label": "L83",
@@ -1553,7 +1609,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L84",
@@ -1566,7 +1623,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.9
     },
     {
       "label": "L85",
@@ -1582,7 +1640,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 1.8
     },
     {
       "label": "L86",
@@ -1601,7 +1660,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 3.9
     },
     {
       "label": "L87",
@@ -1617,7 +1677,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 8.6
     },
     {
       "label": "L89",
@@ -1633,7 +1694,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 8.5
     },
     {
       "label": "L90",
@@ -1652,7 +1714,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 1.1
     },
     {
       "label": "L91",
@@ -1668,7 +1731,8 @@
         "W",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.1
     },
     {
       "label": "L03",
@@ -1681,7 +1745,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 34.8
     },
     {
       "label": "L92",
@@ -1697,7 +1762,8 @@
         "E",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 33.7
     },
     {
       "label": "L94",
@@ -1716,7 +1782,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 4.8
     },
     {
       "label": "L97",
@@ -1735,7 +1802,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 1.8
     },
     {
       "label": "L98",
@@ -1754,7 +1822,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 2.0
     },
     {
       "label": "L105",
@@ -1770,7 +1839,8 @@
         "W",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L106",
@@ -1789,7 +1859,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 1.9
     },
     {
       "label": "L107",
@@ -1802,7 +1873,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 0.9
     },
     {
       "label": "L108",
@@ -1821,7 +1893,8 @@
       "to_port_override": [
         "S",
         0
-      ]
+      ],
+      "length_km": 3.1
     },
     {
       "label": "L113",
@@ -1837,7 +1910,8 @@
       "to_port_override": [
         "N",
         0
-      ]
+      ],
+      "length_km": 1.3
     },
     {
       "label": "L116",
@@ -1853,7 +1927,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 1.3
     },
     {
       "label": "L21",
@@ -1866,7 +1941,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.8
     },
     {
       "label": "L22",
@@ -1885,7 +1961,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 1.9
     },
     {
       "label": "L24",
@@ -1898,7 +1975,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.8
     },
     {
       "label": "L109",
@@ -1914,7 +1992,8 @@
         "S",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.9
     },
     {
       "label": "L110",
@@ -1927,7 +2006,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.5
     },
     {
       "label": "L117",
@@ -1946,7 +2026,8 @@
       "to_port_override": [
         "N",
         1
-      ]
+      ],
+      "length_km": 2.4
     },
     {
       "label": "L118",
@@ -1959,7 +2040,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 3.8
     },
     {
       "label": "L119",
@@ -1972,7 +2054,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 3.6
     },
     {
       "label": "L120",
@@ -1985,7 +2068,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 3.9
     },
     {
       "label": "L121",
@@ -1998,7 +2082,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 12.0
     },
     {
       "label": "L59",
@@ -2011,7 +2096,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.9
     },
     {
       "label": "L61",
@@ -2024,7 +2110,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.9
     },
     {
       "label": "L67",
@@ -2037,7 +2124,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.8
     },
     {
       "label": "L68",
@@ -2050,7 +2138,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.8
     },
     {
       "label": "L62",
@@ -2063,7 +2152,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 6.8
     },
     {
       "label": "L69",
@@ -2076,7 +2166,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.2
     },
     {
       "label": "L71",
@@ -2089,7 +2180,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.2
     },
     {
       "label": "L72",
@@ -2102,7 +2194,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.3
     },
     {
       "label": "L73",
@@ -2115,7 +2208,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.1
     },
     {
       "label": "L65",
@@ -2131,7 +2225,8 @@
         "N",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.7
     },
     {
       "label": "L66",
@@ -2150,7 +2245,8 @@
       "to_port_override": [
         "N",
         0
-      ]
+      ],
+      "length_km": 1.7
     },
     {
       "label": "L74",
@@ -2163,7 +2259,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.9
     },
     {
       "label": "L75",
@@ -2179,7 +2276,8 @@
         "N",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L76",
@@ -2198,7 +2296,8 @@
       "to_port_override": [
         "N",
         0
-      ]
+      ],
+      "length_km": 1.6
     },
     {
       "label": "L77",
@@ -2211,7 +2310,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.5
     },
     {
       "label": "L79",
@@ -2230,7 +2330,8 @@
       "to_port_override": [
         "S",
         0
-      ]
+      ],
+      "length_km": 2.2
     },
     {
       "label": "L45",
@@ -2249,7 +2350,8 @@
       "to_port_override": [
         "W",
         1
-      ]
+      ],
+      "length_km": 2.7
     },
     {
       "label": "L52",
@@ -2265,7 +2367,8 @@
         "E",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.7
     },
     {
       "label": "L53",
@@ -2284,7 +2387,8 @@
       "to_port_override": [
         "E",
         0
-      ]
+      ],
+      "length_km": 1.6
     },
     {
       "label": "L54",
@@ -2303,7 +2407,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 2.1
     },
     {
       "label": "L78",
@@ -2316,7 +2421,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.1
     },
     {
       "label": "L95",
@@ -2329,7 +2435,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.6
     },
     {
       "label": "L64",
@@ -2345,7 +2452,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 4.2
     },
     {
       "label": "L93",
@@ -2364,7 +2472,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 4.7
     },
     {
       "label": "L96",
@@ -2380,7 +2489,8 @@
         "N",
         1
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 4.2
     },
     {
       "label": "L99",
@@ -2393,7 +2503,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 4.7
     },
     {
       "label": "L100",
@@ -2406,7 +2517,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 6.8
     },
     {
       "label": "L111",
@@ -2419,7 +2531,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 5.7
     },
     {
       "label": "L88",
@@ -2432,7 +2545,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.7
     },
     {
       "label": "L101",
@@ -2445,7 +2559,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 1.7
     }
   ],
   "units": [
@@ -2468,7 +2583,10 @@
       "station_y": 109,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "RVSD-2",
@@ -2489,7 +2607,10 @@
       "station_y": 109,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "RVSD-3",
@@ -2510,7 +2631,10 @@
       "station_y": 109,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "THNF-1",
@@ -2531,7 +2655,10 @@
       "station_y": 315,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "THNF-2",
@@ -2552,7 +2679,10 @@
       "station_y": 315,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "ASHG-1",
@@ -2573,7 +2703,10 @@
       "station_y": 115,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "ASHG-2",
@@ -2594,7 +2727,10 @@
       "station_y": 115,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "WRNG-1",
@@ -2615,7 +2751,10 @@
       "station_y": 500,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "WRNG-2",
@@ -2636,7 +2775,10 @@
       "station_y": 500,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "BARR-1",
@@ -2657,7 +2799,10 @@
       "station_y": 610,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "KELM-1",
@@ -2678,7 +2823,10 @@
       "station_y": 618,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "DUNH-1",
@@ -2699,7 +2847,10 @@
       "station_y": 99,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "DUNH-2",
@@ -2720,7 +2871,10 @@
       "station_y": 99,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "BARD-1",
@@ -2741,7 +2895,10 @@
       "station_y": 595,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "BARD-2",
@@ -2762,7 +2919,10 @@
       "station_y": 595,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "BARD-3",
@@ -2783,7 +2943,10 @@
       "station_y": 595,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "WNCN-1",
@@ -2804,7 +2967,10 @@
       "station_y": 596,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "WNBR-1",
@@ -2825,7 +2991,10 @@
       "station_y": 284,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "WNBR-2",
@@ -2846,7 +3015,10 @@
       "station_y": 284,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "DUND-1",
@@ -2867,7 +3039,10 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "DUND-2",
@@ -2888,7 +3063,10 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "DUND-3",
@@ -2909,7 +3087,10 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "DUND-4",
@@ -2930,7 +3111,10 @@
       "station_y": 296,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top"
+      "label_anchor": "top",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "KELD-1",
@@ -2951,7 +3135,10 @@
       "station_y": 186,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "KELD-2",
@@ -2972,7 +3159,10 @@
       "station_y": 186,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "bottom"
+      "label_anchor": "bottom",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "AR01-1",
@@ -2993,7 +3183,10 @@
       "station_y": 609,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "AR01-2",
@@ -3014,7 +3207,10 @@
       "station_y": 609,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "AR03-1",
@@ -3035,7 +3231,10 @@
       "station_y": 504,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "AR03-2",
@@ -3056,7 +3255,10 @@
       "station_y": 504,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     },
     {
       "label": "AR03-3",
@@ -3077,7 +3279,10 @@
       "station_y": 504,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "right"
+      "label_anchor": "right",
+      "min_up_time_h": 1.0,
+      "min_down_time_h": 1.0,
+      "station_name": ""
     }
   ]
 }

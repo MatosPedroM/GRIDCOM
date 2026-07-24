@@ -51,7 +51,7 @@ from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT, CANVAS_HEIGHT,
     FONT_PATH_MONO_REGULAR,
     DESIGNER_SIDEBAR_W, DESIGNER_CANVAS_W,
-    DESIGNER_X_SCALE, DESIGNER_TARGET_LOADING_PCT,
+    DESIGNER_TARGET_LOADING_PCT,
     DESIGNER_STATUS_DISPLAY_S, DESIGNER_HIT_RADIUS, DESIGNER_LINE_HIT_PX,
     DESIGNER_FONT_SIZE, DESIGNER_FONT_SIZE_LARGE, DESIGNER_UNDO_MAX,
     DESIGNER_MARQUEE_THRESHOLD_PX,
@@ -59,8 +59,19 @@ from simulation.constants import (
     DESIGNER_SNAP_SPACING_PX, DESIGNER_SNAP_DEFAULT_ON,
     LINE_RATING_MW_BY_VOLTAGE,
     OVERLOAD_WARN_PCT, OVERLOAD_CRIT_PCT,
+    KM_PER_PX, REACTANCE_PU_PER_KM_150KV, REACTANCE_PU_PER_KM_220KV,
+    REACTANCE_PU_PER_KM_400KV,
 )
 from utils.helpers import resource_path
+
+
+def reactance_pu_per_km(voltage_kv: float) -> float:
+    """Per-tier reactance-per-km rate, keyed by a line's (lower-of-two-endpoints) voltage."""
+    if voltage_kv >= 400.0:
+        return REACTANCE_PU_PER_KM_400KV
+    if voltage_kv >= 220.0:
+        return REACTANCE_PU_PER_KM_220KV
+    return REACTANCE_PU_PER_KM_150KV
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1039,9 +1050,10 @@ class GridDesigner:
 
     def _place_line(self, b1: DesignerBus, b2: DesignerBus) -> None:
         # Infer voltage: lower of the two endpoints
-        vkv  = min(b1.voltage_kv, b2.voltage_kv)
-        dist = math.hypot(b2.canvas_x - b1.canvas_x, b2.canvas_y - b1.canvas_y)
-        x_pu = max(0.010, dist / NATIVE_WIDTH * DESIGNER_X_SCALE * 10)
+        vkv = min(b1.voltage_kv, b2.voltage_kv)
+        manhattan_px = abs(b2.canvas_x - b1.canvas_x) + abs(b2.canvas_y - b1.canvas_y)
+        length_km = max(0.1, manhattan_px * KM_PER_PX)
+        x_pu = length_km * reactance_pu_per_km(vkv)
         # Rating always matches the standard rating for this line's voltage tier
         rating = LINE_RATING_MW_BY_VOLTAGE.get(vkv, LINE_RATING_MW_BY_VOLTAGE[150.0])
         label  = next_line_label(self._used_line_labels)
@@ -1054,6 +1066,7 @@ class GridDesigner:
             voltage_kv=vkv,
             active_from_shift=1,
             active_until_shift=99,
+            length_km=round(length_km, 1),
         )
         self._lines.append(line)
         self._used_line_labels.add(label)
@@ -1354,9 +1367,12 @@ class GridDesigner:
                 for u in self._units:
                     if u.bus_label == old: u.bus_label = self._selected_bus.label
                 self._mark_dirty()
-        elif self._selected_line is not None and field == 'reactance_pu':
+        elif self._selected_line is not None and field == 'length_km':
             try:
-                self._selected_line.reactance_pu = max(0.001, float(val))
+                line = self._selected_line
+                line.length_km = max(0.1, float(val))
+                line.reactance_pu = round(
+                    line.length_km * reactance_pu_per_km(line.voltage_kv), 4)
                 self._mark_dirty()
             except ValueError:
                 pass
@@ -1834,9 +1850,10 @@ def _auto_route_lines(
     working_used = set(used_labels)
 
     def make_line(b1: DesignerBus, b2: DesignerBus) -> DesignerLine:
-        vkv  = min(b1.voltage_kv, b2.voltage_kv)
-        dist = math.hypot(b2.canvas_x - b1.canvas_x, b2.canvas_y - b1.canvas_y)
-        xpu  = max(0.010, dist / NATIVE_WIDTH * DESIGNER_X_SCALE * 10)
+        vkv = min(b1.voltage_kv, b2.voltage_kv)
+        manhattan_px = abs(b2.canvas_x - b1.canvas_x) + abs(b2.canvas_y - b1.canvas_y)
+        length_km = max(0.1, manhattan_px * KM_PER_PX)
+        xpu = length_km * reactance_pu_per_km(vkv)
         lbl  = next_line_label(working_used)
         working_used.add(lbl)
         return DesignerLine(
@@ -1846,6 +1863,7 @@ def _auto_route_lines(
             reactance_pu=round(xpu, 4),
             rating_mw=LINE_RATING_MW_BY_VOLTAGE.get(vkv, LINE_RATING_MW_BY_VOLTAGE[150.0]),
             voltage_kv=vkv,
+            length_km=round(length_km, 1),
         )
 
     # Step 1: Kruskal MST for connectivity

@@ -375,7 +375,11 @@ DEBUG_CLICK_DISPLAY_S: float = 3.0         # seconds to display clicked coordina
 # ─────────────────────────────────────────────
 DESIGNER_SIDEBAR_W:          int   = 208    # px — sidebar panel width (left edge)
 DESIGNER_CANVAS_W:           int   = NATIVE_WIDTH - DESIGNER_SIDEBAR_W  # px — canvas area width (right edge)
-DESIGNER_X_SCALE:            float = 0.05   # reactance pu per 1920px of Euclidean distance
+DESIGNER_X_SCALE:            float = 0.05   # superseded by KM_PER_PX/REACTANCE_PU_PER_KM_* below; no remaining call sites
+KM_PER_PX:                   float = 0.35   # Manhattan-distance px -> km, new-line placement/length editing
+REACTANCE_PU_PER_KM_150KV:   float = 0.015556  # X_pu/km = 0.35 Ohm/km OHL reactance / Z_BASE(150kV, S_BASE=1000MVA)=22.5 Ohm
+REACTANCE_PU_PER_KM_220KV:   float = 0.007231  # Z_BASE(220kV) = 48.4 Ohm
+REACTANCE_PU_PER_KM_400KV:   float = 0.002187  # Z_BASE(400kV) = 160.0 Ohm
 DESIGNER_TARGET_LOADING_PCT: float = 70.0   # auto-route: add parallel line when loading exceeds this
 DESIGNER_N1_OVERLOAD_PCT:    float = 90.0   # auto-route: N-1 contingency overload threshold
 DESIGNER_STATUS_DISPLAY_S:   float = 3.0    # seconds to show auto-route completion message

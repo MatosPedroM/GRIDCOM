@@ -163,6 +163,10 @@ class DesignerLine:
     # bearing-derived port. Cosmetic only; never affects topology/solving.
     from_port_override: tuple[str, int] | None = None
     to_port_override:   tuple[str, int] | None = None
+    # Physical span in km — the basis reactance_pu is derived from (see
+    # simulation.constants.reactance_pu_per_km()). None only for legacy/
+    # hand-edited files predating this field; never solved on directly.
+    length_km:          float | None = None
 
 
 def _normalise_line_dict(d: dict) -> dict:
@@ -416,6 +420,7 @@ def topology_lines_to_designer(lines: list) -> list['DesignerLine']:
             active_from_shift=l.active_from_shift,
             active_until_shift=l.active_until_shift,
             parallel=l.parallel,
+            length_km=l.length_km,
         ))
     return result
 

@@ -365,20 +365,27 @@ def _draw_properties(surf, font, font_bold, designer, y0: int) -> int:
                COL_TEXT_SECONDARY)
         y += ROW_H
 
-        # Editable reactance
-        editing_x = (designer._editing_field == 'reactance_pu')
-        x_disp = designer._edit_buffer if editing_x else f'{line.reactance_pu:.4f}'
-        field_col = COL_DESIGNER_FIELD_ACTIVE if editing_x else COL_PANEL_BORDER
-        _label(surf, font, PAD, y, 'X PU:', COL_TEXT_SECONDARY)
-        xf_rect = _r(70, y - 2, 100, ROW_H + 2)
-        _draw_rect(surf, (0, 0, 0), xf_rect)
-        _draw_rect(surf, field_col, xf_rect, 1)
-        _label(surf, font, 74, y,
-               (x_disp + '_') if editing_x else x_disp, COL_TEXT_VALUE)
-        if not editing_x:
+        # Editable length (km) — the primary electrical-span field; reactance_pu
+        # is derived from it and shown read-only just below.
+        editing_len = (designer._editing_field == 'length_km')
+        len_val = line.length_km if line.length_km is not None else 0.0
+        len_disp = designer._edit_buffer if editing_len else f'{len_val:.1f}'
+        field_col = COL_DESIGNER_FIELD_ACTIVE if editing_len else COL_PANEL_BORDER
+        _label(surf, font, PAD, y, 'LENGTH KM:', COL_TEXT_SECONDARY)
+        lf_rect = _r(100, y - 2, 70, ROW_H + 2)
+        _draw_rect(surf, (0, 0, 0), lf_rect)
+        _draw_rect(surf, field_col, lf_rect, 1)
+        _label(surf, font, 104, y,
+               (len_disp + '_') if editing_len else len_disp, COL_TEXT_VALUE)
+        if not editing_len:
             # Click → edit
-            _hit_rects.append(('edit_reactance_pu', xf_rect))
+            _hit_rects.append(('edit_length_km', lf_rect))
         y += ROW_H + 2
+
+        # Read-only derived reactance
+        _label(surf, font, PAD, y, f'X PU:    {line.reactance_pu:.4f}',
+               COL_TEXT_DIM)
+        y += ROW_H
 
         _label(surf, font, PAD, y, f'RATING:  {line.rating_mw:.0f} MW',
                COL_TEXT_SECONDARY)

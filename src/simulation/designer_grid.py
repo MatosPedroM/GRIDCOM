@@ -204,6 +204,7 @@ def _to_line(l: DesignerLine) -> Line:
         active_from_shift=1,
         active_until_shift=99,
         voltage_kv=l.voltage_kv,
+        length_km=l.length_km,
     )
 
 

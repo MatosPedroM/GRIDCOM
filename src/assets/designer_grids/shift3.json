@@ -87,7 +87,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.0
     },
     {
       "label": "L02",
@@ -106,7 +107,8 @@
       "to_port_override": [
         "E",
         0
-      ]
+      ],
+      "length_km": 0.8
     },
     {
       "label": "L03",
@@ -125,7 +127,8 @@
       "to_port_override": [
         "E",
         1
-      ]
+      ],
+      "length_km": 0.8
     },
     {
       "label": "L04",
@@ -144,7 +147,8 @@
       "to_port_override": [
         "W",
         1
-      ]
+      ],
+      "length_km": 1.5
     },
     {
       "label": "L05",
@@ -163,7 +167,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 1.5
     },
     {
       "label": "L06",
@@ -182,7 +187,8 @@
       "to_port_override": [
         "W",
         0
-      ]
+      ],
+      "length_km": 6.1
     },
     {
       "label": "L07",
@@ -195,7 +201,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 0.8
     },
     {
       "label": "L08",
@@ -208,7 +215,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 0.8
     },
     {
       "label": "L09",
@@ -221,7 +229,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.0
     }
   ],
   "units": [

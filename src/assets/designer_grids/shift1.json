@@ -51,7 +51,8 @@
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 2.0
     },
     {
       "label": "L02",
@@ -67,7 +68,8 @@
         "S",
         0
       ],
-      "to_port_override": null
+      "to_port_override": null,
+      "length_km": 0.9
     }
   ],
   "units": [

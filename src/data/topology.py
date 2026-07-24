@@ -126,6 +126,10 @@ class Line:
                            no electrical meaning. Set via the Grid Designer's
                            line-rotate feature.
         to_port_override:  Same as from_port_override, for the to_bus end.
+        length_km:         Physical span in km — the basis reactance_pu is
+                           derived from (see simulation.constants.
+                           reactance_pu_per_km()). None only for legacy data
+                           predating this field; never solved on directly.
     """
     label:              str
     from_bus:           str
@@ -138,6 +142,7 @@ class Line:
     parallel:           int = 0
     from_port_override: tuple[str, int] | None = None
     to_port_override:   tuple[str, int] | None = None
+    length_km:          float | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -342,66 +347,66 @@ LINES: list[Line] = [
     # (spine/tap/ring/cascade) no longer varies the rating, only reactance
     # and topology do.
     Line(label='L01', from_bus='WEST', to_bus='MDBY',
-         reactance_pu=0.050, rating_mw=_R400, active_from_shift=5, voltage_kv=400.0),
+         reactance_pu=0.050, rating_mw=_R400, active_from_shift=5, voltage_kv=400.0, length_km=22.9),
 
     # Double circuit MDBY↔STHW: circuit 1 from Shift 3, circuit 2 from Shift 8.
     Line(label='L02', from_bus='MDBY', to_bus='STHW',
          reactance_pu=0.045, rating_mw=_R400, active_from_shift=3, voltage_kv=400.0,
-         parallel=+1),
+         parallel=+1, length_km=20.6),
 
     Line(label='L03', from_bus='MDBY', to_bus='STHW',
          reactance_pu=0.045, rating_mw=_R400, active_from_shift=8, voltage_kv=400.0,
-         parallel=-1),
+         parallel=-1, length_km=20.6),
 
     # Double circuit STHW↔CNTR: circuit 1 from Shift 3, circuit 2 from Shift 8.
     Line(label='L04', from_bus='STHW', to_bus='CNTR',
          reactance_pu=0.045, rating_mw=_R400, active_from_shift=3, voltage_kv=400.0,
-         parallel=+1),
+         parallel=+1, length_km=20.6),
 
     Line(label='L05', from_bus='STHW', to_bus='CNTR',
          reactance_pu=0.045, rating_mw=_R400, active_from_shift=8, voltage_kv=400.0,
-         parallel=-1),
+         parallel=-1, length_km=20.6),
 
     Line(label='L06', from_bus='CNTR', to_bus='NRTH',
-         reactance_pu=0.055, rating_mw=_R400, active_from_shift=6, voltage_kv=400.0),
+         reactance_pu=0.055, rating_mw=_R400, active_from_shift=6, voltage_kv=400.0, length_km=25.1),
 
     Line(label='L07', from_bus='NRTH', to_bus='EAST',
-         reactance_pu=0.045, rating_mw=_R400, active_from_shift=7, voltage_kv=400.0),
+         reactance_pu=0.045, rating_mw=_R400, active_from_shift=7, voltage_kv=400.0, length_km=20.6),
 
     # Southern sag — long 400kV loop closure, energised Shift 8.
     Line(label='L08', from_bus='STHW', to_bus='EAST',
-         reactance_pu=0.080, rating_mw=_R400, active_from_shift=8, voltage_kv=400.0),
+         reactance_pu=0.080, rating_mw=_R400, active_from_shift=8, voltage_kv=400.0, length_km=36.6),
 
     # ── 400kV ↔ 220kV TRANSFORMER LINKS (modelled as low-reactance lines) ─
     Line(label='L09', from_bus='STHW', to_bus='ASHF',
-         reactance_pu=0.020, rating_mw=_R400, active_from_shift=3, voltage_kv=400.0),
+         reactance_pu=0.020, rating_mw=_R400, active_from_shift=3, voltage_kv=400.0, length_km=9.1),
 
     Line(label='L10', from_bus='CNTR', to_bus='WRNT',
-         reactance_pu=0.020, rating_mw=_R400, active_from_shift=3, voltage_kv=400.0),
+         reactance_pu=0.020, rating_mw=_R400, active_from_shift=3, voltage_kv=400.0, length_km=9.1),
 
     Line(label='L11', from_bus='MDBY', to_bus='DUND',
-         reactance_pu=0.025, rating_mw=_R400, active_from_shift=1, voltage_kv=400.0),
+         reactance_pu=0.025, rating_mw=_R400, active_from_shift=1, voltage_kv=400.0, length_km=11.4),
 
     Line(label='L12', from_bus='WEST', to_bus='RDST',
-         reactance_pu=0.022, rating_mw=_R400, active_from_shift=5, voltage_kv=400.0),
+         reactance_pu=0.022, rating_mw=_R400, active_from_shift=5, voltage_kv=400.0, length_km=10.1),
 
     Line(label='L13', from_bus='NRTH', to_bus='COAL',
-         reactance_pu=0.022, rating_mw=_R400, active_from_shift=6, voltage_kv=400.0),
+         reactance_pu=0.022, rating_mw=_R400, active_from_shift=6, voltage_kv=400.0, length_km=10.1),
 
     Line(label='L14', from_bus='EAST', to_bus='SLST',
-         reactance_pu=0.022, rating_mw=_R400, active_from_shift=7, voltage_kv=400.0),
+         reactance_pu=0.022, rating_mw=_R400, active_from_shift=7, voltage_kv=400.0, length_km=10.1),
 
     # ── 220kV CAPITAL RING ────────────────────────────────────────────────
     # L15 gains a second parallel circuit (L91) — see Stage 24 topology note.
     Line(label='L15', from_bus='ASHF', to_bus='FAIR',
          reactance_pu=0.090, rating_mw=_R220, active_from_shift=3, voltage_kv=220.0,
-         parallel=+1),
+         parallel=+1, length_km=12.4),
 
     Line(label='L16', from_bus='FAIR', to_bus='WRNT',
-         reactance_pu=0.095, rating_mw=_R220, active_from_shift=3, voltage_kv=220.0),
+         reactance_pu=0.095, rating_mw=_R220, active_from_shift=3, voltage_kv=220.0, length_km=13.1),
 
     Line(label='L17', from_bus='ASHF', to_bus='DUNM',
-         reactance_pu=0.100, rating_mw=_R220, active_from_shift=4, voltage_kv=220.0),
+         reactance_pu=0.100, rating_mw=_R220, active_from_shift=4, voltage_kv=220.0, length_km=13.8),
 
     # ── 220kV WEST HYDRO POCKET ───────────────────────────────────────────
     # Arden collector string DUND→AR01→AR02→AR03→AR04, loop-closed entirely
@@ -411,31 +416,31 @@ LINES: list[Line] = [
 
     # Kelmore Lower's sole connection to the grid — pure generation egress.
     Line(label='L19', from_bus='RDST', to_bus='KELD',
-         reactance_pu=0.120, rating_mw=_RGEN, active_from_shift=5, voltage_kv=220.0),
+         reactance_pu=0.120, rating_mw=_RGEN, active_from_shift=5, voltage_kv=220.0, length_km=16.6),
 
     Line(label='L20', from_bus='DUND', to_bus='AR01',
-         reactance_pu=0.140, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0),
+         reactance_pu=0.140, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0, length_km=19.4),
 
     Line(label='L21', from_bus='AR01', to_bus='AR02',
-         reactance_pu=0.150, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0),
+         reactance_pu=0.150, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0, length_km=20.7),
 
     Line(label='L22', from_bus='AR02', to_bus='AR03',
-         reactance_pu=0.150, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0),
+         reactance_pu=0.150, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0, length_km=20.7),
 
     Line(label='L23', from_bus='AR03', to_bus='AR04',
-         reactance_pu=0.140, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0),
+         reactance_pu=0.140, rating_mw=_R220, active_from_shift=5, voltage_kv=220.0, length_km=19.4),
 
     # ── 220kV EAST POCKET ─────────────────────────────────────────────────
     Line(label='L24', from_bus='COAL', to_bus='BARD',
-         reactance_pu=0.100, rating_mw=_R220, active_from_shift=6, voltage_kv=220.0),
+         reactance_pu=0.100, rating_mw=_R220, active_from_shift=6, voltage_kv=220.0, length_km=13.8),
 
     # Cairn Wind single collector feeder — its loading IS the wind gameplay.
     Line(label='L25', from_bus='COAL', to_bus='WNCN',
-         reactance_pu=0.090, rating_mw=_R220, active_from_shift=6, voltage_kv=220.0),
+         reactance_pu=0.090, rating_mw=_R220, active_from_shift=6, voltage_kv=220.0, length_km=12.4),
 
     # East pocket loop closure.
     Line(label='L28', from_bus='BARD', to_bus='SLST',
-         reactance_pu=0.110, rating_mw=_R220, active_from_shift=7, voltage_kv=220.0),
+         reactance_pu=0.110, rating_mw=_R220, active_from_shift=7, voltage_kv=220.0, length_km=15.2),
 
     # Note: SOUTH-MESH (STAN/BRCK) and EAST-MESH (FLDN/CO01) no longer have
     # a 220/150kV transformer link into CAP/EAST-POCKET (the old L29, L30,
@@ -451,57 +456,57 @@ LINES: list[Line] = [
     # main substation feed, which now rides L99/L136 at the TRIPLE tier.)
     # L33 is LD02's sole feed in Shift 3 (ring closes in Shift 4).
     Line(label='L33', from_bus='STAN', to_bus='LD02',
-         reactance_pu=0.110, rating_mw=_R150, active_from_shift=3, voltage_kv=220.0),
+         reactance_pu=0.110, rating_mw=_R150, active_from_shift=3, voltage_kv=220.0, length_km=15.2),
 
     Line(label='L34', from_bus='STAN', to_bus='LD01',
-         reactance_pu=0.120, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0),
+         reactance_pu=0.120, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0, length_km=16.6),
 
     Line(label='L35', from_bus='LD01', to_bus='BRCK',
-         reactance_pu=0.120, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0),
+         reactance_pu=0.120, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0, length_km=16.6),
 
     Line(label='L36', from_bus='BRCK', to_bus='LD02',
-         reactance_pu=0.130, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0),
+         reactance_pu=0.130, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0, length_km=18.0),
 
     Line(label='L37', from_bus='STAN', to_bus='LD03',
-         reactance_pu=0.100, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0),
+         reactance_pu=0.100, rating_mw=_R150, active_from_shift=4, voltage_kv=220.0, length_km=13.8),
 
     Line(label='L38', from_bus='LD03', to_bus='LD02',
-         reactance_pu=0.140, rating_mw=_R150, active_from_shift=4, voltage_kv=150.0),
+         reactance_pu=0.140, rating_mw=_R150, active_from_shift=4, voltage_kv=150.0, length_km=9.0),
 
     # River Brent cascade string — pure generation egress, rated as generator connectors.
     Line(label='L39', from_bus='BRCK', to_bus='BR01',
-         reactance_pu=0.150, rating_mw=_RGEN, active_from_shift=4, voltage_kv=220.0),
+         reactance_pu=0.150, rating_mw=_RGEN, active_from_shift=4, voltage_kv=220.0, length_km=20.7),
 
     Line(label='L40', from_bus='BR01', to_bus='BR02',
-         reactance_pu=0.160, rating_mw=_RGEN, active_from_shift=4, voltage_kv=150.0),
+         reactance_pu=0.160, rating_mw=_RGEN, active_from_shift=4, voltage_kv=150.0, length_km=10.3),
 
     Line(label='L41', from_bus='BR02', to_bus='BR03',
-         reactance_pu=0.170, rating_mw=_RGEN, active_from_shift=4, voltage_kv=150.0),
+         reactance_pu=0.170, rating_mw=_RGEN, active_from_shift=4, voltage_kv=150.0, length_km=10.9),
 
     # ── EAST MESH — 220kV FLDN/CO01 stepping down to 150kV load buses ─────
     # (FLDN/CO01 promoted from 150kV to 220kV in Stage 28 — see BUSES above.
     # Same voltage_kv/rating reasoning as the SOUTH MESH note above.)
     Line(label='L42', from_bus='FLDN', to_bus='LD04',
-         reactance_pu=0.120, rating_mw=_R150, active_from_shift=7, voltage_kv=220.0),
+         reactance_pu=0.120, rating_mw=_R150, active_from_shift=7, voltage_kv=220.0, length_km=16.6),
 
     Line(label='L43', from_bus='LD04', to_bus='LD05',
-         reactance_pu=0.130, rating_mw=_R150, active_from_shift=7, voltage_kv=150.0),
+         reactance_pu=0.130, rating_mw=_R150, active_from_shift=7, voltage_kv=150.0, length_km=8.4),
 
     Line(label='L44', from_bus='LD05', to_bus='LD06',
-         reactance_pu=0.130, rating_mw=_R150, active_from_shift=7, voltage_kv=150.0),
+         reactance_pu=0.130, rating_mw=_R150, active_from_shift=7, voltage_kv=150.0, length_km=8.4),
 
     Line(label='L45', from_bus='LD06', to_bus='FLDN',
-         reactance_pu=0.120, rating_mw=_R150, active_from_shift=7, voltage_kv=220.0),
+         reactance_pu=0.120, rating_mw=_R150, active_from_shift=7, voltage_kv=220.0, length_km=16.6),
 
     # River Coln cascade string — pure generation egress, rated as generator connectors.
     Line(label='L46', from_bus='FLDN', to_bus='CO01',
-         reactance_pu=0.150, rating_mw=_RGEN, active_from_shift=7, voltage_kv=220.0),
+         reactance_pu=0.150, rating_mw=_RGEN, active_from_shift=7, voltage_kv=220.0, length_km=20.7),
 
     Line(label='L47', from_bus='CO01', to_bus='CO02',
-         reactance_pu=0.160, rating_mw=_RGEN, active_from_shift=7, voltage_kv=150.0),
+         reactance_pu=0.160, rating_mw=_RGEN, active_from_shift=7, voltage_kv=150.0, length_km=10.3),
 
     Line(label='L48', from_bus='CO02', to_bus='CO03',
-         reactance_pu=0.170, rating_mw=_RGEN, active_from_shift=7, voltage_kv=150.0),
+         reactance_pu=0.170, rating_mw=_RGEN, active_from_shift=7, voltage_kv=150.0, length_km=10.9),
 
     # ── TUTORIAL FEEDERS (permanent) ─────────────────────────────────────
     # DUND feeds the load substations directly in Shifts 1-3. These lines
@@ -509,10 +514,10 @@ LINES: list[Line] = [
     # start in MAINTENANCE state (defined per shift file) once the 150kV
     # mesh takes over the load.
     Line(label='L49', from_bus='DUND', to_bus='LD01',
-         reactance_pu=0.080, rating_mw=_R220, active_from_shift=1, voltage_kv=220.0),
+         reactance_pu=0.080, rating_mw=_R220, active_from_shift=1, voltage_kv=220.0, length_km=11.1),
 
     Line(label='L50', from_bus='DUND', to_bus='LD02',
-         reactance_pu=0.080, rating_mw=_R220, active_from_shift=2, voltage_kv=220.0),
+         reactance_pu=0.080, rating_mw=_R220, active_from_shift=2, voltage_kv=220.0, length_km=11.1),
 
     # ── STAGE 24: SHIFT 10 CAPACITY EXPANSION ─────────────────────────────
     # Second parallel circuit for the capital ring's binding-constraint
@@ -523,7 +528,7 @@ LINES: list[Line] = [
     # Stage 28; WEST now reaches the spine only via L11/L12.)
     Line(label='L91', from_bus='ASHF', to_bus='FAIR',
          reactance_pu=0.090, rating_mw=_R220, active_from_shift=10, voltage_kv=220.0,
-         parallel=-1),
+         parallel=-1, length_km=12.4),
 
     # ── STAGE 29: CAP THIRD SPINE TAP ──────────────────────────────────────
     # LD07 (merged former LD07+LD08, 1988 MW) landing its full load on the
@@ -536,7 +541,7 @@ LINES: list[Line] = [
     # all still have exactly 2) — an accepted asymmetry since CAP's
     # substation load is more than double the next-largest region's.
     Line(label='L160', from_bus='STHW', to_bus='FAIR',
-         reactance_pu=0.021, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0),
+         reactance_pu=0.021, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0, length_km=9.6),
 
     # ── STAGE 28: SIX-REGION SPINE TAPS ────────────────────────────────────
     # SOUTH-MESH (STAN/BRCK) and EAST-MESH (FLDN/CO01) each get their own
@@ -546,21 +551,21 @@ LINES: list[Line] = [
     # these regions through a neighbouring 220kV pocket instead of directly
     # to the spine — the last non-spine cross-region ties in the grid.
     Line(label='L155', from_bus='STHW', to_bus='BRCK',
-         reactance_pu=0.023, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0),
+         reactance_pu=0.023, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0, length_km=10.5),
 
     Line(label='L156', from_bus='CNTR', to_bus='STAN',
-         reactance_pu=0.024, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0),
+         reactance_pu=0.024, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0, length_km=11.0),
 
     Line(label='L157', from_bus='NRTH', to_bus='CO01',
-         reactance_pu=0.023, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0),
+         reactance_pu=0.023, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0, length_km=10.5),
 
     Line(label='L158', from_bus='EAST', to_bus='FLDN',
-         reactance_pu=0.024, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0),
+         reactance_pu=0.024, rating_mw=_R400, active_from_shift=10, voltage_kv=400.0, length_km=11.0),
 
     # WEST-internal Arden loop closure, replacing the old L18 (AR04→DUNM,
     # which closed the loop into CAP instead of staying inside WEST).
     Line(label='L159', from_bus='AR04', to_bus='RDST',
-         reactance_pu=0.135, rating_mw=_R220, active_from_shift=10, voltage_kv=220.0),
+         reactance_pu=0.135, rating_mw=_R220, active_from_shift=10, voltage_kv=220.0, length_km=18.7),
 
     # 5 dedicated 220kV feed links — the PRIMARY feed for each of the 5
     # consolidated load substations above (each also gets a SECOND,
@@ -573,11 +578,11 @@ LINES: list[Line] = [
     # former LD09+LD10+LD14, 2591 MW) use the new CAP/WEST feed tiers sized
     # for their larger merged loads. LD11-LD13 (unchanged, ~950-1035 MW
     # each) keep CONSOLIDATED_FEED_RATING_MW_TRIPLE.
-    Line(label='L93',  from_bus='ASHF', to_bus='LD07', reactance_pu=0.040, rating_mw=_RCAP,    active_from_shift=10, voltage_kv=220.0),
-    Line(label='L95',  from_bus='DUND', to_bus='LD09', reactance_pu=0.040, rating_mw=_RWEST,   active_from_shift=10, voltage_kv=220.0),
-    Line(label='L97',  from_bus='COAL', to_bus='LD11', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0),
-    Line(label='L98',  from_bus='FLDN', to_bus='LD12', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0),
-    Line(label='L99',  from_bus='STAN', to_bus='LD13', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0),
+    Line(label='L93',  from_bus='ASHF', to_bus='LD07', reactance_pu=0.040, rating_mw=_RCAP,    active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L95',  from_bus='DUND', to_bus='LD09', reactance_pu=0.040, rating_mw=_RWEST,   active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L97',  from_bus='COAL', to_bus='LD11', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L98',  from_bus='FLDN', to_bus='LD12', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L99',  from_bus='STAN', to_bus='LD13', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0, length_km=5.5),
 
     # River Brent and River Coln loop closures — ties the far end of each
     # dead-end cascade string back into a nearby 150kV mesh bus, the same way
@@ -586,10 +591,10 @@ LINES: list[Line] = [
     # downstream. Active from Shift 10 only — earlier shifts keep the original
     # radial strings as their own N-1 teaching moment.
     Line(label='L153', from_bus='BR03', to_bus='LD03',
-         reactance_pu=0.180, rating_mw=_R150, active_from_shift=10, voltage_kv=150.0),
+         reactance_pu=0.180, rating_mw=_R150, active_from_shift=10, voltage_kv=150.0, length_km=11.6),
 
     Line(label='L154', from_bus='CO03', to_bus='LD05',
-         reactance_pu=0.180, rating_mw=_R150, active_from_shift=10, voltage_kv=150.0),
+         reactance_pu=0.180, rating_mw=_R150, active_from_shift=10, voltage_kv=150.0, length_km=11.6),
 
     # Second, independent 220kV feed for each of the 5 consolidated load
     # substations above (L93/L95/L97/L98/L99 are each substation's primary
@@ -597,11 +602,11 @@ LINES: list[Line] = [
     # spine-anchor bus in that substation's region — e.g. LD07 is ASHF
     # (primary, L93) + FAIR (secondary, L130), both CAP's own anchors.
     # Ratings mirror the primary feeds above.
-    Line(label='L130', from_bus='FAIR', to_bus='LD07', reactance_pu=0.040, rating_mw=_RCAP,    active_from_shift=10, voltage_kv=220.0),
-    Line(label='L132', from_bus='RDST', to_bus='LD09', reactance_pu=0.040, rating_mw=_RWEST,   active_from_shift=10, voltage_kv=220.0),
-    Line(label='L134', from_bus='BARD', to_bus='LD11', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0),
-    Line(label='L135', from_bus='CO01', to_bus='LD12', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0),
-    Line(label='L136', from_bus='BRCK', to_bus='LD13', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0),
+    Line(label='L130', from_bus='FAIR', to_bus='LD07', reactance_pu=0.040, rating_mw=_RCAP,    active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L132', from_bus='RDST', to_bus='LD09', reactance_pu=0.040, rating_mw=_RWEST,   active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L134', from_bus='BARD', to_bus='LD11', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L135', from_bus='CO01', to_bus='LD12', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0, length_km=5.5),
+    Line(label='L136', from_bus='BRCK', to_bus='LD13', reactance_pu=0.040, rating_mw=_RTRIPLE, active_from_shift=10, voltage_kv=220.0, length_km=5.5),
 ]
 
 

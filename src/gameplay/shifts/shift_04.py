@@ -12,30 +12,33 @@ Narrative:
   canvas.
 
   Two new substations have gone into service and both start the shift
-  sagging, though for different reasons — one from a lack of local reactive
-  support, the other from a lack of any nearby generation at all:
+  sagging, though for different reasons — one whose reactive support comes
+  from a generator sitting idle up the line, the other with no nearby
+  generation at all:
 
-  Both buses play out in two acts, driven by the same rising evening
-  demand: an opening sag the player learns to fix, then continued load
-  growth that pushes the same fix to its limit and asks the player to
-  recognize that, not just repeat it.
+  Both sag from handover and both must be acted on early. Stavely's fix
+  (raising Batherton's AVR setpoint) holds through the evening peak once
+  done — a single decisive action. Fenshaw's manual SVC, by contrast, has
+  no fixed setting: as demand climbs toward the 18:00 peak the first SVC
+  raise is outgrown and a second (sometimes a third) is needed, so its
+  lesson has a genuine second act about revisiting a device rather than
+  setting it once and walking away.
 
-  Stavely (STAV), reached via Hollowgate (HOLL) — a single weak circuit
-  with no parallel backup to the main grid. A new peaking station, Stagshaw
-  (STAG, two 50 MW hydro units), sits one hop further out beyond Hollowgate
-  and is Stavely's only source of support. Both Stagshaw units' AVR
-  setpoints start at 0.95 pu (the lowest the game allows) rather than the
-  default 1.02 pu, so Stavely sags into the WATCH band from handover as
-  evening load builds — Act 1's fix is to raise both Stagshaw units'
-  setpoints (V key) toward their 1.05 pu ceiling, pushing reactive support
-  into Stavely from its dedicated, sole local generation. As demand keeps
-  climbing toward the 18:00 peak (Act 2), Stagshaw's combined reactive
-  capacity (q_max_mvar) can run out even with both setpoints already at
-  their ceiling — the unit context panel's "Voltage ctrl" row flips from
-  PV to PQ, meaning Stagshaw can no longer hold its own voltage target,
-  let alone spare more for Stavely. There is no further setpoint to raise
-  at that point — the lesson is recognizing a generator has exhausted its
-  reactive reserve, not continuing to press the same key.
+  Stavely (STAV), reached via Hollowgate (HOLL) — the end of a long feed
+  off the main grid. Its reactive support comes from Batherton (BATH), a
+  400 kV hydro station (BATH-1) that reaches Stavely through the
+  Batherton → Nettlecross (NETT) → Hollowgate chain. Batherton's AVR
+  setpoint starts at 0.95 pu (the lowest the game allows) rather than the
+  default 1.02 pu, so from handover Batherton sits back — absorbing rather
+  than supplying reactive power — and Stavely sags into the WATCH band as
+  evening load builds. Act 1's fix is to raise Batherton's setpoint (V key)
+  toward its 1.05 pu ceiling, which turns Batherton from absorbing to
+  injecting and pushes reactive support down the chain into Stavely. This
+  is the shift's core lesson: a weak, remote bus is held up by a generator
+  elsewhere on the same local network, worked through its AVR setpoint.
+  Batherton has ample reactive reserve at the low setpoint, so the effect
+  is immediate and clearly visible on Stavely's ring the moment the
+  setpoint is raised.
 
   Fenshaw (FENN), off Sutterleigh (SUTT) — no generation anywhere nearby.
   Fenshaw carries an automatic shunt capacitor bank (industrial-type load,
@@ -72,33 +75,33 @@ Narrative:
   too, since it is the alphabetically-first load bus with no on-bus
   generation), Ravensmere RESIDENTIAL (best power factor, a healthy contrast
   case never addressed this shift), Greymoor/Oakendale/Stavely MIXED
-  (baseline — Stavely's sag comes from Stagshaw's low setpoints and the
-  weak, unbacked circuit to Hollowgate, not from power factor).
+  (baseline — Stavely's sag comes from Batherton's low AVR setpoint and the
+  long feed through Hollowgate, not from power factor).
 
 Teaching goal: voltage cannot be moved across the network the way MW can —
-a weak, remote bus can only be supported by something local. A nearby
-generator's reactive reserve is one lever; a dedicated compensation device
-is the other, for regions no generator can reach. Neither lever is
-unlimited: a generator's reactive reserve can run out (PV→PQ), and a
-device can need more than one adjustment as pressure builds — recognizing
-a limit is as much the lesson as knowing which lever to reach for.
+a weak, remote bus can only be supported by something local. A generator
+elsewhere on the same local network, worked through its AVR setpoint, is
+one lever; a dedicated compensation device is the other, for regions no
+generator can reach. The two levers mirror each other in parallel across
+Stavely and Fenshaw, and both need to be acted on early rather than waited
+out.
 
-Grid: RIVE (slack) --{L01,L09}--> ASHC --{L04,L05}--> WREN --{L06,L10}--> OAKE,
-      WREN --{L15,L16}--> GREY, STAG --L11--> HOLL --{L12,L14}--> STAV,
-      RIVE --L02--> SUTT --{L07,L08}--> RAVE, SUTT --L03--> FENN
-      (11 buses, 15 lines, 5 units: RIVE-1, RIVE-2, RIVE-3 (spare, offline),
-      ASHC-1, STAG-1, STAG-2)
+Grid: RIVE (slack) --{L01}--> CLOV --{L02,L09}--> ASHC --{L04,L05}--> WREN
+      --{L06,L10}--> OAKE, WREN --{L15,L16}--> GREY;
+      CLOV --L11--> BATH --{L19,L21}--> NETT --{L20,L22}--> HOLL
+      --{L12,L14}--> STAV; CLOV --L18--> SUTT --{L07,L08}--> RAVE,
+      SUTT --L03--> FENN (13 buses; units: RIVE-1, RIVE-2,
+      RIVE-3 (spare, offline), ASHC-1, LOVE-1, BATH-1)
 
 GRID_SOURCE below points this shift at the hand-authored Grid Designer grid
-(assets/designer_grids/shift4.json), an expansion of shift3.json with five
-new buses (FENN, STAV, STAG, WREN, HOLL) and six new lines (L10, L11, L12,
-L14, L15, L16), and three new units (STAG-1, STAG-2, RIVE-3) — see
-shift_02.py / shift_03.py for the same GRID_SOURCE pattern. Wrenfield
-(WREN) is a plain redundant 150kV transmission bus carrying no load of its
-own — pure topology reshaping how GREY/OAKE connect back to the main grid,
-with no teaching role of its own this shift. Hollowgate (HOLL) is a
-pass-through bus between Stagshaw and Stavely, carrying no load either —
-Stavely's only route to the grid runs entirely through it and Stagshaw.
+(assets/designer_grids/shift4.json), an expansion of shift3.json — see
+shift_02.py / shift_03.py for the same GRID_SOURCE pattern. Batherton (BATH)
+is a 400 kV hydro station whose reactive output reaches Stavely through the
+Nettlecross (NETT) → Hollowgate (HOLL) chain; NETT and HOLL are
+pass-through transmission buses carrying no load of their own. Wrenfield
+(WREN) is a plain redundant 150kV transmission bus carrying no load either —
+pure topology reshaping how GREY/OAKE connect back to the main grid, with
+no teaching role of its own this shift.
 """
 
 from __future__ import annotations
@@ -119,8 +122,7 @@ HANDOVER_NOTES: tuple[str, ...] = (
     'Riverside Coal Unit 1 (RIVE-1) on-line at 270 MW.',
     'Riverside Coal Unit 2 (RIVE-2) on-line at 290 MW — cooling fault repaired overnight.',
     'Ashcombe Hydro Unit 1 (ASHC-1) on-line at 230 MW.',
-    'Stagshaw Hydro Unit 1 (STAG-1) on-line at 60 MW, AVR setpoint low at 0.95 pu.',
-    'Stagshaw Hydro Unit 2 (STAG-2) on-line at 50 MW, AVR setpoint low at 0.95 pu.',
+    'Batherton Hydro Unit 1 (BATH-1) on-line at 200 MW, AVR setpoint low at 0.95 pu.',
     'AGC on.',
     'Stavely (STAV) and Fenshaw (FENN) are new connections, both already sagging.',
     'Bus voltage is live from this shift. Watch the coloured ring on each substation.',
@@ -140,8 +142,7 @@ INITIAL_SCHEDULE: dict[str, float] = {
     'RIVE-1': 270.0,   # Riverside Coal Unit 1
     'RIVE-2': 290.0,   # Riverside Coal Unit 2 — cooling fault repaired overnight
     'ASHC-1': 230.0,   # Ashcombe Hydro Unit 1
-    'STAG-1': 60.0,    # Stagshaw Hydro Unit 1 — new, supports Stavely locally
-    #'STAG-2': 50.0,    # Stagshaw Hydro Unit 2 — new, supports Stavely locally
+    'BATH-1': 200.0,   # Batherton Hydro Unit 1 — supports Stavely via NETT/HOLL
 }
 
 # Per-bus substation type — drives reactive load (power factor) and which
@@ -153,29 +154,32 @@ SUBSTATION_TYPES: dict[str, str] = {
     'GREY': 'MIXED',        # baseline, no special role this shift
     'OAKE': 'MIXED',        # baseline, no special role this shift
     'RAVE': 'RESIDENTIAL',  # best PF — stays healthy without intervention
-    'STAV': 'MIXED',        # sags from Stagshaw's low setpoint + weak lines, not power factor
+    'STAV': 'MIXED',        # sags from Batherton's low AVR setpoint + long feed, not power factor
 }
 
 # Fenshaw's automatic shunt bank is deliberately undersized (1 of its normal
-# 4 steps, and each step worth half the campaign default 50 MVAr), pre-engaged
-# at that single step from handover — confirmed empirically that both default
-# step sizing and the campaign-default 4-step ceiling fully self-heal any
-# reachable sag within a few sim-minutes (leaving no real use for the manual
-# SVC), and that starting the bank at step 0 produces a brief, unplayable
-# near-blackout transient before it first switches. Pre-engaging it at
-# handover reads as "the automatic has already been holding routine drift,"
-# not a sudden fault; the smaller step size leaves a real gap only the
-# manual SVC can close.
+# 4 steps, worth 40 MVAr), pre-engaged at that single step from handover —
+# confirmed empirically that the campaign-default 4-step ceiling fully
+# self-heals any reachable sag within a few sim-minutes (leaving no real use
+# for the manual SVC), and that starting the bank at step 0 produces a
+# brief, unplayable near-blackout transient before it first switches.
+# Pre-engaging it at handover reads as "the automatic has already been
+# holding routine drift," not a sudden fault; the single capped step leaves
+# a real gap only the manual SVC can close, while still being large enough
+# that Fenshaw holds a recoverable WATCH rather than collapsing if the
+# player never touches the SVC.
 SHUNT_BANK_OVERRIDES: dict[str, dict] = {
-    'FENN': {'max_steps': 1, 'initial_step': 1, 'mvar_per_step': 25.0},
+    'FENN': {'max_steps': 1, 'initial_step': 1, 'mvar_per_step': 40.0},
 }
 
-# Both Stagshaw units start near their AVR floor rather than the campaign
-# default (1.02 pu) — confirmed empirically that Stavely cannot be made to
-# sag at all while its local generation holds a healthy default setpoint.
+# Batherton starts near its AVR floor rather than the campaign default
+# (1.02 pu) — at the low setpoint it absorbs reactive power rather than
+# supplying it, so Stavely sags into WATCH; confirmed empirically that
+# Stavely cannot be made to sag at all while Batherton holds a healthy
+# default setpoint. Raising it toward 1.05 flips Batherton to injecting and
+# is what lifts Stavely back to healthy.
 INITIAL_VOLTAGE_SETPOINTS: dict[str, float] = {
-    'STAG-1': 0.95,
-    'STAG-2': 0.95,
+    'BATH-1': 0.95,
 }
 
 
@@ -200,11 +204,11 @@ _FENN_RECOVERED: dict = {
     'metric': 'VOLTAGE_PU', 'target': 'FENN', 'op': '>=', 'value': 0.90,
 }
 
-# Act 2 — second-round pressure as demand climbs toward the 18:00 peak.
-# Same VOLTAGE_PU/bus checks as Act 1: a bus sagging again this late, after
-# its Act 1 recovery event already fired, is the observable signature of
-# "the fix that worked once is no longer enough" (Stagshaw's reactive
-# reserve exhausted for STAV; the first SVC raise outgrown for FENN).
+# Act 2 — continued pressure as demand climbs toward the 18:00 peak.
+# Same VOLTAGE_PU/bus checks as Act 1. For FENN this is a genuine second
+# act: the first SVC raise is outgrown and needs revisiting. For STAV the
+# late-shift check simply catches a player who never raised Batherton's
+# setpoint in Act 1 — the same one-time fix still applies.
 _STAV_SAGGING_AGAIN: dict = {
     'metric': 'VOLTAGE_PU', 'target': 'STAV', 'op': '<', 'value': 0.90,
 }
@@ -237,13 +241,15 @@ SCRIPTED_EVENTS: list[dict] = [
     {
         'trigger_min': 10.0,
         'priority':    'TUTOR',
-        'message':     'Stavely is sagging. Stagshaw can support it directly.',
-        'detail':      ('Stagshaw was connected specifically to support Stavely, and both '
-                        'STAG-1 and STAG-2\'s AVR setpoints are currently low. Select each '
-                        'unit, press V, and enter a higher voltage setpoint — that pushes '
-                        'reactive support into Stavely from its dedicated local generation. '
-                        'Reactive power cannot travel far on its own; this is the first tool.'),
-        'element':     'STAG-1',
+        'message':     'Stavely is sagging. Batherton can support it from up the line.',
+        'detail':      ('Batherton (BATH-1) feeds Stavely through Nettlecross and '
+                        'Hollowgate, but its AVR setpoint is currently low, so it is '
+                        'absorbing reactive power rather than supplying it. Select the '
+                        'unit, press V, and enter a higher voltage setpoint — that flips '
+                        'Batherton to injecting and pushes reactive support down the line '
+                        'into Stavely. Reactive power cannot travel far on its own; this '
+                        'is the first tool.'),
+        'element':     'BATH-1',
         'condition':   None,
     },
     {
@@ -271,8 +277,8 @@ SCRIPTED_EVENTS: list[dict] = [
         'trigger_min': 45.0,
         'priority':    'WARNING',
         'message':     'Stavely still below 0.90 pu.',
-        'detail':      ('Stavely has not recovered. Raise Stagshaw\'s AVR setpoints — it '
-                        'is the dedicated local source of support for this bus.'),
+        'detail':      ('Stavely has not recovered. Raise Batherton\'s AVR setpoint — it '
+                        'is the source of reactive support for this bus.'),
         'element':     'STAV',
         'condition':   _STAV_BELOW_WATCH,
     },
@@ -299,19 +305,19 @@ SCRIPTED_EVENTS: list[dict] = [
     {
         'trigger_min': 80.0,
         'priority':    'CRITICAL',
-        'message':     'Stavely still sagging. Stagshaw\'s setpoints have not been touched.',
-        'detail':      ('Select STAG-1 and STAG-2, press V, and raise their voltage '
-                        'setpoints. Stagshaw is the only lever that reaches Stavely.'),
+        'message':     'Stavely still sagging. Batherton\'s setpoint has not been touched.',
+        'detail':      ('Select BATH-1, press V, and raise its voltage setpoint toward '
+                        '1.05 pu. Batherton is the lever that reaches Stavely.'),
         'element':     'STAV',
         'condition':   _STAV_STILL_BELOW_WATCH,
     },
     {
         'trigger_min': 80.0,
         'priority':    'TUTOR',
-        'message':     'Stavely voltage holding. Stagshaw is supporting it directly.',
-        'detail':      ('Raising Stagshaw\'s voltage setpoints pushed reactive power into '
-                        'Stavely and held its voltage. That is local support from '
-                        'generation — the first of two tools.'),
+        'message':     'Stavely voltage holding. Batherton is supporting it from up the line.',
+        'detail':      ('Raising Batherton\'s voltage setpoint flipped it to injecting '
+                        'reactive power and lifted Stavely back to healthy. That is local '
+                        'support from generation — the first of two tools.'),
         'element':     'STAV',
         'condition':   _STAV_RECOVERED,
     },
@@ -353,35 +359,33 @@ SCRIPTED_EVENTS: list[dict] = [
     {
         'trigger_min': 135.0,
         'priority':    'WARNING',
-        'message':     'Stavely sagging again, even with Stagshaw\'s setpoints raised.',
-        'detail':      ('Check Stagshaw\'s unit panel: if "Voltage ctrl" reads PQ instead '
-                        'of PV, Stagshaw has run out of reactive reserve (Q) and can no '
-                        'longer hold its own voltage target, let alone spare more for '
-                        'Stavely. There is no further setpoint to raise — this is a '
-                        'different kind of limit.'),
+        'message':     'Stavely sagging into the peak. Batherton\'s setpoint is still low.',
+        'detail':      ('Demand has climbed toward the 18:00 peak and Stavely is still in '
+                        'the watch band. Batherton has plenty of reactive reserve to give '
+                        '— raise its AVR setpoint (select BATH-1, press V) and Stavely '
+                        'will lift straight away.'),
         'element':     'STAV',
         'condition':   _STAV_SAGGING_AGAIN,
     },
     {
         'trigger_min': 150.0,
         'priority':    'CRITICAL',
-        'message':     'Stavely still sagging through the peak.',
-        'detail':      ('If Stagshaw\'s setpoints are already at their 1.05 pu ceiling and '
-                        'this is still happening, check the "Voltage ctrl" row — Stagshaw\'s '
-                        'combined Q output has likely hit its limit and there is nothing '
-                        'more to give locally. If the setpoints were never raised, that is '
-                        'still the fix. Demand starts easing after 18:00 either way.'),
+        'message':     'Stavely still sagging through the peak. Raise Batherton now.',
+        'detail':      ('Batherton is the lever for this bus and it has the reserve to '
+                        'fix it — select BATH-1, press V, and raise its setpoint toward '
+                        '1.05 pu. Demand starts easing after 18:00, but do not wait it '
+                        'out: act on the setpoint.'),
         'element':     'STAV',
         'condition':   _STAV_SAGGING_AGAIN,
     },
     {
         'trigger_min': 190.0,
         'priority':    'TUTOR',
-        'message':     'Stavely recovering as demand eases past the peak.',
-        'detail':      ('Stagshaw\'s reactive reserve is unchanged — the recovery is '
-                        'coming from lower demand, not a new lever. Recognizing that a '
-                        'generator has run out of reserve, rather than continuing to '
-                        'press its setpoint, is the lesson this bus carries.'),
+        'message':     'Stavely holding through the peak on Batherton\'s support.',
+        'detail':      ('With Batherton\'s setpoint raised, Stavely rode through the '
+                        'evening peak in the healthy band — reactive support from a '
+                        'generator up the line, worked through its AVR setpoint, is the '
+                        'first of this shift\'s two tools.'),
         'element':     'STAV',
         'condition':   _STAV_HOLDING_ACT2,
     },

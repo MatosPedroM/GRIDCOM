@@ -37,7 +37,7 @@ from display.palette import (
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
     COL_SELECTION,
     COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL,
-    COL_SHUNT_CAP, COL_SHUNT_REACTOR, COL_SVC, COL_TAP,
+    COL_SHUNT_CAP, COL_SHUNT_REACTOR, COL_SVC,
 )
 
 # Symbol size constants
@@ -566,21 +566,6 @@ def draw_shunt_glyph(surf: pygame.Surface, cx: int, cy: int, step: int, scale: f
     for i in range(n):
         y = cy - sz + i * (sz // 2 + 1)
         pygame.draw.line(surf, col, (cx - sz // 2, y), (cx + sz // 2, y), 1)
-
-
-def draw_tap_glyph(surf: pygame.Surface, cx: int, cy: int, step: int, scale: float = 1.0) -> None:
-    """
-    Draw an automatic transformer tap glyph: small arrow, pointing up for a
-    positive (voltage-raising) tap step, down for negative. Read-only display.
-    """
-    if step == 0:
-        return
-    sz = max(3, int(DEVICE_GLYPH_SIZE_PX * scale))
-    if step > 0:
-        pts = [(cx, cy - sz), (cx - sz // 2, cy), (cx + sz // 2, cy)]
-    else:
-        pts = [(cx, cy + sz), (cx - sz // 2, cy), (cx + sz // 2, cy)]
-    pygame.draw.polygon(surf, COL_TAP, pts)
 
 
 def draw_svc_glyph(surf: pygame.Surface, cx: int, cy: int, scale: float = 1.0) -> None:

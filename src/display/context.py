@@ -251,7 +251,7 @@ def draw_bus_context(
 ) -> None:
     """
     Draw a bus context panel at the top-left of the canvas surface. Mostly
-    read-only (voltage, VSI tier, Q, auto shunt/tap state) — the SVC row is
+    read-only (voltage, VSI tier, Q, auto shunt-bank state) — the SVC row is
     the one interactive affordance, shown only for a bus hosting one.
 
     Args:
@@ -270,17 +270,11 @@ def draw_bus_context(
     is_load_bus = (bus.bus_type == 'LOAD')
 
     has_shunt = state is not None and state.bus_shunt_step.get(bus.label, 0) != 0
-    tap_entry = None
-    if state is not None:
-        for tap_label, (regulated_bus, step) in state.transformer_taps.items():
-            if regulated_bus == bus.label and step != 0:
-                tap_entry = (tap_label, step)
-                break
     has_svc = state is not None and bus.label in state.bus_svc_mvar
 
-    # Rows: Voltage level, V, VSI tier, Q, [Load], [Shunt], [Tap], [SVC]
+    # Rows: Voltage level, V, VSI tier, Q, [Load], [Shunt], [SVC]
     n_rows  = 4 + (1 if is_load_bus else 0) + (1 if has_shunt else 0) \
-                + (1 if tap_entry else 0) + (1 if has_svc else 0)
+                + (1 if has_svc else 0)
     panel_h = hdh + n_rows * rh + pad * 2
 
     panel_rect = pygame.Rect(x, y, w, panel_h)
@@ -351,15 +345,6 @@ def draw_bus_context(
         shunt_rect = font.get_rect(shunt_str, size=sz)
         font.render_to(surf, (x + w - pad - shunt_rect.width, _ry(row)),
                        shunt_str, COL_TEXT_DIM, size=sz)
-        row += 1
-
-    if tap_entry:
-        tap_label, tap_step = tap_entry
-        font.render_to(surf, (x + pad, _ry(row)), 'Tap (auto):', COL_TEXT_PRIMARY, size=sz)
-        tap_str = f'{tap_label} step {tap_step:+d}'
-        tap_rect = font.get_rect(tap_str, size=sz)
-        font.render_to(surf, (x + w - pad - tap_rect.width, _ry(row)),
-                       tap_str, COL_TEXT_DIM, size=sz)
         row += 1
 
     if has_svc:

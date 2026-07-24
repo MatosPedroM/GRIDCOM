@@ -29,7 +29,6 @@ import numpy as np
 from dataclasses import dataclass
 
 from simulation.constants import (
-    S_BASE,
     F_NOMINAL,
     F_ALERT_LOW, F_ALERT_HIGH,
     F_CRITICAL_LOW, F_CRITICAL_HIGH,
@@ -132,7 +131,6 @@ class SimulationState:
     bus_shunt_mvar:          dict   # {bus_label: float} automatic shunt bank MVAr
     bus_svc_mvar:            dict   # {bus_label: float} manual SVC setpoint, buses hosting one
     bus_svc_limits:          dict   # {bus_label: (q_min_mvar, q_max_mvar)}
-    transformer_taps:        dict   # {tap_label: (regulated_bus, step)} automatic, read-only
     bus_q_injection_mvar:    dict   # {bus_label: float} total device Q injection
 
     # Network — lines
@@ -285,7 +283,7 @@ class GridSimulation:
         self._v_collapse_offset: dict = {}
 
         # Previous tick's solved bus voltages — fed to ReactiveDevices.step_automatics()
-        # so automatic shunts/taps act with a one-tick lag (no algebraic loop).
+        # so automatic shunt banks act with a one-tick lag (no algebraic loop).
         self._prev_bus_voltages: dict = {}
 
         # Alarm state
@@ -420,7 +418,7 @@ class GridSimulation:
         if _sim_const.AGC_ENABLED:
             self._apply_agc(dt_sim_seconds)
 
-        # 5c. Automatic reactive devices (shunts, taps) act on the previous
+        # 5c. Automatic reactive devices (shunt banks) act on the previous
         # tick's solved voltage — one-tick lag, no algebraic loop with the solver.
         self._reactive.step_automatics(self._prev_bus_voltages, dt_sim_seconds)
 
@@ -804,13 +802,7 @@ class GridSimulation:
             if bus_label not in blackout_zones:
                 q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
 
-        # Transformer taps: convert each tap's approximate ΔV into a
-        # corrective ΔQ via B'_diag (see VoltageModel.b_diag() docstring).
-        tap_q_mvar = {
-            regulated_bus: self._voltage.b_diag(regulated_bus) * delta_v * S_BASE
-            for _label, (regulated_bus, delta_v) in self._reactive.tap_delta_v().items()
-        }
-        for bus_label, mvar in self._reactive.q_injections(tap_q_mvar).items():
+        for bus_label, mvar in self._reactive.q_injections().items():
             if bus_label not in blackout_zones:
                 q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
 
@@ -1468,15 +1460,10 @@ class GridSimulation:
             for l in self._grid.get_active_lines()
         }
 
-        # Reactive device state (read-only auto shunts/taps, manual SVC)
+        # Reactive device state (read-only auto shunt banks, manual SVC)
         shunt_state = self._reactive.get_shunt_state()
-        tap_state   = self._reactive.get_tap_state()
         svc_state   = self._reactive.get_svc_state()
-        tap_q_mvar_snap = {
-            regulated_bus: self._voltage.b_diag(regulated_bus) * delta_v * S_BASE
-            for _label, (regulated_bus, delta_v) in self._reactive.tap_delta_v().items()
-        }
-        device_q_by_bus = self._reactive.q_injections(tap_q_mvar_snap)
+        device_q_by_bus = self._reactive.q_injections()
 
         return SimulationState(
             sim_time_min=self._sim_time_min,
@@ -1508,7 +1495,6 @@ class GridSimulation:
             bus_shunt_mvar={bus: mvar for bus, (_step, mvar) in shunt_state.items()},
             bus_svc_mvar={bus: q for bus, (q, _qmin, _qmax) in svc_state.items()},
             bus_svc_limits={bus: (qmin, qmax) for bus, (_q, qmin, qmax) in svc_state.items()},
-            transformer_taps=dict(tap_state),
             bus_q_injection_mvar=dict(device_q_by_bus),
 
             line_flows_mw=dict(lf_result.line_flows_mw),

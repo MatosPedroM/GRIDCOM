@@ -34,6 +34,8 @@ import numpy as np
 from simulation.constants import (
     S_BASE,
     VSHUNT_REG,
+    PV_CORRECTION_MAX_ITERS,
+    PV_CORRECTION_Q_TOL_MVAR,
     DEBUG_SIMULATION,
 )
 from simulation.grid import Grid
@@ -177,39 +179,55 @@ class VoltageModel:
         q_injections_working = dict(q_injections)
         pq_conversions: set[BusLabel] = set()
 
-        # PV bus correction: estimate ΔV and adjust Q to hit target voltage.
-        # One iteration is sufficient for the decoupled approximation.
+        # PV bus correction: adjust each PV bus's Q to hit its target voltage,
+        # then re-solve. A single pass is only adequate when every PV bus has
+        # one dominant electrical path; buses with two comparable paths (or
+        # one weak/remote path) need this iterated to a fixed point, or Q
+        # re-chases the same error every tick and the bus can diverge. Iterate
+        # to a bounded fixed point: stop once the largest per-pass Q change is
+        # small (the bus is satisfied, with real reserve left), or after a
+        # hard cap so a pathological grid can never hang the tick.
         if pv_buses:
-            delta_v_pass1 = self._solve_delta_v(q_injections_working)
+            for _ in range(PV_CORRECTION_MAX_ITERS):
+                delta_v = self._solve_delta_v(q_injections_working)
+                max_delta_q = 0.0
 
-            for label, (v_target, q_max, q_min) in pv_buses.items():
-                if label == self._slack_bus:
-                    continue
-                idx = self._reduced_index.get(label)
-                if idx is None:
-                    continue
+                for label, (v_target, q_max, q_min) in pv_buses.items():
+                    if label == self._slack_bus:
+                        continue
+                    idx = self._reduced_index.get(label)
+                    if idx is None:
+                        continue
+                    # PV→PQ is sticky within a solve: once a bus has hit its Q
+                    # limit its Q is fixed there — don't pull it back off.
+                    if label in pq_conversions:
+                        continue
 
-                v_current = 1.0 + delta_v_pass1.get(label, 0.0)
-                v_error = v_target - v_current
+                    v_current = 1.0 + delta_v.get(label, 0.0)
+                    v_error = v_target - v_current
 
-                # Q needed to correct voltage: ΔQ ≈ B'[i,i] × ΔV × S_BASE
-                full_idx = self._bus_index[label]
-                b_diag = self._b_prime[full_idx, full_idx]
-                delta_q_pu = b_diag * v_error
-                delta_q_mvar = delta_q_pu * S_BASE
+                    # Q needed to correct voltage: ΔQ ≈ B'[i,i] × ΔV × S_BASE
+                    full_idx = self._bus_index[label]
+                    b_diag = self._b_prime[full_idx, full_idx]
+                    delta_q_mvar = b_diag * v_error * S_BASE
 
-                q_current = q_injections_working.get(label, 0.0)
-                q_new = q_current + delta_q_mvar
+                    q_current = q_injections_working.get(label, 0.0)
+                    q_new = q_current + delta_q_mvar
 
-                # Clamp to reactive limits.
-                if q_new > q_max:
-                    q_new = q_max
-                    pq_conversions.add(label)
-                elif q_new < q_min:
-                    q_new = q_min
-                    pq_conversions.add(label)
+                    # Clamp to reactive limits (converts PV→PQ at a limit).
+                    if q_new > q_max:
+                        q_new = q_max
+                        pq_conversions.add(label)
+                    elif q_new < q_min:
+                        q_new = q_min
+                        pq_conversions.add(label)
 
-                q_injections_working[label] = q_new
+                    max_delta_q = max(max_delta_q, abs(q_new - q_current))
+                    q_injections_working[label] = q_new
+
+                # Converged: this pass barely moved any PV bus's Q.
+                if max_delta_q < PV_CORRECTION_Q_TOL_MVAR:
+                    break
 
         # Final solve with corrected Q values.
         delta_v_dict = self._solve_delta_v(q_injections_working)
@@ -261,21 +279,6 @@ class VoltageModel:
             result[label] = float(delta_v[idx])
 
         return result
-
-    # ─────── ACCESSORS ────────────────────────────────────────────────────
-
-    def b_diag(self, bus_label: BusLabel) -> float:
-        """
-        Return B'[i,i] (self-susceptance, per-unit) for a bus — the same
-        diagonal term used internally by the PV bus correction pass.
-        Used by reactive_devices.py's transformer-tap Q approximation to
-        convert a desired ΔV into a corrective ΔQ via
-        ΔQ_mvar = b_diag * ΔV_pu * S_BASE (see solve()'s PV correction, above).
-        """
-        idx = self._bus_index.get(bus_label)
-        if idx is None:
-            return 0.0
-        return float(self._b_prime[idx, idx])
 
     # ─────── REBUILD ──────────────────────────────────────────────────────
 

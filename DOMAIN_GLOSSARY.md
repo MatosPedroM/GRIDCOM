@@ -306,13 +306,6 @@ steps by an automatic controller — not player-controlled. Steps toward a
 voltage deadband (0.97-1.03 pu) with hysteresis and a minimum dwell time
 between switches, to avoid hunting. Absorbs routine daily reactive drift.
 
-**Transformer Tap Changer (Automatic)**
-An automatic voltage-ratio regulator at a bus, modelled as an approximate
-corrective Q injection (`ΔQ ≈ B'_diag × tap_step × TAP_STEP_RATIO × S_BASE`)
-rather than a true ratio change to B' — a documented simplification. Same
-deadband/hysteresis/dwell-time control pattern as the shunt bank. Not
-player-controlled.
-
 **SVC / STATCOM (Manual)**
 A continuous, player-set reactive power source at a bus (`±150 MVAr`,
 `set_svc_setpoint`). The player's second manual voltage-management lever,
@@ -433,9 +426,10 @@ To prevent Claude Code from adding these:
 
 - **AC power flow**: No iterative Newton-Raphson. No voltage-angle coupling.
 - **Reactive losses**: No I²R or I²X losses on lines.
-- **True transformer tap-ratio modelling**: Automatic tap changers are approximated as a
-  corrective Q injection (`VoltageModel.b_diag()`), not an actual voltage-ratio change to
-  B' — see "Transformer Tap Changer" above. A flagged follow-up, not this pass.
+- **Transformer tap changers**: Not modelled at all. On-load tap-changing voltage
+  regulation is not represented; routine reactive drift is handled by automatic shunt
+  banks, and the player manages regional voltage with generator AVR setpoints and the
+  manual SVC.
 - **Protection systems**: Line trips are simplified timer-based, not relay coordination.
 - **Fault currents**: No short circuit calculations.
 - **Three-phase analysis**: Single-phase equivalent only (standard for transmission).

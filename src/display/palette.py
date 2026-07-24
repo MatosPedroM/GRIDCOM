@@ -122,7 +122,6 @@ COL_VSI_CRITICAL:   Colour = (255,  0, 255)     # <0.70: bright magenta critical
 COL_SHUNT_CAP:      Colour = (0,  255,   0)     # Auto shunt bank, capacitive step (+) — bright green
 COL_SHUNT_REACTOR:  Colour = (0,    0, 255)     # Auto shunt bank, reactive step (-) — bright blue
 COL_SVC:            Colour = (255,  0, 255)     # Manual SVC/STATCOM — bright magenta
-COL_TAP:            Colour = (0,  255, 255)     # Auto transformer tap — bright cyan
 
 # ─────────────────────────────────────────────
 # FLOW MARKERS

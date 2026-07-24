@@ -40,7 +40,7 @@ from display.symbols import (
     draw_unit_square, draw_station_collector,
     draw_transmission_line, draw_hydraulic_connector,
     draw_interconnector,
-    draw_vsi_halo, draw_shunt_glyph, draw_tap_glyph, draw_svc_glyph,
+    draw_vsi_halo, draw_shunt_glyph, draw_svc_glyph,
     UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX, HALF_BUS, HALF_UNIT,
     get_port_point,
     _draw_dashed_line,
@@ -697,7 +697,6 @@ class GridCanvas:
         # VSI tiers, automatic device state, and manual SVC hosts
         vsi_tier_sig = tuple(sorted(state.bus_vsi_tier.items()))
         shunt_sig    = tuple(sorted(state.bus_shunt_step.items()))
-        tap_sig      = tuple(sorted(state.transformer_taps.items()))
         svc_hosts_sig = frozenset(state.bus_svc_mvar.keys())
 
         has_critical_vsi = any(t == 'CRITICAL' for t in state.bus_vsi_tier.values())
@@ -712,7 +711,7 @@ class GridCanvas:
         return (
             tripped_lines, blacked_buses, unit_state_sig,
             loading_sig, output_sig, intc_sig,
-            vsi_tier_sig, shunt_sig, tap_sig, svc_hosts_sig,
+            vsi_tier_sig, shunt_sig, svc_hosts_sig,
             selected_label, blink_key, font_scale, voltage_view,
         )
 
@@ -737,7 +736,6 @@ class GridCanvas:
         intc_flows:    dict[str, float] = {'INTC-N': 0.0, 'INTC-S': 0.0}
         bus_vsi_tier:  dict[str, str]   = {}
         bus_shunt_step: dict[str, int]  = {}
-        transformer_taps: dict          = {}
         svc_buses:     set[str]         = set()
 
         if state is not None:
@@ -756,7 +754,6 @@ class GridCanvas:
                 intc_flows = state.interconnector_flows
             bus_vsi_tier   = state.bus_vsi_tier
             bus_shunt_step = state.bus_shunt_step
-            transformer_taps = state.transformer_taps
             svc_buses = set(state.bus_svc_mvar.keys())
 
         # ── Layer 1-4: Transmission lines by voltage tier ─────────────────────
@@ -837,8 +834,8 @@ class GridCanvas:
                                 voltage_view=voltage_view)
 
         # ── Layer 7b: State overlays (VSI halos) + reactive device glyphs ──────
-        # Device glyphs offset to distinct corners so up to 3 co-located
-        # devices (shunt/tap/SVC) stay visually separable at one bus.
+        # Device glyphs offset to distinct corners so co-located devices
+        # (shunt/SVC) stay visually separable at one bus.
         glyph_off = max(1, int(DEVICE_GLYPH_OFFSET_PX * self._scale))
         for bus in self._buses:
             bx, by = self._bus_pos[bus.label]
@@ -851,12 +848,6 @@ class GridCanvas:
 
             if bus.label in svc_buses:
                 draw_svc_glyph(target, bx + glyph_off, by + glyph_off, scale=self._scale)
-
-        for _tap_label, (regulated_bus, tap_step) in transformer_taps.items():
-            if regulated_bus not in self._bus_pos or tap_step == 0:
-                continue
-            bx, by = self._bus_pos[regulated_bus]
-            draw_tap_glyph(target, bx, by - glyph_off, tap_step, scale=self._scale)
 
         # ── Layer 8: Generation unit squares ──────────────────────────────────
         for sl, units in self._station_units.items():

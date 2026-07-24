@@ -116,15 +116,10 @@ class SimulationState:
     bus_svc_limits: dict[str, tuple[float, float]]
     # {bus_label: (q_min_mvar, q_max_mvar)} for buses hosting an SVC.
 
-    transformer_taps: dict[str, tuple[str, int]]
-    # {tap_label: (regulated_bus, step)} automatic transformer tap position.
-    # Read-only — no player method; the device is fully automatic. Modelled
-    # as a Q-injection approximation, not a true voltage-ratio change.
-
     bus_q_injection_mvar: dict[str, float]
     # {bus_label: mvar} total reactive device Q injection at each bus
-    # (shunt + SVC + tap-approximation combined). Does not include load Q
-    # or generator Q — those are separate (see bus_loads, unit_q_injections_mvar).
+    # (shunt + SVC combined). Does not include load Q or generator Q —
+    # those are separate (see bus_loads, unit_q_injections_mvar).
 
     # ─────────────────────────────────────────────
     # NETWORK — LINES
@@ -459,11 +454,10 @@ class GridSimulation:
             Feeds directly into the next tick's Q injections at that bus.
         """
 
-    # Note: automatic shunt banks and transformer taps have no player-facing
-    # set_* method — they are stepped internally by
-    # ReactiveDevices.step_automatics() each tick and are read-only from the
-    # player's perspective (see bus_shunt_step/bus_shunt_mvar/transformer_taps
-    # in SimulationState above).
+    # Note: automatic shunt banks have no player-facing set_* method — they
+    # are stepped internally by ReactiveDevices.step_automatics() each tick
+    # and are read-only from the player's perspective (see
+    # bus_shunt_step/bus_shunt_mvar in SimulationState above).
 
     def set_pumped_storage_mode(self, station_label: str, mode: str) -> bool:
         """

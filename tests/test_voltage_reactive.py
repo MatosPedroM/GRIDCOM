@@ -568,54 +568,6 @@ def test_auto_shunt_holds_without_hunting() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TEST 10 — automatic tap holds its regulated bus nearer nominal
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_auto_tap_holds_near_nominal() -> bool:
-    """
-    An automatic transformer tap regulating the weak bus should step up
-    toward its deadband, raising the bus's voltage over a sustained run.
-    """
-    print("test_auto_tap_holds_near_nominal...")
-    all_passed = True
-
-    try:
-        from simulation.reactive_devices import TransformerTap
-        from simulation.constants import TAP_N_STEPS
-
-        sim = _build_weak_bus_sim()
-        sim._reactive.add_tap(TransformerTap(label='T1', regulated_bus='WEAK'))
-
-        v_before = None
-        for i in range(600):
-            sim.tick(1.0)
-            if i == 0:
-                v_before = sim.get_state().bus_voltages['WEAK']
-        state = sim.get_state()
-        v_after = state.bus_voltages['WEAK']
-        tap_bus, tap_step = state.transformer_taps['T1']
-
-        try:
-            assert tap_bus == 'WEAK', f"Tap should regulate WEAK, got {tap_bus}"
-            assert 0 < tap_step <= TAP_N_STEPS, \
-                f"Tap should have stepped up (bounded by {TAP_N_STEPS}), got step={tap_step}"
-            assert v_after > v_before, \
-                f"Tap should raise voltage: before={v_before:.4f}, after={v_after:.4f}"
-            print(f"  tap step={tap_step}, v {v_before:.4f} -> {v_after:.4f} — PASS")
-        except AssertionError as e:
-            print(f"  auto tap holds near nominal: FAIL — {e}")
-            all_passed = False
-
-    except Exception as e:
-        print(f"  ERROR — {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-    return all_passed
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # TEST 11 — manual SVC moves voltage monotonically and clamps at limits
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -775,6 +727,168 @@ def test_generator_setpoint_raises_region_and_converts_pq() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TEST 13 — PV correction converges: a satisfied bus keeps real Q reserve
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# These two tests exercise VoltageModel.solve()'s PV correction directly (the
+# code changed in the "converging PV correction" simplification). The old
+# single-pass correction could never leave a PV bus "satisfied" with reserve —
+# it re-chased the same voltage error every tick and pinned any active PV bus
+# to its Q ceiling — and it could diverge on a bus with two comparable
+# electrical paths (SHIFT4_VOLTAGE_INVESTIGATION.md §5). The bounded
+# fixed-point iteration fixes both; these lock that in.
+
+def _two_path_voltage_model():
+    """
+    Grid reproducing the investigation's §5 topology: a generator bus (GEN)
+    tied to the strong backbone (SLK) by TWO comparable-reactance paths — a
+    direct tie and one via an intermediate bus (MID). This is the arrangement
+    the single-pass correction diverged on. Returns (VoltageModel, grid).
+    """
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+    from simulation.voltage import VoltageModel
+
+    buses = [
+        DesignerBus(label='SLK', name='Slack', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=0, canvas_y=0,
+                    active_from_shift=1, is_slack=True),
+        DesignerBus(label='MID', name='Mid', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=50, canvas_y=50,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='GEN', name='Support gen', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=100, canvas_y=0,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='LOAD', name='Load', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=150, canvas_y=0,
+                    active_from_shift=1, is_slack=False, peak_load_mw=200.0),
+    ]
+    lines = [
+        # Two comparable paths from GEN back to the backbone: GEN-SLK direct,
+        # and GEN-MID-SLK. Comparable reactances = two competing pulls on GEN.
+        DesignerLine(label='L1', from_bus='SLK', to_bus='GEN',
+                     reactance_pu=0.20, rating_mw=2000.0, voltage_kv=400.0),
+        DesignerLine(label='L2', from_bus='SLK', to_bus='MID',
+                     reactance_pu=0.10, rating_mw=2000.0, voltage_kv=400.0),
+        DesignerLine(label='L3', from_bus='MID', to_bus='GEN',
+                     reactance_pu=0.10, rating_mw=2000.0, voltage_kv=400.0),
+        DesignerLine(label='L4', from_bus='GEN', to_bus='LOAD',
+                     reactance_pu=0.15, rating_mw=2000.0, voltage_kv=150.0),
+    ]
+    units = [
+        DesignerUnit(label='GEN-1', station_label='GEN', bus_label='GEN',
+                     unit_type='CCGT', rated_mw=1000.0, min_mw=0.0,
+                     ramp_pct_per_min=100.0, inertia_h=4.0, cold_start_min=5.0,
+                     q_max_mvar=200.0, q_min_mvar=-200.0, can_pump=False,
+                     active_from_shift=1, description='two-path support gen'),
+    ]
+    grid = DesignerGrid(buses, lines, units)
+    return VoltageModel(grid), grid
+
+
+def test_pv_bus_satisfied_keeps_reserve() -> bool:
+    """
+    A PV bus that is NOT reactive-exhausted must settle at a Q strictly inside
+    its limits — leaving real reserve — and that Q must be a stable fixed
+    point: re-solving with the settled Q supplied as a fixed injection
+    reproduces the same bus voltage. The pre-simplification single pass could
+    do neither — it pinned any active PV bus to its ceiling every tick (so
+    unit_q_reserve was always ~0) and never reached a fixed point (it
+    re-chased the same voltage error indefinitely). This is the direct
+    regression test for the investigation's core finding.
+    """
+    print("test_pv_bus_satisfied_keeps_reserve...")
+    all_passed = True
+
+    try:
+        vm, _grid = _two_path_voltage_model()
+        q_inj = {'SLK': 0.0, 'MID': 0.0, 'GEN': 0.0, 'LOAD': -40.0}
+        q_max, q_min = 200.0, -200.0
+        result = vm.solve(q_inj, pv_buses={'GEN': (1.0, q_max, q_min)})
+
+        q_used = result.q_injections_used['GEN']
+        v_gen = result.bus_voltages['GEN']
+
+        # Fixed-point check: feed the settled Q back in as a plain injection,
+        # no PV correction — a converged PV solve must reproduce the voltage.
+        q_fixed = dict(q_inj)
+        q_fixed['GEN'] = q_used
+        v_gen_replay = vm.solve(q_fixed, pv_buses={}).bus_voltages['GEN']
+
+        try:
+            assert 'GEN' not in result.pq_buses, \
+                f"GEN should stay PV (not exhausted) for a reachable target, " \
+                f"but it converted to PQ (Q={q_used:.1f})"
+            assert q_min + 1.0 < q_used < q_max - 1.0, \
+                f"GEN should settle strictly inside its Q range with reserve " \
+                f"left, got Q={q_used:.2f} (limits {q_min}..{q_max})"
+            assert abs(v_gen - v_gen_replay) < 1e-6, \
+                f"Settled Q must be a fixed point: PV solve gave V={v_gen:.6f}, " \
+                f"replay with that Q gave {v_gen_replay:.6f}"
+            print(f"  GEN Q={q_used:.1f} MVAr (reserve to ±{q_max:.0f}), "
+                  f"V={v_gen:.4f}, still PV, fixed point — PASS")
+        except AssertionError as e:
+            print(f"  pv bus satisfied keeps reserve: FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TEST 14 — PV correction terminates and stays bounded on a two-path bus
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_pv_correction_bounded_on_two_path_bus() -> bool:
+    """
+    A generator bus with two comparable electrical paths to the backbone —
+    the arrangement that diverged the single-pass correction into an
+    oscillating, off-scale voltage (investigation §5) — must now solve to a
+    finite, physically-bounded voltage across a sweep of setpoints, with the
+    iteration terminating (never NaN/inf, never runaway).
+    """
+    print("test_pv_correction_bounded_on_two_path_bus...")
+    import math
+    all_passed = True
+
+    try:
+        vm, _grid = _two_path_voltage_model()
+        q_inj = {'SLK': 0.0, 'MID': 0.0, 'GEN': 0.0, 'LOAD': -120.0}
+
+        try:
+            for setpoint in (0.95, 0.98, 1.0, 1.02, 1.05):
+                result = vm.solve(q_inj, pv_buses={'GEN': (setpoint, 200.0, -200.0)})
+                for label, v in result.bus_voltages.items():
+                    assert math.isfinite(v), \
+                        f"Voltage at {label} must be finite (setpoint {setpoint}), got {v}"
+                    # A decoupled solve on a sane grid should never leave the
+                    # [0, 2] pu envelope; the old divergence blew far past this.
+                    assert 0.0 <= v <= 2.0, \
+                        f"Voltage at {label} out of physical envelope " \
+                        f"(setpoint {setpoint}): {v:.4f}"
+                q_used = result.q_injections_used['GEN']
+                assert -200.0 - 1e-6 <= q_used <= 200.0 + 1e-6, \
+                    f"GEN Q must stay within limits, got {q_used:.2f}"
+            print("  finite, bounded voltages across setpoint sweep — PASS")
+        except AssertionError as e:
+            print(f"  pv correction bounded on two-path bus: FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TEST RUNNER
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -789,9 +903,10 @@ if __name__ == "__main__":
         test_warning_to_critical_alarms_and_crisis(),
         test_offset_decays_on_recovery(),
         test_auto_shunt_holds_without_hunting(),
-        test_auto_tap_holds_near_nominal(),
         test_manual_svc_monotonic_and_clamped(),
         test_generator_setpoint_raises_region_and_converts_pq(),
+        test_pv_bus_satisfied_keeps_reserve(),
+        test_pv_correction_bounded_on_two_path_bus(),
     ]
     passed = sum(results)
     total = len(results)

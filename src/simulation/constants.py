@@ -56,6 +56,14 @@ V_COLLAPSE_SEVERITY_LOW:   float = 0.85  # Severity = 0 at this voltage (== V_WA
 V_COLLAPSE_SEVERITY_FLOOR: float = 0.70  # Severity = 1 at this voltage (== V_CRITICAL_LOW)
 V_COLLAPSE_RECOVERY_PU_S:  float = 0.02  # Offset decay rate toward 0 when voltage recovers (pu/s)
 
+# PV→PQ correction: the decoupled voltage solver adjusts each PV bus's Q to
+# hold its target voltage, then re-solves. A single pass is only adequate
+# when every PV bus has one dominant electrical path; buses with two
+# comparable paths (or one very weak/remote path) need the correction
+# iterated to a fixed point, or Q never settles and the bus can diverge.
+PV_CORRECTION_MAX_ITERS:   int   = 8    # hard cap — solve can never hang the tick
+PV_CORRECTION_Q_TOL_MVAR:  float = 0.5  # early exit once the largest per-pass Q change falls below this
+
 # ─────────────────────────────────────────────
 # REACTIVE POWER / SUBSTATION LOAD TYPES
 # ─────────────────────────────────────────────
@@ -77,7 +85,7 @@ GEN_VOLTAGE_SETPOINT_MIN_PU:     float = 0.95
 GEN_VOLTAGE_SETPOINT_MAX_PU:     float = 1.05
 
 # ─────────────────────────────────────────────
-# REACTIVE DEVICES — automatic shunt banks / tap changers, manual SVC
+# REACTIVE DEVICES — automatic shunt banks, manual SVC
 # ─────────────────────────────────────────────
 # Automatic shunt capacitor/reactor bank: discrete steps, +cap/-reactor MVAr,
 # deadband + hysteresis + minimum dwell time between switches to prevent hunting.
@@ -86,15 +94,6 @@ SHUNT_BANK_MAX_STEPS:     int   = 4
 SHUNT_DEADBAND_LOW_PU:    float = 0.97
 SHUNT_DEADBAND_HIGH_PU:   float = 1.03
 SHUNT_SWITCH_DWELL_S:     float = 30.0  # minimum simulated seconds between switches
-
-# Automatic transformer tap changer: discrete ratio steps approximated as a
-# corrective Q injection (see reactive_devices.py). Same deadband/hysteresis pattern.
-TAP_STEP_RATIO:      float = 0.0125
-TAP_N_STEPS:          int   = 8
-TAP_NEUTRAL_STEP:     int   = 0
-TAP_DEADBAND_LOW_PU:  float = 0.98
-TAP_DEADBAND_HIGH_PU: float = 1.02
-TAP_DWELL_S:          float = 30.0
 
 # Manual continuous SVC/STATCOM — player-set MVAr setpoint.
 SVC_Q_MIN_MVAR:  float = -150.0

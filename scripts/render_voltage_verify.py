@@ -24,7 +24,7 @@ pygame.freetype.init()
 from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
 from simulation.designer_grid import DesignerGrid
 from simulation.simulation import GridSimulation
-from simulation.reactive_devices import ShuntBank, TransformerTap, SVC
+from simulation.reactive_devices import ShuntBank, SVC
 from display.renderer import Renderer
 from simulation.constants import NATIVE_WIDTH, NATIVE_HEIGHT
 
@@ -65,7 +65,6 @@ sim = GridSimulation(
     duration_hours=1.0,
 )
 sim._reactive.add_shunt_bank(ShuntBank(bus='WEAK'))
-sim._reactive.add_tap(TransformerTap(label='T1', regulated_bus='WEAK'))
 sim._reactive.add_svc(SVC(bus='WEAK'))
 
 for _ in range(20):
@@ -73,14 +72,14 @@ for _ in range(20):
 
 state = sim.get_state()
 print(f'WEAK voltage: {state.bus_voltages["WEAK"]:.4f}, tier: {state.bus_vsi_tier["WEAK"]}')
-print(f'shunt step: {state.bus_shunt_step.get("WEAK")}, tap: {state.transformer_taps.get("T1")}')
+print(f'shunt step: {state.bus_shunt_step.get("WEAK")}')
 print(f'crisis_active: {state.crisis_active}, crisis_type: {state.crisis_type}')
 
 display_surf = pygame.display.set_mode((NATIVE_WIDTH, NATIVE_HEIGHT))
 renderer = Renderer(display_surf, shift=1, display_size=(NATIVE_WIDTH, NATIVE_HEIGHT))
 renderer.set_designer_grid(grid)
 
-# Select WEAK bus so its context panel (VSI tier, Q, shunt/tap rows, SVC row) renders
+# Select WEAK bus so its context panel (VSI tier, Q, shunt row, SVC row) renders
 renderer._selected_label = 'WEAK'
 renderer.on_svc_adjust(sim, +1)  # exercise the manual SVC command path
 

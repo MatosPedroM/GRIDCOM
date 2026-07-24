@@ -312,14 +312,13 @@ All devices are modelled as Q injections at a bus (never as B' edits — switchi
 | Asset Type          | MVAr          | Control                          | Player interaction        |
 |----------------------|---------------|-----------------------------------|----------------------------|
 | Shunt capacitor/reactor bank | ±discrete steps | Deadband + hysteresis auto-switching | **Read-only** — automatic |
-| Transformer tap changer | Voltage-ratio approximation, discrete steps | Deadband + hysteresis auto-stepping | **Read-only** — automatic |
 | Generator AVR setpoint | Continuous, bounded by `q_max`/`q_min` | Per-unit setpoint, `[0.95, 1.05]` pu | **Manual — Lever #1** |
 | SVC / STATCOM        | ±150 MVAr continuous | Direct setpoint | **Manual — Lever #2** |
 
-**Automatic regulators** (shunt banks, tap changers) absorb the grid's routine daily reactive drift so the player isn't fighting minor fluctuations continuously. Both use the same control pattern to avoid hunting:
-- A **deadband** (e.g. shunt banks: switch in below 0.97 pu, switch out above 1.03 pu) so they don't react to noise around the setpoint.
+**The automatic shunt bank** absorbs the grid's routine daily reactive drift so the player isn't fighting minor fluctuations continuously. It uses a hunting-resistant control pattern:
+- A **deadband** (switch in below 0.97 pu, switch out above 1.03 pu) so it doesn't react to noise around the setpoint.
 - **Hysteresis** implicit in the deadband width itself.
-- A **minimum dwell time** between switches (`SHUNT_SWITCH_DWELL_S`, `TAP_DWELL_S`) so a device that has just moved doesn't immediately reverse.
+- A **minimum dwell time** between switches (`SHUNT_SWITCH_DWELL_S`) so a bank that has just moved doesn't immediately reverse.
 - A **one-tick lag**: automatics act on the *previous* tick's solved voltage, evaluated once per tick before that tick's Q injections are built — never inside the solve itself. This means there is no algebraic loop with the solver, and at the simulation's 10 Hz tick rate the lag is imperceptible to the player.
 
 **The two manual levers** are the tools the player actively works:
@@ -593,8 +592,8 @@ def simulation_tick(dt):
 |-------|------------------------------------|--------------------------------|-------------------------------|
 | 1     | Unit dispatch (MW setpoints)       | Voltage, reactive, commitment  | Frequency, spinning reserve   |
 | 2     | + Unit commitment decisions        | Voltage, reactive              | Start times, min up/down      |
-| 3     | + Reactive dispatch, compensation  | Transformer taps               | Voltage profiles, Q limits    |
-| 4     | + Transformer taps, islanding      | Nothing                        | Cascade management, restoration|
+| 3     | + Reactive dispatch, compensation  | Shunt banks                    | Voltage profiles, Q limits    |
+| 4     | + Regional voltage support, islanding | Nothing                     | Cascade management, restoration|
 | 5     | + Market bidding, forecast risk    | Nothing                        | Day-ahead commitment under uncertainty |
 
 The simulation engine does not change between levels. The **autopilot layer** fills in what the player is not yet managing. As levels progress, autopilot responsibility transfers to the player.

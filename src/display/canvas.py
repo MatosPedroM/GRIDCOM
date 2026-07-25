@@ -672,6 +672,13 @@ class GridCanvas:
         # Unit states as a compact character-per-unit string
         unit_state_sig = ''.join(v[:1] for _, v in sorted(state.unit_states.items()))
 
+        # Dispatch mode as a compact character-per-unit string (only units
+        # covered by this shift's Phase 1 schedule vary at all)
+        unit_mode_sig = ''.join(
+            v[:1] for lbl, v in sorted(state.unit_dispatch_modes.items())
+            if lbl in state.unit_has_schedule
+        )
+
         # Line loading quantised to 5% steps — caps redraw rate to a few per second
         loading_sig = tuple(
             round(state.line_loading_pct.get(line.label, 0.0) / 5)
@@ -709,7 +716,7 @@ class GridCanvas:
         blink_key = blink_on if has_blink_effect else True
 
         return (
-            tripped_lines, blacked_buses, unit_state_sig,
+            tripped_lines, blacked_buses, unit_state_sig, unit_mode_sig,
             loading_sig, output_sig, intc_sig,
             vsi_tier_sig, shunt_sig, svc_hosts_sig,
             selected_label, blink_key, font_scale, voltage_view,
@@ -733,6 +740,7 @@ class GridCanvas:
         bus_blacked:   dict[str, bool]  = {}
         unit_states:   dict[str, str]   = {}
         unit_outputs:  dict[str, float] = {}   # fraction 0-1
+        unit_modes:    dict[str, str]   = {}   # 'AUTO'/'MANUAL', only for scheduled units
         intc_flows:    dict[str, float] = {'INTC-N': 0.0, 'INTC-S': 0.0}
         bus_vsi_tier:  dict[str, str]   = {}
         bus_shunt_step: dict[str, int]  = {}
@@ -750,6 +758,8 @@ class GridCanvas:
             for lbl, mw in state.unit_outputs_mw.items():
                 rated = self._unit_rated_mw.get(lbl, 0.0)
                 unit_outputs[lbl] = mw / rated if rated > 0 else 0.0
+            for lbl in state.unit_has_schedule:
+                unit_modes[lbl] = state.unit_dispatch_modes.get(lbl, 'MANUAL')
             if hasattr(state, 'interconnector_flows'):
                 intc_flows = state.interconnector_flows
             bus_vsi_tier   = state.bus_vsi_tier
@@ -855,6 +865,7 @@ class GridCanvas:
             for unit, (ux, uy) in zip(units, positions):
                 u_state  = unit_states.get(unit.label, 'OFFLINE')
                 u_frac   = unit_outputs.get(unit.label, 0.0)
+                u_mode   = unit_modes.get(unit.label)
                 selected = (selected_label == unit.label)
                 draw_unit_square(
                     target, ux, uy,
@@ -864,6 +875,7 @@ class GridCanvas:
                     selected=selected,
                     blink_on=blink_on,
                     scale=self._scale,
+                    dispatch_mode=u_mode,
                 )
 
         # ── Layer 8: Interconnector markers ────────────────────────────────────

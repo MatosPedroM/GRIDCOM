@@ -48,7 +48,7 @@ from simulation.grid import Grid
 from simulation.loadflow import DCLoadFlow
 from simulation.voltage import VoltageModel
 from simulation.frequency import FrequencyModel
-from simulation.units import FleetModel
+from simulation.units import FleetModel, AGC_UNIT_TYPES
 from simulation.demand import DemandModel
 from simulation.renewables import RenewablesModel
 from simulation.cascade import CascadeModel
@@ -149,6 +149,8 @@ class SimulationState:
     unit_maintenance:        frozenset   # labels of units on planned maintenance
     unit_v_setpoint_pu:      dict   # {unit_label: float} AVR voltage setpoint
     unit_q_reserve_mvar:     dict   # {unit_label: float} headroom to q_max (0 if not ONLINE)
+    unit_dispatch_modes:     dict   # {unit_label: 'AUTO'|'MANUAL'}
+    unit_has_schedule:       frozenset   # labels covered by this shift's Phase 1 hourly schedule
     reservoir_levels:        dict
     pumped_storage_modes:    dict
 
@@ -232,10 +234,12 @@ class GridSimulation:
 
         # Full 24h per-unit schedule from the Phase 1 planning screen
         # ({unit_label: {hour: mw}}), if the shift went through planning.
-        # Not currently consumed anywhere — the real-time session still
-        # runs on the single initial_schedule handover dispatch plus
-        # manual dispatch/AGC. Stored here for a future per-hour executor.
+        # Consumed each simulated-hour boundary by _apply_hourly_schedule()
+        # to advance every AUTO-mode unit's target to the plan's value for
+        # the new hour (see tick()). None if the shift has no planning
+        # phase (Shifts 1-4) — the per-hour executor is then a no-op.
         self._hourly_schedule: dict[str, dict[float, float]] | None = hourly_schedule
+        self._last_dispatch_hour: float | None = None
 
         cfg = load_shift_config(shift_number)
         self._start_hour        = start_hour if start_hour is not None else cfg['start_hour']
@@ -252,6 +256,14 @@ class GridSimulation:
         self._voltage    = VoltageModel(grid)
         self._frequency  = FrequencyModel()
         self._fleet      = FleetModel(grid, initial_schedule or {}, maintenance_units)
+        if self._hourly_schedule:
+            # A plan exists for this shift — every unit it schedules starts
+            # AUTO (following that plan) rather than the pre-planning
+            # default of MANUAL. Touching a unit's target later drops it
+            # back to MANUAL (UnitModel.set_target()).
+            for _label in self._hourly_schedule:
+                if self._fleet.has_unit(_label):
+                    self._fleet.set_unit_auto_mode(_label)
         self._demand     = DemandModel(cfg['peak_demand_mw'], substation_specs)
         self._renewables = RenewablesModel(grid)
         self._cascade    = CascadeModel()
@@ -363,6 +375,14 @@ class GridSimulation:
         # Build initial state snapshot
         self._solve_and_snapshot()
 
+        # Truncate/recreate both per-tick log files now, regardless of
+        # whether AGC_LOG/SIM_STATE_LOG end up writing any data rows this
+        # run — otherwise a run where AGC never fires (AGC off all shift)
+        # or SIM_STATE_LOG is off leaves the *previous* run's file
+        # completely untouched, silently stale, with nothing marking it as
+        # not belonging to this shift.
+        self._reset_log_files()
+
     # ─────── MAIN TICK ────────────────────────────────────────────────────
 
     def tick(self, dt_sim_seconds: float) -> None:
@@ -394,6 +414,10 @@ class GridSimulation:
         # 1. Advance time
         self._sim_time_min += dt_min
         sim_hour = self._start_hour + self._sim_time_min / 60.0
+
+        # 1b. Phase 1 per-hour schedule executor — advance AUTO-mode units'
+        # targets whenever the simulated hour crosses an integer boundary.
+        self._apply_hourly_schedule(sim_hour)
 
         # 2. Update demand
         self._demand.update(sim_hour, self._fleet.total_generation_mw())
@@ -514,6 +538,21 @@ class GridSimulation:
         if _sim_const.SIM_STATE_LOG:
             self._write_sim_state_log()
 
+    def _apply_hourly_schedule(self, sim_hour: float) -> None:
+        """
+        Advance every AUTO-mode unit's target to its Phase 1 planned MW
+        whenever sim_hour crosses an integer-hour boundary (schedules are
+        keyed by whole hour, 0.0-23.0 — see gameplay/phase1.py). No-op if
+        this shift has no hourly_schedule (Shifts without a planning phase).
+        """
+        if not self._hourly_schedule:
+            return
+        hour_key = float(int(sim_hour) % 24)
+        if hour_key == self._last_dispatch_hour:
+            return
+        self._last_dispatch_hour = hour_key
+        self._fleet.apply_hourly_schedule(hour_key, self._hourly_schedule)
+
     # ─────── PUBLIC INTERFACE ─────────────────────────────────────────────
 
     def get_state(self) -> SimulationState:
@@ -524,6 +563,18 @@ class GridSimulation:
 
     def set_unit_target(self, unit_label: str, target_mw: float) -> bool:
         return self._fleet.set_unit_target(unit_label, target_mw)
+
+    def set_unit_auto_mode(self, unit_label: str) -> bool:
+        """Return a unit to AUTO dispatch mode (follows its Phase 1 hourly schedule)."""
+        return self._fleet.set_unit_auto_mode(unit_label)
+
+    def get_unit_dispatch_mode(self, unit_label: str) -> str:
+        """Return a unit's dispatch mode: 'AUTO' or 'MANUAL'."""
+        return self._fleet.get_unit_dispatch_mode(unit_label)
+
+    def has_hourly_schedule(self, unit_label: str) -> bool:
+        """True if this shift has a Phase 1 plan covering unit_label (AUTO mode is meaningful)."""
+        return bool(self._hourly_schedule) and unit_label in self._hourly_schedule
 
     def start_unit(self, unit_label: str) -> bool:
         return self._fleet.start_unit(unit_label)
@@ -842,6 +893,41 @@ class GridSimulation:
                 raw_delta_mw, agc_delta_mw, unit_targets,
             )
 
+    def _reset_log_files(self) -> None:
+        """
+        Truncate/recreate logs/agc_log.csv and logs/sim_state.csv for this
+        shift run, independent of whether AGC_LOG/SIM_STATE_LOG end up
+        writing any per-tick data (AGC may never fire if AGC is off all
+        shift; SIM_STATE_LOG may be False). Without this, a run that never
+        reaches either log's lazy first-write leaves the *previous* run's
+        file completely untouched — silently stale, with nothing marking
+        it as not belonging to this shift.
+        """
+        agc_eligible = sorted(
+            u.label for u in self._grid.get_active_units()
+            if u.unit_type in AGC_UNIT_TYPES
+        )
+        self._open_agc_log(agc_eligible)
+        self._open_sim_state_log()   # called after _solve_and_snapshot(), self._state is set
+
+    def _open_agc_log(self, unit_labels) -> None:
+        """(Re)create logs/agc_log.csv and write its header. unit_labels is
+        the set of unit labels the per-unit target_mw columns will cover."""
+        log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        path = os.path.join(log_dir, 'agc_log.csv')
+        self._agc_log_file = open(path, 'w', newline='')
+        self._agc_log_writer = csv.writer(self._agc_log_file)
+        self._agc_log_headers = [f'unit_{lbl}_target_mw' for lbl in sorted(unit_labels)]
+        self._agc_log_writer.writerow([
+            'sim_time_min', 'frequency_hz', 'target_hz', 'delta_f_hz',
+            'p_term_mw', 'i_term_mw', 'd_term_mw',
+            'raw_delta_mw', 'agc_delta_mw',
+            'kp', 'ki', 'kd', 'max_rate_mw_s', 'deadband_hz',
+            *self._agc_log_headers,
+        ])
+        self._agc_log_file.flush()
+
     def _write_agc_log(
         self,
         delta_f: float,
@@ -853,20 +939,14 @@ class GridSimulation:
         unit_targets: dict,
     ) -> None:
         if self._agc_log_file is None:
-            log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
-            os.makedirs(log_dir, exist_ok=True)
-            path = os.path.join(log_dir, 'agc_log.csv')
-            self._agc_log_file = open(path, 'w', newline='')
-            self._agc_log_writer = csv.writer(self._agc_log_file)
-            unit_cols = [f'unit_{lbl}_target_mw' for lbl in sorted(unit_targets)]
-            self._agc_log_headers = unit_cols
-            self._agc_log_writer.writerow([
-                'sim_time_min', 'frequency_hz', 'target_hz', 'delta_f_hz',
-                'p_term_mw', 'i_term_mw', 'd_term_mw',
-                'raw_delta_mw', 'agc_delta_mw',
-                'kp', 'ki', 'kd', 'max_rate_mw_s', 'deadband_hz',
-                *self._agc_log_headers,
-            ])
+            self._open_agc_log(unit_targets.keys())
+        elif set(unit_targets) - {
+            col[len('unit_'):-len('_target_mw')] for col in self._agc_log_headers
+        }:
+            # A unit not covered by the header written at construction time
+            # (e.g. became AGC-eligible mid-shift) — reopen with the full
+            # column set rather than silently dropping it from the row.
+            self._open_agc_log(unit_targets.keys())
         unit_vals = []
         for col in self._agc_log_headers:
             lbl = col[len('unit_'):-len('_target_mw')]
@@ -887,35 +967,42 @@ class GridSimulation:
             self._agc_log_file.flush()
             self._agc_log_flush_counter = 0
 
+    def _open_sim_state_log(self) -> None:
+        """(Re)create logs/sim_state.csv and write its header, using the
+        bus/unit labels from the current state snapshot."""
+        state = self._state
+        log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        path = os.path.join(log_dir, os.path.basename(_sim_const.SIM_STATE_LOG_PATH))
+        self._state_log_file = open(path, 'w', newline='')
+        self._state_log_writer = csv.writer(self._state_log_file)
+        self._state_log_bus_labels = sorted(state.bus_voltages)
+        self._state_log_unit_labels = sorted(state.unit_outputs_mw)
+
+        header = ['sim_time_min', 'sim_hour', 'frequency_hz',
+                  'total_generation_mw', 'total_load_mw', 'net_imbalance_mw']
+        for bus in self._state_log_bus_labels:
+            header += [f'bus_{bus}_voltage_pu', f'bus_{bus}_vsi_tier',
+                       f'bus_{bus}_q_injection_mvar', f'bus_{bus}_shunt_step',
+                       f'bus_{bus}_shunt_mvar', f'bus_{bus}_svc_mvar']
+        for unit in self._state_log_unit_labels:
+            header += [f'unit_{unit}_output_mw', f'unit_{unit}_target_mw',
+                       f'unit_{unit}_q_injection_mvar', f'unit_{unit}_v_setpoint_pu',
+                       f'unit_{unit}_bus_type', f'unit_{unit}_q_reserve_mvar']
+        self._state_log_writer.writerow(header)
+        self._state_log_file.flush()
+
     def _write_sim_state_log(self) -> None:
         """
         Write one CSV row of the full per-tick SimulationState snapshot —
         every bus's voltage/reactive state and every unit's dispatch/AVR/Q
         state — to logs/sim_state.csv. Gated by SIM_STATE_LOG (see
-        constants.py); off by default, purely a debugging aid for tuning
-        voltage/reactive shifts without hand-estimating network behaviour.
+        constants.py); a debugging aid for tuning voltage/reactive shifts
+        without hand-estimating network behaviour.
         """
         state = self._state
         if self._state_log_file is None:
-            log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
-            os.makedirs(log_dir, exist_ok=True)
-            path = os.path.join(log_dir, os.path.basename(_sim_const.SIM_STATE_LOG_PATH))
-            self._state_log_file = open(path, 'w', newline='')
-            self._state_log_writer = csv.writer(self._state_log_file)
-            self._state_log_bus_labels = sorted(state.bus_voltages)
-            self._state_log_unit_labels = sorted(state.unit_outputs_mw)
-
-            header = ['sim_time_min', 'sim_hour', 'frequency_hz',
-                      'total_generation_mw', 'total_load_mw', 'net_imbalance_mw']
-            for bus in self._state_log_bus_labels:
-                header += [f'bus_{bus}_voltage_pu', f'bus_{bus}_vsi_tier',
-                           f'bus_{bus}_q_injection_mvar', f'bus_{bus}_shunt_step',
-                           f'bus_{bus}_shunt_mvar', f'bus_{bus}_svc_mvar']
-            for unit in self._state_log_unit_labels:
-                header += [f'unit_{unit}_output_mw', f'unit_{unit}_target_mw',
-                           f'unit_{unit}_q_injection_mvar', f'unit_{unit}_v_setpoint_pu',
-                           f'unit_{unit}_bus_type', f'unit_{unit}_q_reserve_mvar']
-            self._state_log_writer.writerow(header)
+            self._open_sim_state_log()
 
         row = [
             f'{state.sim_time_min:.4f}', f'{state.sim_hour:.4f}',
@@ -1149,6 +1236,10 @@ class GridSimulation:
             label = action['unit']
             if self._fleet.has_unit(label):
                 self._fleet.derate_unit(label, action['cap_mw'])
+        elif action_type == 'DEMAND_OVERRIDE':
+            schedule = {float(h): mw for h, mw in action['schedule'].items()}
+            sim_hour = self._start_hour + self._sim_time_min / 60.0
+            self._demand.set_demand_override(schedule, sim_hour)
 
     def _process_scripted_events(self) -> None:
         """Fire any scripted events whose trigger time has been reached."""
@@ -1416,6 +1507,7 @@ class GridSimulation:
             'bus_types':        {lbl: d['bus_type']        for lbl, d in raw_snap.items()},
             'v_setpoint_pu':    {lbl: d['v_setpoint_pu']   for lbl, d in raw_snap.items()},
             'q_reserve_mvar':   {lbl: d['q_reserve_mvar']  for lbl, d in raw_snap.items()},
+            'dispatch_mode':    {lbl: d['dispatch_mode']   for lbl, d in raw_snap.items()},
         }
 
         # Generation mix by fuel type (online units only)
@@ -1512,6 +1604,8 @@ class GridSimulation:
             unit_maintenance=self._fleet.get_maintenance_units(),
             unit_v_setpoint_pu=snap['v_setpoint_pu'],
             unit_q_reserve_mvar=snap['q_reserve_mvar'],
+            unit_dispatch_modes=snap['dispatch_mode'],
+            unit_has_schedule=frozenset(self._hourly_schedule) if self._hourly_schedule else frozenset(),
             reservoir_levels={},
             pumped_storage_modes={},
 

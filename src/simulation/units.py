@@ -117,6 +117,7 @@ class UnitModel:
         self._maintenance: bool = False
         self._derate_cap_mw: float | None = None   # None = not derated
         self._v_setpoint_pu: float = GEN_VOLTAGE_SETPOINT_DEFAULT_PU
+        self._dispatch_mode: str = 'MANUAL'   # 'MANUAL' or 'AUTO' — see set_target()/set_auto_mode()
 
     # ─────── READ-ONLY PROPERTIES ─────────────────────────────────────────
 
@@ -158,6 +159,12 @@ class UnitModel:
     @property
     def is_maintenance(self) -> bool:
         return self._maintenance
+
+    @property
+    def dispatch_mode(self) -> str:
+        """'AUTO' (following the Phase 1 hourly schedule) or 'MANUAL'
+        (player/AGC-controlled target). New units always start MANUAL."""
+        return self._dispatch_mode
 
     def set_maintenance(self, flag: bool) -> None:
         self._maintenance = flag
@@ -235,6 +242,7 @@ class UnitModel:
         self._target_mw = 0.0
         self._start_timer_min = 0.0
         self._q_injection_mvar = 0.0
+        self._dispatch_mode = 'MANUAL'
 
     def derate(self, cap_mw: float) -> None:
         """
@@ -255,7 +263,27 @@ class UnitModel:
 
     def set_target(self, target_mw: float) -> bool:
         """
-        Set dispatch target. Only valid when ONLINE.
+        Set dispatch target from a direct player command. Only valid when
+        ONLINE. Drops the unit to MANUAL dispatch mode — see set_auto_mode()
+        to return it to AUTO.
+
+        Args:
+            target_mw: Target output in MW. Clamped to [min_mw, rated_mw].
+
+        Returns:
+            True if accepted (unit is ONLINE).
+            False otherwise.
+        """
+        if not self._set_target_internal(target_mw):
+            return False
+        self._dispatch_mode = 'MANUAL'
+        return True
+
+    def _set_target_internal(self, target_mw: float) -> bool:
+        """
+        Set dispatch target without touching dispatch_mode. Used by AGC
+        regulation (apply_agc_signal()) and the Phase 1 per-hour schedule
+        executor, neither of which should force a unit to MANUAL.
 
         Args:
             target_mw: Target output in MW. Clamped to [min_mw, rated_mw].
@@ -270,6 +298,21 @@ class UnitModel:
             self._spec.min_mw,
             min(self.effective_max_mw, float(target_mw))
         )
+        return True
+
+    def set_auto_mode(self) -> bool:
+        """
+        Return the unit to AUTO dispatch mode — it will follow the Phase 1
+        hourly schedule (if one exists) from the next hour boundary. Only
+        valid when ONLINE.
+
+        Returns:
+            True if accepted (unit is ONLINE).
+            False otherwise.
+        """
+        if self._state != 'ONLINE':
+            return False
+        self._dispatch_mode = 'AUTO'
         return True
 
     def set_q_target(self, q_mvar: float) -> bool:
@@ -502,6 +545,20 @@ class FleetModel:
             return False
         return model.set_voltage_setpoint(v_pu)
 
+    def set_unit_auto_mode(self, label: str) -> bool:
+        """Return a unit to AUTO dispatch mode. Returns False if not found or not ONLINE."""
+        model = self._units.get(label)
+        if model is None:
+            return False
+        return model.set_auto_mode()
+
+    def get_unit_dispatch_mode(self, label: str) -> str:
+        """Return a unit's dispatch mode ('AUTO'/'MANUAL'). 'MANUAL' if not found."""
+        model = self._units.get(label)
+        if model is None:
+            return 'MANUAL'
+        return model.dispatch_mode
+
     def set_renewable_output(self, label: str, output_mw: float) -> None:
         """Set renewable unit output. Has no effect on non-renewable units."""
         model = self._units.get(label)
@@ -542,9 +599,25 @@ class FleetModel:
         for unit, w in zip(eligible, weights):
             share = delta_mw * (w / total_w)
             new_target = unit.target_mw + share
-            unit.set_target(new_target)
+            unit._set_target_internal(new_target)
             assignments[unit.label] = new_target
         return assignments
+
+    def apply_hourly_schedule(self, hour: float, hourly_schedule: dict[str, dict[float, float]]) -> None:
+        """
+        Advance every ONLINE unit in AUTO dispatch mode to its Phase 1
+        planned MW for `hour`. Called once per simulated-hour boundary by
+        GridSimulation. MANUAL units and units absent from hourly_schedule
+        are untouched; ramp-rate limiting still applies via the normal
+        tick() path since this only sets target_mw, not current_mw.
+        """
+        for label, model in self._units.items():
+            if model.state != 'ONLINE' or model.dispatch_mode != 'AUTO':
+                continue
+            hours = hourly_schedule.get(label)
+            if hours is None or hour not in hours:
+                continue
+            model._set_target_internal(hours[hour])
 
     def agc_regulation_state(self) -> tuple[float, float, float]:
         """
@@ -698,6 +771,7 @@ class FleetModel:
                     max(0.0, m._spec.q_max_mvar - m.q_injection_mvar)
                     if m.state == 'ONLINE' else 0.0
                 ),
+                'dispatch_mode': m.dispatch_mode,
             }
         return snapshot
 

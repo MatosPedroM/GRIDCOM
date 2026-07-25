@@ -313,6 +313,7 @@ A           Acknowledge top alarm
 Shift+A     Acknowledge all alarms
 F           Focus frequency panel
 L           Toggle voltage-tier colour view (lines/substations)
+M           Return selected unit to AUTO dispatch mode (Phase 1 shifts only)
 ?           Show keyboard shortcut reference
 ```
 

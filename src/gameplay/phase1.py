@@ -29,7 +29,8 @@ from simulation.constants import (
     TECH_MIN_FRAC_CCGT,
     TECH_MIN_FRAC_COAL,
     TECH_MIN_FRAC_NUCLEAR,
-    PLANNING_LOAD_TOLERANCE_FRAC,
+    PLANNING_MIN_RESERVE_MARGIN_FRAC,
+    PLANNING_WARN_RESERVE_MARGIN_FRAC,
     MIN_UP_HOURS_NUCLEAR, MIN_DOWN_HOURS_NUCLEAR,
     MIN_UP_HOURS_COAL, MIN_DOWN_HOURS_COAL,
     MIN_UP_HOURS_CCGT, MIN_DOWN_HOURS_CCGT,
@@ -232,12 +233,23 @@ class PlanningModel:
             sum_pmin += self.tech_min(unit)
         return sum_pmax - sum_pmin
 
-    def out_of_tolerance_hours(self, frac: float = PLANNING_LOAD_TOLERANCE_FRAC) -> list[float]:
-        """Hours where scheduled generation is outside load_forecast * (1 +/- frac)."""
+    def hours_below_min_reserve(self, frac: float = PLANNING_MIN_RESERVE_MARGIN_FRAC) -> list[float]:
+        """Hours where scheduled generation is below load_forecast * (1 + frac) —
+        insufficient spinning-reserve margin. Blocks Planning-screen confirm."""
         result = []
         for h in self.hours:
             load = self.load_forecast.get(h, 0.0)
-            if abs(self.difference(h)) > frac * load:
+            if self.total_gen(h) < load * (1.0 + frac):
+                result.append(h)
+        return result
+
+    def hours_above_warn_reserve(self, frac: float = PLANNING_WARN_RESERVE_MARGIN_FRAC) -> list[float]:
+        """Hours where scheduled generation exceeds load_forecast * (1 + frac) —
+        an oversized reserve margin. Non-blocking warning on Planning-screen confirm."""
+        result = []
+        for h in self.hours:
+            load = self.load_forecast.get(h, 0.0)
+            if self.total_gen(h) > load * (1.0 + frac):
                 result.append(h)
         return result
 

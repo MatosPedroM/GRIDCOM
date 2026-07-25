@@ -57,6 +57,8 @@ def draw_unit_context(
     q_reserve_mvar: float | None = None,
     setpoint_buffer: str  = '',
     setpoint_active: bool = False,
+    dispatch_mode:  str | None = None,
+    mode_cmd_active: bool = False,
 ) -> None:
     """
     Draw the unit context panel at the top-left of the canvas surface.
@@ -80,6 +82,10 @@ def draw_unit_context(
         setpoint_buffer: Digits typed so far for the AVR setpoint field.
         setpoint_active: Whether the AVR setpoint field has keyboard focus
                         (mirrors input_active/input_buffer for the MW target).
+        dispatch_mode:  'AUTO'/'MANUAL' (unit_dispatch_modes), None to hide
+                        the row entirely — only shown when this shift has a
+                        Phase 1 hourly schedule covering the unit.
+        mode_cmd_active: Whether the AUTO/MANUAL toggle button has keyboard focus.
     """
     fs  = font_scale
     x   = int(CONTEXT_OVERLAY_X   * fs)
@@ -98,9 +104,10 @@ def draw_unit_context(
     show_stop       = unit_state == 'ONLINE'  and not is_renewable
     show_transition = unit_state in ('STARTING', 'SHUTDOWN') and not is_renewable
     show_maintenance = is_maintenance and unit_state == 'OFFLINE'
+    show_mode       = is_dispatchable and not is_renewable and dispatch_mode is not None
 
     if is_dispatchable:
-        n_rows = 4 + (3 if show_avr else 0)
+        n_rows = 4 + (3 if show_avr else 0) + (1 if show_mode else 0)
     elif show_start or show_transition or show_maintenance:
         n_rows = 3
     else:
@@ -218,6 +225,10 @@ def draw_unit_context(
         _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(cmd_row),
                       show_start, show_stop, show_transition,
                       unit_state, cmd_active)
+
+        if show_mode:
+            _draw_mode_row(surf, font, x, w, pad, rh, sz, _ry(cmd_row + 1),
+                          dispatch_mode, mode_cmd_active)
 
     else:
         font.render_to(surf, (x + pad, _ry(1)),
@@ -493,6 +504,32 @@ def _draw_cmd_row(
         return
     else:
         return
+
+    btn_h = rh - 2
+    btn_w = w - pad * 2
+    btn_rect = pygame.Rect(x + pad, row_y - 1, btn_w, btn_h)
+    pygame.draw.rect(surf, COL_PANEL_BG, btn_rect)
+    pygame.draw.rect(surf, border_col, btn_rect, 1)
+
+    lbl_rect = font.get_rect(label, size=sz)
+    lx = x + pad + (btn_w - lbl_rect.width) // 2
+    font.render_to(surf, (lx, row_y), label, text_col, size=sz)
+
+
+def _draw_mode_row(
+    surf, font, x: int, w: int, pad: int, rh: int, sz: int, row_y: int,
+    dispatch_mode: str, mode_cmd_active: bool,
+) -> None:
+    """Draw the AUTO/MANUAL dispatch-mode toggle button at row_y. AUTO
+    means the unit is following its Phase 1 planned schedule; MANUAL means
+    it holds whatever target the player (or AGC) last set. Pressing the
+    button while MANUAL returns the unit to AUTO — there is no button to
+    leave AUTO, since setting a target manually (Target field / digit keys)
+    already does that."""
+    is_auto  = dispatch_mode == 'AUTO'
+    label    = '[ AUTO ]' if is_auto else '[ MANUAL   M ]'
+    text_col = COL_UNIT_ONLINE if is_auto else COL_ALARM_WARN
+    border_col = text_col if mode_cmd_active else COL_PANEL_BORDER
 
     btn_h = rh - 2
     btn_w = w - pad * 2

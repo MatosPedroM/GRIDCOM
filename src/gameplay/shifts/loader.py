@@ -69,6 +69,12 @@ def load_shift_config(shift_number: int) -> dict:
                                                           (assets/designer_grids/<grid_source>.json)
                                                           to use instead of topology.py/fleet.py,
                                                           or None for the normal campaign topology
+        uses_planning        bool                      — whether this shift routes through the
+                                                          Phase 1 planning screen (GameState.PLANNING)
+                                                          before Phase 2, from the shift file's
+                                                          USES_PLANNING; False if the shift declares
+                                                          none (goes straight to real-time play, as
+                                                          every shift does today)
     """
     mod = importlib.import_module(f'gameplay.shifts.shift_{shift_number:02d}')
     grid_source = getattr(mod, 'GRID_SOURCE', None)
@@ -102,6 +108,7 @@ def load_shift_config(shift_number: int) -> dict:
         'shunt_bank_overrides':    dict(getattr(mod, 'SHUNT_BANK_OVERRIDES', {})),
         'initial_voltage_setpoints': dict(getattr(mod, 'INITIAL_VOLTAGE_SETPOINTS', {})),
         'grid_source':             grid_source,
+        'uses_planning':           getattr(mod, 'USES_PLANNING', False),
     }
 
 

@@ -135,7 +135,7 @@ AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when T
 SIM_DEBUG_LOG:     str   = 'logs/sim_debug.log'  # DEBUG_SIMULATION output destination
 PERF_DEBUG_LOG:    str   = 'logs/perf_debug.log'  # DEBUG_PERF output destination
 PERF_LOG_INTERVAL_S: float = 1.0  # seconds between perf-log summary lines
-SIM_STATE_LOG:      bool = False  # Write full per-tick bus/unit state to sim_state.csv when True
+SIM_STATE_LOG:      bool = True  # Write full per-tick bus/unit state to sim_state.csv when True
 SIM_STATE_LOG_PATH: str  = 'logs/sim_state.csv'
 
 # ─────────────────────────────────────────────
@@ -305,6 +305,7 @@ VSI_HALO_WIDTH_PX:  int   = 2      # px — halo ring stroke width
 VSI_HALO_BLINK_HZ:  float = 2.0    # CRITICAL tier halo blink rate (matches ALARM_BLINK_RATE_HZ)
 DEVICE_GLYPH_SIZE_PX: int = 5      # px — shunt/tap/SVC glyph size at a bus
 DEVICE_GLYPH_OFFSET_PX: int = 12   # px — offset from bus centre for each device glyph slot
+UNIT_MODE_BADGE_RADIUS_PX: int = 3   # px — AUTO/MANUAL dispatch-mode dot on a unit square
 
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANEL LAYOUT
@@ -423,8 +424,14 @@ PLANNING_TABLE_GROUP_GAP:       int   = 4     # px — extra gap before each tec
 PLANNING_TABLE_VISIBLE_H:       int   = 480   # px — scrollable table viewport height (unit rows only)
 
 # Confirm-time adequacy gate: F10 is refused if any hour's scheduled
-# generation is outside load_forecast(h) * (1 +/- this fraction).
-PLANNING_LOAD_TOLERANCE_FRAC:   float = 0.10
+# generation is below load_forecast(h) * (1 + this fraction) — i.e. the plan
+# must carry at least this much spinning-reserve margin above forecast load.
+PLANNING_MIN_RESERVE_MARGIN_FRAC: float = 0.05
+
+# Confirm-time warning (non-blocking): F10 still succeeds, but a yellow
+# warning is shown if any hour's scheduled generation exceeds
+# load_forecast(h) * (1 + this fraction) — an oversized, inefficient margin.
+PLANNING_WARN_RESERVE_MARGIN_FRAC: float = 0.20
 
 # ─────────────────────────────────────────────
 # PLANNING PHASE — KEYBOARD SHORTCUTS

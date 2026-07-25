@@ -13,7 +13,8 @@ Coordinate system: native 1920x1080 space (mirrors ShiftBuilder/GridDesigner
 — own letterboxed native surface sized at the real scaled display
 resolution so text rasterizes crisply, no post-hoc stretch).
 
-Scope: Shift 10 only — see gameplay/phase1.py.
+Used by any shift whose shift_NN.py sets USES_PLANNING = True (currently
+Shift 5) — see gameplay/phase1.py and main.py's BRIEFING state handler.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from typing import Callable
 import pygame
 import pygame.freetype
 
-from display.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_CRIT
+from display.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_CRIT, COL_ALARM_WARN
 from gameplay.phase1 import PlanningModel
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
@@ -87,6 +88,14 @@ class PlanningScreen:
         self._status_colour: tuple = COL_DESIGNER_STATUS_INFO
         self._status_timer: float = 0.0
 
+        # Set when F10 is pressed and the plan clears the minimum-reserve
+        # floor but trips the over-generation warning — confirmation is
+        # held until a second F10 press so the player actually sees the
+        # warning (on_plan_complete() switches the game state away from
+        # this screen immediately, so a toast set right before it would
+        # never be visible). Cleared by any edit to the plan.
+        self._pending_confirm: bool = False
+
         # Invoked with the finished model when the player confirms the plan.
         self.on_plan_complete: Callable[[PlanningModel], None] | None = None
 
@@ -130,6 +139,13 @@ class PlanningScreen:
 
         if event.key == PLANNING_KEY_BACK:
             return False
+
+        # Any key other than CONFIRM itself means the player is doing
+        # something other than answering the pending over-generation
+        # warning — drop it so a stale "press again" state can't silently
+        # wave through a plan the player has since changed.
+        if event.key != PLANNING_KEY_CONFIRM:
+            self._pending_confirm = False
 
         if ctrl_held and event.key == PLANNING_KEY_AUTO:
             self._model.auto_schedule()
@@ -196,6 +212,7 @@ class PlanningScreen:
         return self._model.hours[self._sel_col]
 
     def _handle_action(self, action: str) -> None:
+        self._pending_confirm = False
         kind, _, rest = action.partition(':')
         if kind == 'toggle':
             label = rest
@@ -233,6 +250,7 @@ class PlanningScreen:
         return True
 
     def _commit_edit(self) -> None:
+        self._pending_confirm = False
         label, _, hour_s = self._editing.partition(':')
         hour = float(hour_s)
         buf = self._edit_buffer.strip()
@@ -242,14 +260,27 @@ class PlanningScreen:
             self._set_status(f'Invalid value: {buf!r}', COL_TEXT_CRIT)
 
     def _confirm_plan(self) -> None:
-        bad_hours = self._model.out_of_tolerance_hours()
+        bad_hours = self._model.hours_below_min_reserve()
         if bad_hours:
+            self._pending_confirm = False
             hour_str = ', '.join(f'{int(h):02d}:00' for h in bad_hours[:2])
             extra = f' (+{len(bad_hours) - 2} more)' if len(bad_hours) > 2 else ''
             self._set_status(
-                f'Cannot confirm: generation outside ±10% of forecast at {hour_str}{extra}',
+                f'Cannot confirm: generation below +5% reserve margin at {hour_str}{extra}',
                 COL_TEXT_CRIT)
             return
+
+        warn_hours = self._model.hours_above_warn_reserve()
+        if warn_hours and not self._pending_confirm:
+            self._pending_confirm = True
+            hour_str = ', '.join(f'{int(h):02d}:00' for h in warn_hours[:2])
+            extra = f' (+{len(warn_hours) - 2} more)' if len(warn_hours) > 2 else ''
+            self._set_status(
+                f'Generation over +20% reserve margin at {hour_str}{extra} — press CONFIRM again to proceed',
+                COL_ALARM_WARN)
+            return
+
+        self._pending_confirm = False
         if self.on_plan_complete is not None:
             self.on_plan_complete(self._model)
 

@@ -177,6 +177,9 @@ class Renderer:
         # START/STOP button keyboard focus
         self._cmd_active: bool = False
 
+        # AUTO/MANUAL dispatch-mode button keyboard focus
+        self._mode_cmd_active: bool = False
+
         # TRIP/CLOSE button keyboard focus
         self._line_cmd_active: bool = False
 
@@ -246,6 +249,7 @@ class Renderer:
         self._input_buffer    = ''
         self._input_active    = False
         self._cmd_active      = False
+        self._mode_cmd_active = False
         self._line_cmd_active = False
         self._setpoint_buffer = ''
         self._setpoint_active = False
@@ -322,6 +326,23 @@ class Renderer:
             return
         sim.stop_unit(unit.label)
         self._cmd_active = False
+
+    def on_toggle_auto_mode(self, sim) -> None:
+        """
+        Return the selected unit to AUTO dispatch mode (follows its Phase 1
+        hourly schedule). No-op if the unit is already AUTO, not ONLINE, or
+        this shift has no schedule for it — there is no button to leave
+        AUTO; setting a target manually (digit keys + Enter) does that.
+        """
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        if not sim.has_hourly_schedule(unit.label):
+            return
+        if sim.get_unit_dispatch_mode(unit.label) == 'AUTO':
+            return
+        sim.set_unit_auto_mode(unit.label)
+        self._mode_cmd_active = False
 
     def _get_selected_line(self):
         """Return the Line dataclass for _selected_label if it is a line, else None."""
@@ -886,6 +907,11 @@ class Renderer:
                 q_reserve_mvar=state.unit_q_reserve_mvar.get(selected_unit.label),
                 setpoint_buffer=self._setpoint_buffer,
                 setpoint_active=self._setpoint_active,
+                dispatch_mode=(
+                    state.unit_dispatch_modes.get(selected_unit.label)
+                    if selected_unit.label in state.unit_has_schedule else None
+                ),
+                mode_cmd_active=self._mode_cmd_active,
             )
             native_changed = True
         elif self._selected_label is not None:

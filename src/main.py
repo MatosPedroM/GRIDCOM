@@ -432,8 +432,8 @@ def main() -> None:
     _planning_screen = None   # PlanningScreen instance — lazily created on entry
                               # to the PLANNING state
     _planning_model  = None   # PlanningModel for the PLANNING state (Phase 1) —
-                              # not currently reachable from campaign entry;
-                              # set this and switch to GameState.PLANNING to test it
+                              # built in BRIEFING's completion handler when the
+                              # target shift's config has uses_planning=True
     shift = 1
 
     if _const.DEBUG_SCENARIO_ACTIVE:
@@ -785,12 +785,20 @@ def main() -> None:
                     if int(briefing_chars) < total:
                         briefing_chars = float(total)
                     else:
-                        game_state = GameState.PLAYING
+                        if load_shift_config(shift).get('uses_planning'):
+                            from gameplay.phase1 import build_planning_model
+                            _planning_model = build_planning_model(shift)
+                            game_state = GameState.PLANNING
+                        else:
+                            game_state = GameState.PLAYING
             briefing_chars = min(briefing_chars + TYPEWRITER_CHARS_PER_SEC * dt,
                                  float(total) + 1)
             renderer.tick_text_screen(dt, briefing_lines, int(briefing_chars))
 
-        # ── PLANNING (Phase 1 — pre-shift unit scheduling, Shift 10 only) ──────
+        # ── PLANNING (Phase 1 — pre-shift unit scheduling) ──────────────────────
+        # Entered from BRIEFING when the shift's config declares
+        # uses_planning (shift_NN.py's USES_PLANNING = True) — currently
+        # only Shift 5. Other shifts skip straight to PLAYING as before.
         elif game_state == GameState.PLANNING:
             if _planning_screen is None:
                 from display.planning import PlanningScreen
@@ -883,6 +891,10 @@ def main() -> None:
                     elif (event.key == pygame.K_x and not _const.EDITOR_MODE
                           and not renderer._input_active):
                         renderer.on_stop_unit(sim)
+
+                    elif (event.key == pygame.K_m and not _const.EDITOR_MODE
+                          and not renderer._input_active):
+                        renderer.on_toggle_auto_mode(sim)
 
                     elif (event.key == pygame.K_t and not _const.EDITOR_MODE
                           and not renderer._input_active):
@@ -1274,6 +1286,8 @@ def main() -> None:
                         _rend.on_start_unit(_sim)
                     elif (event.key == pygame.K_x and not _rend._input_active):
                         _rend.on_stop_unit(_sim)
+                    elif (event.key == pygame.K_m and not _rend._input_active):
+                        _rend.on_toggle_auto_mode(_sim)
                     elif (event.key == pygame.K_t and not _rend._input_active):
                         _rend.on_trip_line(_sim)
                     elif (event.key == pygame.K_c and not _rend._input_active):

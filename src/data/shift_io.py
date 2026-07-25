@@ -45,10 +45,16 @@ Event 'action' is a declarative dict or None:
   { "type": "LINE_CLOSE", "line": "L09" }
   { "type": "UNIT_TRIP", "unit": "RVSD-1" }
   { "type": "UNIT_DERATE", "unit": "RVSD-1", "cap_mw": 105.0 }
+  { "type": "DEMAND_OVERRIDE", "schedule": {hour_str: mw} }
 UNIT_DERATE reduces the unit's dispatch ceiling to cap_mw and holds it
 there — unlike UNIT_TRIP, the unit stays ONLINE and keeps producing, just
 below its nameplate rating (e.g. a cooling fault). Output snaps down
 immediately if currently above the new cap.
+DEMAND_OVERRIDE replaces the system's demand profile with a sparse
+hour->MW schedule (linearly interpolated between given hours) from the
+moment it fires — used for a mid-shift surprise (e.g. a demand spike)
+that the Phase 1 planning forecast did not show. Pass an empty schedule
+to revert to the standard profile. See DemandModel.set_demand_override().
 Executed by GridSimulation._process_scripted_events() after the alarm
 for that event fires.
 """

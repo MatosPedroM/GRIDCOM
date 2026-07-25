@@ -306,17 +306,17 @@ _STATE_ABBREV: dict[str, str] = {
     'SHUTDOWN': 'SDN',
 }
 
-_FALLBACK_UNITS: list[tuple[str, str, float, float, float]] = [
-    ('HART-1', 'ONLINE',   680.0, 700.0, 0.0),
-    ('HART-2', 'ONLINE',   300.0, 700.0, 0.0),
-    ('RVSD-1', 'ONLINE',   900.0, 900.0, 0.0),
-    ('RVSD-2', 'OFFLINE',    0.0, 900.0, 0.0),
-    ('RVSD-3', 'STARTING',   0.0, 900.0, 45.0),
-    ('THNF-1', 'TRIPPED',    0.0, 900.0, 0.0),
-    ('THNF-2', 'SHUTDOWN',   0.0, 900.0, 0.0),
-    ('ASHG-1', 'ONLINE',   280.0, 400.0, 0.0),
-    ('ASHG-2', 'ONLINE',   400.0, 400.0, 0.0),
-    ('DUND-1', 'ONLINE',    65.0,  65.0, 0.0),
+_FALLBACK_UNITS: list[tuple[str, str, float, float, float, str | None]] = [
+    ('HART-1', 'ONLINE',   680.0, 700.0, 0.0, None),
+    ('HART-2', 'ONLINE',   300.0, 700.0, 0.0, None),
+    ('RVSD-1', 'ONLINE',   900.0, 900.0, 0.0, None),
+    ('RVSD-2', 'OFFLINE',    0.0, 900.0, 0.0, None),
+    ('RVSD-3', 'STARTING',   0.0, 900.0, 45.0, None),
+    ('THNF-1', 'TRIPPED',    0.0, 900.0, 0.0, None),
+    ('THNF-2', 'SHUTDOWN',   0.0, 900.0, 0.0, None),
+    ('ASHG-1', 'ONLINE',   280.0, 400.0, 0.0, None),
+    ('ASHG-2', 'ONLINE',   400.0, 400.0, 0.0, None),
+    ('DUND-1', 'ONLINE',    65.0,  65.0, 0.0, None),
 ]
 
 
@@ -331,13 +331,15 @@ def draw_dispatch_panel(
     """Unit dispatch panel: full unit fleet as a multi-column grid, state/bar/MW per unit."""
 
     if state is not None and grid is not None:
-        units: list[tuple[str, str, float, float, float]] = []
+        units: list[tuple[str, str, float, float, float, str | None]] = []
         for unit in grid.get_active_units():
             lbl  = unit.label
             ust  = state.unit_states.get(lbl, 'OFFLINE')
             out  = state.unit_outputs_mw.get(lbl, 0.0)
             spct = state.unit_start_progress.get(lbl, 0.0) * 100.0
-            units.append((lbl, ust, out, unit.rated_mw, spct))
+            mode = (state.unit_dispatch_modes.get(lbl)
+                    if lbl in state.unit_has_schedule else None)
+            units.append((lbl, ust, out, unit.rated_mw, spct, mode))
     else:
         units = _FALLBACK_UNITS
 
@@ -360,13 +362,15 @@ def draw_dispatch_panel(
     num_cols     = max(1, -(-total // rows_per_col))  # ceil division
     col_w        = w // num_cols
 
-    lbl_x_off = 0
-    sta_x_off = int(48 * fs)
-    bar_x_off = sta_x_off + int(22 * fs)
-    bar_w     = max(4, int(28 * fs))
-    mw_x_off  = bar_x_off + bar_w + int(4 * fs)
+    lbl_x_off  = 0
+    sta_x_off  = int(48 * fs)
+    mode_x_off = sta_x_off + int(20 * fs)
+    mode_r     = max(1, int(2 * fs))
+    bar_x_off  = mode_x_off + int(8 * fs)
+    bar_w      = max(4, int(28 * fs))
+    mw_x_off   = bar_x_off + bar_w + int(4 * fs)
 
-    for i, (lbl, ust, out, rated, spct) in enumerate(units):
+    for i, (lbl, ust, out, rated, spct, mode) in enumerate(units):
         col_i = i // rows_per_col
         row_i = i % rows_per_col
         cx    = col_i * col_w
@@ -379,6 +383,12 @@ def draw_dispatch_panel(
 
         font.render_to(surf, (cx + pad + lbl_x_off, y), lbl, COL_TEXT_PRIMARY, size=sp)
         font.render_to(surf, (cx + pad + sta_x_off, y), abbr, col, size=sp)
+
+        if mode is not None:
+            mode_col = COL_UNIT_ONLINE if mode == 'AUTO' else COL_ALARM_WARN
+            mode_cx  = cx + pad + mode_x_off + mode_r
+            mode_cy  = y + sp // 2
+            pygame.draw.circle(surf, mode_col, (mode_cx, mode_cy), mode_r)
 
         bar_x = cx + pad + bar_x_off
         if ust == 'STARTING':

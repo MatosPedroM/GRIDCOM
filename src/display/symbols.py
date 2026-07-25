@@ -22,6 +22,7 @@ from simulation.constants import (
     UNIT_BORDER_W_PX, UNIT_BORDER_W_SELECTED_PX,
     VSI_HALO_RADIUS_PX, VSI_HALO_WIDTH_PX,
     DEVICE_GLYPH_SIZE_PX, DEVICE_GLYPH_OFFSET_PX,
+    UNIT_MODE_BADGE_RADIUS_PX,
 )
 from display.palette import (
     COL_BACKGROUND,
@@ -31,13 +32,14 @@ from display.palette import (
     COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_HYDRO_PUMP, COL_UNIT_WIND, COL_UNIT_SOLAR,
-    COL_UNIT_TRIPPED,
+    COL_UNIT_TRIPPED, COL_UNIT_ONLINE,
     COL_INTC_IMPORT, COL_INTC_EXPORT, COL_INTC_IDLE,
     COL_LINE_HYDRAULIC, COL_LOAD_SUB,
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
     COL_SELECTION,
     COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL,
     COL_SHUNT_CAP, COL_SHUNT_REACTOR, COL_SVC,
+    COL_ALARM_WARN,
 )
 
 # Symbol size constants
@@ -330,6 +332,7 @@ def draw_unit_square(
     selected: bool = False,
     blink_on: bool = True,
     scale: float = 1.0,
+    dispatch_mode: str | None = None,
 ) -> None:
     """
     Draw a single generation unit square with fuel-type-coloured border and
@@ -346,6 +349,10 @@ def draw_unit_square(
         selected:         True if this unit is selected.
         blink_on:         Current blink phase (True = visible, False = hidden).
         scale:            Display scale factor.
+        dispatch_mode:    'AUTO'/'MANUAL' — draws a small top-right corner dot
+                          (green=AUTO, amber=MANUAL) when this shift has a
+                          Phase 1 schedule covering the unit. None draws
+                          nothing (no schedule this shift, e.g. Shifts 1-4).
     """
     type_col = _UNIT_TYPE_COLOUR.get(unit_type, COL_UNIT_WIND)
     sz   = max(4, int(UNIT_SIZE * scale))
@@ -376,6 +383,13 @@ def draw_unit_square(
         bar_y = y + sz - 1 - bar_h
         bar_col = _UNIT_BAR_CACHE.get(unit_type, _brighten(type_col, 1.5))
         pygame.draw.rect(surf, bar_col, (x + 1, bar_y, interior, bar_h))
+
+    # Dispatch-mode badge — top-right corner dot, only when this shift has
+    # a Phase 1 schedule covering the unit (dispatch_mode is not None).
+    if dispatch_mode is not None:
+        badge_col = COL_UNIT_ONLINE if dispatch_mode == 'AUTO' else COL_ALARM_WARN
+        badge_r = max(2, int(UNIT_MODE_BADGE_RADIUS_PX * scale))
+        pygame.draw.circle(surf, badge_col, (x + sz, y), badge_r)
 
 
 def draw_station_collector(

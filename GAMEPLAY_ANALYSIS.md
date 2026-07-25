@@ -400,7 +400,9 @@ Fixing the physics gives the player agency. This gives them a *reason to use it*
 
 **2b. Write `scoring.py` — score what the game teaches.** Move the 4-line if/elif out of `main.py` into a weighted model over: frequency band %, **minimum voltage and time-in-voltage-band** (currently displayed but not scored — this alone makes Shift 4 count for the first time), max line loading, cascade/shed events, unit trips, and an efficiency term (fuel cost or unit-starts) so an elegant solution beats a brute-force one. Emit a numeric score plus a letter grade.
 
-**2c. Write `campaign.py` with real save/load.** JSON to `saves/`. Wire the CONTINUE entry that is currently a literal `pass` at `main.py:547`. **Allow shift replay for a better grade** — with per-shift scores this is where replay value comes from, and it costs almost nothing once scoring exists.
+**2c. Write `campaign.py` with real save/load — and a session loop serving both modes.** JSON to `saves/`. Wire the CONTINUE entry that is currently a literal `pass` at `main.py:547`. **Allow shift replay for a better grade** — with per-shift scores this is where replay value comes from, and it costs almost nothing once scoring exists.
+
+Take a `mode` parameter and write the shift-to-shift loop once. CONTINUOUS needs exactly the same cycle (run → score → advance) with a rotation policy — random, carousel or repeat — instead of a fixed order. It currently has no such loop and borrows `DESIGNER_TEST` instead (§8b.5). One implementation serves both modes and avoids a second `main.py` if/elif branch.
 
 **2d. Write `debrief.py` with an event timeline.** Not just a grade: a chronological list of what happened and how long the player took to respond to each. Post-shift feedback is where a management game does its actual teaching, and it turns a grade from a judgement into a lesson.
 
@@ -438,6 +440,8 @@ Voltage is meant to be the second pillar. Right now the player frequently has *n
 
 This single change does three things at once: it makes every shift replayable, it converts Phase 1 planning from a solved puzzle into genuine risk management, and it creates the actual dispatcher fantasy — *managing a future you cannot predict*. Right now `Ctrl+A` is provably optimal and hand-planning is strictly wasted effort.
 
+**For CONTINUOUS mode this is not one improvement among several — it is the mode's load-bearing mechanic (§8b.4).** Without it, repeat and carousel rotations replay a *bit-identical* shift: same demand, same events, same optimal play. With it, one authored scenario becomes a different shift every time it comes round. Nothing else in this report buys replay value as cheaply.
+
 **4b. Build Shift 10.** The developer intends to author this fresh rather than adopt the orphaned `shift10.json` (60 buses, 34 units, 4400 MW), and its final scale is undecided — possibly nearer 30 buses. Treat the existing grid as a **reference to draw from**, not a drop-in.
 
 Whatever the scale, the escalation argument in 4c holds: **grid size is the weakest difficulty axis available.** If the rebuild comes in smaller for legibility, nothing about the campaign's pressure curve is lost — it was never going to come from bus count.
@@ -445,6 +449,10 @@ Whatever the scale, the escalation argument in 4c holds: **grid size is the weak
 **4c. Author Shifts 6–9 with a real pressure curve.** The tooling is excellent and this is blocked only by authoring time. Escalate on the axis the campaign currently ignores: **not more buses, but less time, less warning, and overlapping problems.** Target ~3–4 decisions/minute by Shift 9 against Shift 1's 0.8. Set `DIFFICULTY_LABEL` honestly — currently everything including Shift 5 is `'Tutorial'`.
 
 Use Shift 3's L09 as the template for every beat: pre-position or pay, discoverable, fair, no hand-holding alarm naming the key.
+
+**4c-bis. Author a CONTINUOUS scenario library.** A different job against the same tooling: **self-contained situations at varied difficulty, none assuming what came before.** `src/assets/shifts/` currently holds one test fixture (§8b.3), so the mode is a menu with a single entry.
+
+Campaign shifts are not directly reusable — they carry tutorial framing and a fixed position in a curve. But `shift10.json` and `Alpha.json` are (§8b.4): large, fully authored, and needing no campaign position at all. They are closer to shippable content here than anywhere else in the project.
 
 **4d. Rebalance Shift 2** so inaction is not optimal. Move the played window onto a ramping part of the curve, or author an override.
 
@@ -488,6 +496,8 @@ The player cannot play well what they cannot see.
 GRIDCOM has an excellent simulation, outstanding authoring tooling, a committed and coherent aesthetic, and a genuinely good structural idea in the shift/briefing/debrief loop. What it does not yet have is a *game*: five of seven gameplay modules are empty, there is no save system, no fail state, no meaningful scoring, and — most importantly — two timing constants that make every consequence arrive roughly a hundred times faster than the player can act on it. The result is a well-modelled grid the player watches rather than operates. **The good news is that the expensive work is done and the remaining work is mostly tractable.** Fixing the timescale alone (Improvement #1) would do more for the experience than every other item on this list combined, because every other fun deficit is downstream of it.
 
 **Stated more sharply (see Part IX):** the problem is not too little realism, and it is not too much. It is **realism aimed at the wrong layer** — sub-second physics modelled faithfully, while the layer the player actually inhabits (the shift, the plan, the judgement call) is empty. The fix is not to add or remove fidelity but to move the player to where the decisions are.
+
+**Both modes depend on the same fix.** GRIDCOM ships CAMPAIGN and CONTINUOUS (Part VIII-B); the second is architecturally real but has one authored scenario, no session loop, and no scoring. It inherits every core-loop defect above, so nothing below changes in priority — but two items gain weight: **forecast error (#4a)**, which is what stops a repeat rotation replaying a bit-identical shift, and **the session loop in #2c**, which CONTINUOUS needs and does not have.
 
 ## Priority order
 
@@ -643,6 +653,60 @@ The honest remaining caveats become:
 - the timescale decisions in Improvement #1.
 
 All three are **game-design choices rather than modelling gaps** — which is a materially stronger position than "DC approximation". The recommended framing is unchanged (*a strategy game built on a real power-system model*), but it can now be said without the caveat that the physics is approximate where it counts.
+
+---
+
+# PART VIII-B — THE TWO GAME MODES
+
+*Added 2026-07-25. The analysis above was written as though GRIDCOM were campaign-only; it is not.*
+
+## 8b.1 The intended structure
+
+GRIDCOM ships **two modes**:
+
+- **CAMPAIGN** — the authored 10-shift progression, played in order, with difficulty selection.
+- **CONTINUOUS** — the player picks from a set of scenarios and plays shift after shift indefinitely: **random, carousel, or repeat**.
+
+Everything in Parts I–VII was written against the campaign. That was an incomplete reading, and it under-weighted several findings. This part corrects them.
+
+## 8b.2 What is already built
+
+More than expected, and the plumbing is sound:
+
+- `MODE_SELECT` offers both modes ([main.py:659-667](src/main.py#L659)); CONTINUOUS routes to `SHIFT_SELECT_JSON`.
+- `SHIFT_SELECT_JSON` ([main.py:721-752](src/main.py#L721)) lists authored shifts from `list_shift_names()` and launches the chosen one.
+- `load_shift_config_from_json()` ([loader.py:115](src/gameplay/shifts/loader.py#L115)) is the parallel load path, already written and already producing the same config dict `GridSimulation` consumes.
+- The **Shift Builder** (`display/shift_builder.py`, 677 lines) authors these scenarios, and `ShiftDefinition` ([shift_io.py:91](src/data/shift_io.py#L91)) already carries grid reference, start hour, duration, initial schedule, maintenance sets, per-bus demand and a scripted event timeline.
+
+**The mode is architecturally real.** It is not a stub.
+
+## 8b.3 What is missing
+
+**1. There is one authored scenario.** `src/assets/shifts/` contains exactly `shift1_fixture.json`. CONTINUOUS mode is a menu with a single entry, and that entry is a test fixture rather than designed content.
+
+**2. There is no continuity.** CONTINUOUS launches into `DESIGNER_TEST` ([main.py:739](src/main.py#L739)) — the *developer test harness* — not into a session loop. When the shift ends the player returns to the picker. There is no shift-after-shift progression, and therefore **none of random / carousel / repeat is implemented.** The word "continuous" does not yet describe the behaviour.
+
+**3. It inherits every core-loop defect.** Same simulation, same timescale, same absent scoring. CONTINUOUS cannot be better than the loop underneath it.
+
+**4. It has no scoring at all** — `DESIGNER_TEST` bypasses even the four-line campaign assessment (§2.3), so a CONTINUOUS shift produces no grade, no record, nothing.
+
+## 8b.4 How this changes the analysis
+
+Four weightings shift, and one changes category entirely.
+
+**Forecast error (#4a) is promoted again — it is now the mode's load-bearing mechanic.** §9.3 already called uncertainty the substrate of a tension machine. For CONTINUOUS it is more than that: **it is the only thing standing between "endless replayability" and "the same five scenarios on a loop."** A repeat-mode shift with a deterministic forecast is *identical* every time — same demand, same events, same optimal play. With per-run seeded forecast error and renewable noise, the same authored scenario becomes a different shift each time it comes round. Nothing else in this report generates replay value as cheaply.
+
+**Scenario authoring changes shape.** §4c argues for an escalating pressure curve across Shifts 6–9. CONTINUOUS wants something different: **a library of self-contained situations at varied difficulty**, none of which assume what came before. These are different authoring jobs against the same tooling. The Shift Builder already supports both; the campaign shifts are simply not reusable as CONTINUOUS scenarios without decoupling them from their tutorial framing.
+
+**Scoring (#2b) needs a second consumer.** A weighted score is more valuable here than in the campaign — CONTINUOUS has no narrative arc, so **the score is the progression.** Per-scenario bests, streaks across a carousel, and cumulative run stats are what give the mode a reason to continue. Design `scoring.py` to serve both modes from the start rather than retrofitting.
+
+**The orphaned grids find their real use.** §4b downgraded `shift10.json` and `Alpha.json` to reference material once the developer decided to rebuild Shift 10. In CONTINUOUS they are **directly valuable again** — large, fully-authored, and needing no tutorial framing or campaign position. They are closer to shippable content here than anywhere else in the project.
+
+## 8b.5 The one structural gap worth naming
+
+CONTINUOUS launching into `DESIGNER_TEST` is the thing to fix first in this mode, and it is not cosmetic. The dev harness has different keybindings (§3.8: it has the speed controls the real game lacks), no scoring, no debrief, and no concept of a next shift. **The mode currently borrows a debug path because the session loop it needs does not exist.**
+
+That session loop — pick a rotation policy, run a shift, score it, advance — is properly part of `campaign.py` (#2c), which is currently 0 bytes. Writing it once, with a `mode` parameter, serves both modes and avoids a second `main.py` if/elif branch of the kind that has already made the campaign path hard to follow.
 
 ---
 

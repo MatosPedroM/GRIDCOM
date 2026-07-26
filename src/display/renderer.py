@@ -1115,6 +1115,7 @@ class Renderer:
         p8    = int(8  * sc)
         p18   = int(18 * sc)
         p32   = int(32 * sc)
+        p46   = int(46 * sc)
 
         # Faint coordinate grid — built once at current scaled size, blitted every frame
         if self._debug_grid_surf is None:
@@ -1152,6 +1153,13 @@ class Renderer:
         res_w, _ = font.get_rect(res_str, size=so)[2:4]
         font.render_to(self._native, (nw - res_w - p8, p32),
                        res_str, COL_DEBUG_TEXT, size=so)
+
+        # Droop status — top-right, fourth line
+        droop_str = f'DROOP {"ON" if _sim_const.DROOP_ENABLED else "OFF"}'
+        droop_col = COL_DEBUG_TEXT if _sim_const.DROOP_ENABLED else COL_TEXT_DIM
+        droop_w, _ = font.get_rect(droop_str, size=so)[2:4]
+        font.render_to(self._native, (nw - droop_w - p8, p46),
+                       droop_str, droop_col, size=so)
 
         # Perf section timings — top-right, fourth line (only when DEBUG_PERF is on)
         if _sim_const.DEBUG_PERF and self._perf_last_ms:

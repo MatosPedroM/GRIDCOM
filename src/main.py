@@ -275,6 +275,7 @@ def _make_sim_and_renderer(
     else:
         renderer.set_grid(grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
+    _const.DROOP_ENABLED = cfg['droop_enabled']
     return sim, grid, renderer
 
 
@@ -331,6 +332,7 @@ def _make_designer_test(
                         display_size=display_surf.get_size())
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = True
+    _const.DROOP_ENABLED = True
     return sim, designer_grid, renderer
 
 
@@ -385,6 +387,7 @@ def _make_shift_test(
                         display_size=display_surf.get_size())
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
+    _const.DROOP_ENABLED = cfg.get('droop_enabled', True)
     return sim, designer_grid, renderer
 
 

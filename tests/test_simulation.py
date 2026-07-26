@@ -963,7 +963,7 @@ def test_demand_model() -> bool:
         from data.profiles import get_substation_demand_specs
         from gameplay.shifts.loader import load_shift_config
 
-        cfg = load_shift_config(2)   # shift 2 uses the GREY/OAKE load substations
+        cfg = load_shift_config(1)   # shift 1 uses the GREY/OAKE load substations (shift2.json grid)
         peak_demand_mw = cfg['peak_demand_mw']
         substation_specs = get_substation_demand_specs(cfg['substation_load_mw'])
 

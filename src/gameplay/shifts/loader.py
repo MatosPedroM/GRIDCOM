@@ -42,6 +42,12 @@ def load_shift_config(shift_number: int) -> dict:
         maintenance_units   set[str]                  — units locked on planned maintenance
         maintenance_lines   set[str]                  — lines that start the shift electrically open
         agc_enabled         bool                      — whether AGC is active at shift start
+        droop_enabled       bool                      — whether governor droop is active at shift
+                                                          start (default True — see constants.py
+                                                          DROOP_ENABLED; set DROOP_ENABLED = False in
+                                                          a shift_NN.py for a pure manual-dispatch
+                                                          tutorial where nothing corrects frequency
+                                                          but the player)
         substation_load_mw  dict[str, dict[float, float]] — per-bus hourly load table (MW), built by
                                                           scaling each LOAD bus's peak_load_mw by the
                                                           shared DEMAND_PROFILE_NORMALISED curve; empty
@@ -103,6 +109,7 @@ def load_shift_config(shift_number: int) -> dict:
         'maintenance_units':       getattr(mod, 'MAINTENANCE_UNITS',       set()),
         'maintenance_lines':       getattr(mod, 'MAINTENANCE_LINES',       set()),
         'agc_enabled':             getattr(mod, 'AGC_ENABLED',             False),
+        'droop_enabled':           getattr(mod, 'DROOP_ENABLED',           True),
         'substation_load_mw':      substation_load_mw,
         'substation_types':        dict(getattr(mod, 'SUBSTATION_TYPES', {})),
         'shunt_bank_overrides':    dict(getattr(mod, 'SHUNT_BANK_OVERRIDES', {})),

@@ -129,6 +129,14 @@ FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the freq
 # units.py FleetModel.apply_droop_response(). Runs ahead of AGC each tick.
 DROOP_R: float = 0.04
 
+# Per-shift override, mirroring AGC_ENABLED's plumbing (see gameplay/shifts
+# loader.py's 'droop_enabled' config key). Defaults True -- droop is
+# intended to be universal/always-active plant behaviour -- but a manual-
+# dispatch tutorial (e.g. Shift 1) can set DROOP_ENABLED = False in its
+# shift_NN.py to teach "nothing corrects frequency but you" honestly,
+# since AGC_ENABLED alone no longer guarantees that once droop exists.
+DROOP_ENABLED: bool = True
+
 # ─────────────────────────────────────────────
 # AUTOMATIC GENERATION CONTROL (AGC)
 # ─────────────────────────────────────────────

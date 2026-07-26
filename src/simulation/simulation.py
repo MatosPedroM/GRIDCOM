@@ -447,8 +447,9 @@ class GridSimulation:
         )
 
         # 5a. Governor droop — fast primary response, all synchronous units, ahead of AGC.
-        delta_f = self._frequency.frequency_hz - F_NOMINAL
-        self._fleet.apply_droop_response(delta_f)
+        if _sim_const.DROOP_ENABLED:
+            delta_f = self._frequency.frequency_hz - F_NOMINAL
+            self._fleet.apply_droop_response(delta_f)
 
         # 5b. AGC secondary frequency response
         if _sim_const.AGC_ENABLED:

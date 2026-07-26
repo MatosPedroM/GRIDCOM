@@ -51,10 +51,14 @@ V_HEALTHY_LOW:    float = 0.95  # Below nominal — lower healthy limit
 V_WATCH_LOW:      float = 0.90  # Watch threshold
 V_WARNING_LOW:    float = 0.85  # Warning threshold — collapse acceleration begins
 V_CRITICAL_LOW:   float = 0.70  # Blackout threshold
-V_COLLAPSE_GAIN:  float = 2.0   # Gain factor for voltage collapse acceleration
+V_COLLAPSE_GAIN:  float = 0.01  # Gain factor for voltage collapse acceleration — reduced
+                                # from 2.0 (~200x) so a sustained bad bus collapses over
+                                # ~10-20 real seconds instead of within a single tick.
 V_COLLAPSE_SEVERITY_LOW:   float = 0.85  # Severity = 0 at this voltage (== V_WARNING_LOW)
 V_COLLAPSE_SEVERITY_FLOOR: float = 0.70  # Severity = 1 at this voltage (== V_CRITICAL_LOW)
-V_COLLAPSE_RECOVERY_PU_S:  float = 0.02  # Offset decay rate toward 0 when voltage recovers (pu/s)
+V_COLLAPSE_RECOVERY_PU_S:  float = 0.00035  # Offset decay rate toward 0 when voltage recovers
+                                            # (pu/sim-second) — reduced from 0.02 so recovery
+                                            # takes ~3x the worst-case decay time (was ~44x).
 
 # PV→PQ correction: the decoupled voltage solver adjusts each PV bus's Q to
 # hold its target voltage, then re-solves. A single pass is only adequate
@@ -119,18 +123,30 @@ FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the freq
 # ─────────────────────────────────────────────
 # DROOP / GOVERNOR
 # ─────────────────────────────────────────────
-DROOP_R: float = 0.04           # 4% droop setting (per-unit on machine base)
+# 4% droop setting (per-unit on machine base). Applied to ALL ONLINE
+# synchronous units (COAL, NUCLEAR, HYDRO, HYDRO_ROR, HYDRO_PUMP, CCGT) as
+# an immediate, non-ramp-limited primary frequency response -- see
+# units.py FleetModel.apply_droop_response(). Runs ahead of AGC each tick.
+DROOP_R: float = 0.04
 
 # ─────────────────────────────────────────────
 # AUTOMATIC GENERATION CONTROL (AGC)
 # ─────────────────────────────────────────────
 AGC_ENABLED:       bool  = True  # Toggled at runtime via Ctrl+A; starts disabled
 AGC_KP:            float = 100.0    # Proportional gain (MW per Hz of error)
-AGC_KI:            float = 0.01   # Integral gain (MW per Hz·sim-second of error)
-AGC_KD:            float = 1000.0   # Derivative gain (MW per Hz/sim-second of error)
+AGC_KI:            float = 5.0    # Integral gain (MW per Hz·sim-second of error) —
+                                   # raised from 0.01 so integral action is numerically
+                                   # significant against AGC_INTEGRAL_MAX (was capped at
+                                   # 0.05 MW, effectively dead — AGC parked at a P-term-only
+                                   # offset instead of returning frequency to nominal).
+AGC_KD:            float = 200.0  # Derivative gain (MW per Hz/sim-second of error) —
+                                   # cut from 1000.0 so it damps transients without
+                                   # dominating now that KI is doing real work.
 AGC_MAX_RATE_MW_S: float = 100.0   # Max total AGC correction rate (MW per sim-second)
 AGC_DEADBAND_HZ:   float = 0.01   # ±Hz inside which AGC is silent
-AGC_INTEGRAL_MAX:  float = 5.0   # Anti-windup clamp on integral accumulator (Hz·s)
+AGC_INTEGRAL_MAX:  float = 60.0   # Anti-windup clamp on integral accumulator (Hz·s) —
+                                   # raised from 5.0; AGC_KI * AGC_INTEGRAL_MAX = 300 MW,
+                                   # sized to fully close realistic sustained deficits.
 AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
 SIM_DEBUG_LOG:     str   = 'logs/sim_debug.log'  # DEBUG_SIMULATION output destination
 PERF_DEBUG_LOG:    str   = 'logs/perf_debug.log'  # DEBUG_PERF output destination
@@ -146,7 +162,9 @@ LOSSES_FRACTION: float = 0.025  # 2.5% of total generation added to load
 # ─────────────────────────────────────────────
 # LINE TRIP / CASCADE
 # ─────────────────────────────────────────────
-TRIP_DELAY_S:        float = 60.0   # Seconds a line must be >100% before tripping
+TRIP_DELAY_S:        float = 720.0  # Seconds (SIM-time) a line must be >100% before tripping —
+                                     # 720 / TIME_COMPRESSION(48) = 15 real seconds at 1x speed,
+                                     # raised from 60.0 (was only 1.25 real seconds — unreadable).
 OVERLOAD_WARN_PCT:   float = 85.0   # Loading % at which WARNING alarm fires
 OVERLOAD_CRIT_PCT:   float = 100.0  # Loading % at which overload timer starts
 
@@ -250,6 +268,19 @@ CONSOLIDATED_FEED_RATING_MW_WEST:   float = 3100.0  # Feed rating for WEST's sin
 # ─────────────────────────────────────────────
 SIM_TICKS_PER_SECOND: int   = 10        # Simulation ticks per real second
 TIME_COMPRESSION:     float = 48.0      # 1 sim hour = 1.25 real minutes
+
+# ─────────────────────────────────────────────
+# FREQUENCY DYNAMICS
+# ─────────────────────────────────────────────
+# Multiplier on df/dt applied on top of the already-compressed sim-second
+# timestep. Frequency is the one subsystem that must NOT run at full
+# TIME_COMPRESSION speed (real dispatchers react to frequency in real time,
+# not compressed time) -- this tunable dial sets how fast a disturbance
+# reaches the player, independent of TIME_COMPRESSION. Target: a large
+# unit trip should leave the alert band in ~10-20 real seconds at 1x speed.
+# Not derived from any other constant -- retune against playtest/verification
+# harness, not by formula.
+FREQ_DYNAMICS_SCALE: float = 0.02
 
 # ─────────────────────────────────────────────
 # DISPLAY / RENDERING

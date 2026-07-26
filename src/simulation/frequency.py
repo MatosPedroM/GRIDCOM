@@ -10,8 +10,10 @@ Where:
     H_sys       = generation-weighted average inertia constant (seconds)
     P_imbalance = (total_generation - total_load) / S_BASE  [per-unit]
 
-Governor droop response reduces frequency deviation each tick:
-    ΔP_droop = -(Δf / f_nominal) / DROOP_R × P_online_pu
+Governor droop is NOT computed here — it is applied per-unit by
+FleetModel.apply_droop_response() (see units.py), which runs immediately
+after this model's update() each tick. This module implements the pure
+swing equation only.
 
 Frequency is hard-clamped to [F_MIN, F_MAX] after each update.
 
@@ -31,7 +33,7 @@ from simulation.constants import (
     H_CCGT,
     H_NUCLEAR,
     H_HYDRO,
-    TIME_COMPRESSION,
+    FREQ_DYNAMICS_SCALE,
 )
 
 # Minimum inertia H to avoid division-by-zero when no synchronous units online.
@@ -52,12 +54,13 @@ _INERTIA_MAP: dict[str, float] = {
 
 class FrequencyModel:
     """
-    System frequency model using the swing equation with governor droop.
+    System frequency model using the honest swing equation.
 
     Maintains system frequency as a scalar state variable updated each tick.
-    Droop response is applied as a correction term — it reduces the rate
-    of change of frequency but does not eliminate steady-state deviation
-    (that requires an AGC model, which is out of scope here).
+    This model has no per-unit visibility and computes no droop or AGC
+    response itself — both are applied afterward by FleetModel
+    (apply_droop_response(), apply_agc_signal()), which GridSimulation.tick()
+    calls immediately after this model's update().
 
     Attributes:
         frequency_hz:   Current system frequency in Hz.
@@ -117,10 +120,10 @@ class FrequencyModel:
         h_sys = self._compute_system_inertia(online_unit_types)
 
         # Honest swing equation: df/dt = (f0 / 2H) × P_imbalance_pu
-        # Governor/droop response is handled externally (AGC, player dispatch).
+        # Governor droop and AGC are handled externally (FleetModel, after this call).
         p_net_pu = (p_generation_mw - p_load_mw) / S_BASE
         df_dt = (F_NOMINAL / (2.0 * h_sys)) * p_net_pu
-        self._frequency_hz += (df_dt * dt_sim_seconds) / TIME_COMPRESSION
+        self._frequency_hz += df_dt * dt_sim_seconds * FREQ_DYNAMICS_SCALE
 
         # Hard clamp to operational limits.
         self._frequency_hz = float(np.clip(self._frequency_hz, F_MIN, F_MAX))

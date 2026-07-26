@@ -4,7 +4,7 @@ src/simulation/simulation.py
 Master simulation loop and SimulationState snapshot for GRIDCOM.
 
 GridSimulation orchestrates all physics modules each tick:
-  demand → fleet → frequency+AGC → load flow → voltage → overloads
+  demand → fleet → frequency+droop+AGC → load flow → voltage → overloads
   → cascade → islands → alarms → state snapshot
 
 SimulationState is the complete snapshot transferred to the renderer
@@ -42,6 +42,7 @@ from simulation.constants import (
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION, SIM_DEBUG_LOG,
     AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ, AGC_INTEGRAL_MAX,
+    TRIP_DELAY_S, TIME_COMPRESSION,
 )
 import simulation.constants as _sim_const
 from simulation.grid import Grid
@@ -55,6 +56,10 @@ from simulation.cascade import CascadeModel
 from simulation.reactive_devices import ReactiveDevices
 from data.profiles import get_substation_demand_specs
 from gameplay.shifts.loader import load_shift_config
+
+# Real-seconds equivalent of TRIP_DELAY_S, for alarm text — avoids a hardcoded
+# literal going stale if TRIP_DELAY_S is retuned (see CLAUDE.md Rule 1).
+_TRIP_DELAY_REAL_S: float = TRIP_DELAY_S / TIME_COMPRESSION
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -119,6 +124,8 @@ class SimulationState:
     agc_current_mw:          float  # total MW currently from online AGC units
     agc_max_mw:              float  # total rated MW of online AGC units
     agc_min_mw:              float  # total tech-minimum MW of online AGC units
+    agc_saturated:           bool   # True if the last AGC correction attempt found no
+                                     # eligible unit with headroom (apply_agc_signal returned {})
 
     # Network — buses
     bus_voltages:            dict
@@ -321,6 +328,7 @@ class GridSimulation:
         # AGC PID state
         self._agc_integral:     float = 0.0
         self._agc_prev_delta_f: float = 0.0
+        self._agc_saturated:    bool  = False
 
         # Debug file logger (used when DEBUG_SIMULATION is True)
         if DEBUG_SIMULATION:
@@ -394,7 +402,7 @@ class GridSimulation:
           2.  Update demand
           3.  Update renewable outputs → inject into fleet
           4.  Tick unit state machines (ramp, cold start)
-          5.  Frequency update (swing equation) + AGC secondary response
+          5.  Frequency update (swing equation) + droop + AGC secondary response
           6.  Build P/Q injection vectors
           7.  Solve DC load flow
           8.  Solve voltage
@@ -437,6 +445,10 @@ class GridSimulation:
             p_load_mw=self._demand.total_load_mw,
             online_unit_types=self._fleet.online_unit_types(),
         )
+
+        # 5a. Governor droop — fast primary response, all synchronous units, ahead of AGC.
+        delta_f = self._frequency.frequency_hz - F_NOMINAL
+        self._fleet.apply_droop_response(delta_f)
 
         # 5b. AGC secondary frequency response
         if _sim_const.AGC_ENABLED:
@@ -868,6 +880,7 @@ class GridSimulation:
         if abs(delta_f) <= AGC_DEADBAND_HZ:
             self._agc_integral = 0.0
             self._agc_prev_delta_f = 0.0
+            self._agc_saturated = False
             return
 
         self._agc_integral += delta_f * dt_sim_seconds
@@ -886,6 +899,17 @@ class GridSimulation:
         agc_delta_mw = float(np.clip(raw_delta_mw, -max_delta, max_delta))
 
         unit_targets = self._fleet.apply_agc_signal(agc_delta_mw)
+
+        was_saturated = self._agc_saturated
+        self._agc_saturated = not unit_targets and abs(agc_delta_mw) > 0.0
+        if self._agc_saturated and not was_saturated:
+            self._raise_alarm(
+                priority='WARNING',
+                message='AGC regulation exhausted — no headroom available',
+                element_label=None,
+                detail=(f'AGC requested {agc_delta_mw:+.1f} MW but no eligible unit '
+                        f'(HYDRO/CCGT) has headroom. Manual dispatch required.'),
+            )
 
         if _sim_const.AGC_LOG:
             self._write_agc_log(
@@ -1273,7 +1297,7 @@ class GridSimulation:
                     message=f'Line {lbl} loading {pct:.0f}% — overload',
                     element_label=lbl,
                     detail=(f'Line {lbl} at {pct:.1f}% loading. '
-                            f'Protection trips in 60s if sustained.'),
+                            f'Protection trips in {_TRIP_DELAY_REAL_S:.0f}s if sustained.'),
                 )
             elif (pct >= OVERLOAD_WARN_PCT
                   and lbl not in self._seen_warn
@@ -1577,6 +1601,7 @@ class GridSimulation:
             agc_current_mw=agc_cur,
             agc_max_mw=agc_max,
             agc_min_mw=agc_min,
+            agc_saturated=self._agc_saturated,
 
             bus_voltages=dict(v_eff),
             bus_angles=dict(lf_result.bus_angles),

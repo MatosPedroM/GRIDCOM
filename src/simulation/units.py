@@ -42,6 +42,8 @@ from simulation.constants import (
     GEN_VOLTAGE_SETPOINT_DEFAULT_PU,
     GEN_VOLTAGE_SETPOINT_MIN_PU,
     GEN_VOLTAGE_SETPOINT_MAX_PU,
+    DROOP_R,
+    F_NOMINAL,
 )
 import simulation.constants as _sim_const
 from data.fleet import GenerationUnit
@@ -118,6 +120,11 @@ class UnitModel:
         self._derate_cap_mw: float | None = None   # None = not derated
         self._v_setpoint_pu: float = GEN_VOLTAGE_SETPOINT_DEFAULT_PU
         self._dispatch_mode: str = 'MANUAL'   # 'MANUAL' or 'AUTO' — see set_target()/set_auto_mode()
+        # Running total of AGC-attributable adjustment to target_mw since the
+        # unit's last hourly-schedule snap. Carried across hour boundaries by
+        # apply_hourly_schedule() so AGC's correction isn't discarded there —
+        # see FleetModel.apply_hourly_schedule().
+        self._agc_offset_mw: float = 0.0
 
     # ─────── READ-ONLY PROPERTIES ─────────────────────────────────────────
 
@@ -243,6 +250,7 @@ class UnitModel:
         self._start_timer_min = 0.0
         self._q_injection_mvar = 0.0
         self._dispatch_mode = 'MANUAL'
+        self._agc_offset_mw = 0.0
 
     def derate(self, cap_mw: float) -> None:
         """
@@ -277,6 +285,7 @@ class UnitModel:
         if not self._set_target_internal(target_mw):
             return False
         self._dispatch_mode = 'MANUAL'
+        self._agc_offset_mw = 0.0   # player command asserts a new baseline
         return True
 
     def _set_target_internal(self, target_mw: float) -> bool:
@@ -299,6 +308,47 @@ class UnitModel:
             min(self.effective_max_mw, float(target_mw))
         )
         return True
+
+    def _apply_agc_delta(self, share_mw: float) -> bool:
+        """
+        Apply this unit's share of an AGC correction: sets target_mw via
+        _set_target_internal() and accumulates the AGC-attributable offset
+        (see _agc_offset_mw docstring in __init__) so apply_hourly_schedule()
+        can carry it across the next hour boundary instead of discarding it.
+        """
+        if not self._set_target_internal(self.target_mw + share_mw):
+            return False
+        self._agc_offset_mw += share_mw
+        return True
+
+    def apply_droop_delta(self, delta_mw: float) -> float:
+        """
+        Apply an immediate (non-ramp-limited) governor droop correction.
+
+        Unlike set_target()/AGC, droop is a fast primary response — it must
+        move current_mw directly rather than crawl there at the unit's
+        normal ramp rate, or it would arrive too late to matter within the
+        player's reaction window. target_mw is re-anchored to match so the
+        next tick's ramp-limited _tick_online() doesn't immediately fight
+        the droop nudge (drive it back toward a stale target).
+
+        Args:
+            delta_mw: Requested MW change (positive = raise, negative = lower).
+
+        Returns:
+            The actual applied delta in MW (may be less than requested if
+            clamped to [min_mw, effective_max_mw]). 0.0 if not ONLINE.
+        """
+        if self._state != 'ONLINE':
+            return 0.0
+        new_mw = max(
+            self._spec.min_mw,
+            min(self.effective_max_mw, self._current_mw + delta_mw)
+        )
+        applied = new_mw - self._current_mw
+        self._current_mw = new_mw
+        self._target_mw = new_mw
+        return applied
 
     def set_auto_mode(self) -> bool:
         """
@@ -401,6 +451,7 @@ class UnitModel:
             self._start_timer_min = 0.0
             self._current_mw = self._spec.min_mw
             self._target_mw = self._spec.min_mw
+            self._agc_offset_mw = 0.0
             if DEBUG_SIMULATION:
                 logging.getLogger('sim').debug(f'[UNITS] {self.label} STARTING -> ONLINE '
                                                f'(min output {self._spec.min_mw:.1f} MW)')
@@ -598,16 +649,44 @@ class FleetModel:
         assignments: dict[str, float] = {}
         for unit, w in zip(eligible, weights):
             share = delta_mw * (w / total_w)
-            new_target = unit.target_mw + share
-            unit._set_target_internal(new_target)
-            assignments[unit.label] = new_target
+            unit._apply_agc_delta(share)
+            assignments[unit.label] = unit.target_mw
+        return assignments
+
+    def apply_droop_response(self, delta_f_hz: float) -> dict[str, float]:
+        """
+        Apply immediate governor droop correction to every ONLINE synchronous
+        unit (all non-renewable types — COAL, NUCLEAR, HYDRO, HYDRO_ROR,
+        HYDRO_PUMP, CCGT), proportional to each unit's rated capacity.
+
+        This is a fast, non-ramp-limited primary response (see
+        UnitModel.apply_droop_delta()) that runs ahead of AGC each tick —
+        it blunts a frequency excursion within the player's reaction window,
+        it does not eliminate steady-state deviation (that's AGC's job).
+
+        Formula: deltaP = -(delta_f / F_NOMINAL) * (1 / DROOP_R) * rated_mw
+
+        Returns:
+            {unit_label: new_current_mw} for every unit that moved.
+        """
+        assignments: dict[str, float] = {}
+        for unit in self._units.values():
+            if unit.state != 'ONLINE' or unit.is_renewable:
+                continue
+            delta_mw = -(delta_f_hz / F_NOMINAL) * (1.0 / DROOP_R) * unit._spec.rated_mw
+            applied = unit.apply_droop_delta(delta_mw)
+            if applied != 0.0:
+                assignments[unit.label] = unit.current_mw
         return assignments
 
     def apply_hourly_schedule(self, hour: float, hourly_schedule: dict[str, dict[float, float]]) -> None:
         """
         Advance every ONLINE unit in AUTO dispatch mode to its Phase 1
-        planned MW for `hour`. Called once per simulated-hour boundary by
-        GridSimulation. MANUAL units and units absent from hourly_schedule
+        planned MW for `hour`, plus whatever AGC-attributable offset it has
+        accumulated since the last boundary (see UnitModel._agc_offset_mw) —
+        preserves AGC's standing correction instead of discarding it in one
+        step at the hour boundary. Called once per simulated-hour boundary
+        by GridSimulation. MANUAL units and units absent from hourly_schedule
         are untouched; ramp-rate limiting still applies via the normal
         tick() path since this only sets target_mw, not current_mw.
         """
@@ -617,7 +696,7 @@ class FleetModel:
             hours = hourly_schedule.get(label)
             if hours is None or hour not in hours:
                 continue
-            model._set_target_internal(hours[hour])
+            model._set_target_internal(hours[hour] + model._agc_offset_mw)
 
     def agc_regulation_state(self) -> tuple[float, float, float]:
         """

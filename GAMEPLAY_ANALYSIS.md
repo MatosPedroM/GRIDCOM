@@ -179,29 +179,42 @@ self._frequency_hz += (df_dt * dt_sim_seconds) / TIME_COMPRESSION
 
 `dt_sim_seconds` already carries the ×48 applied at `main.py:1023`. Dividing it out means frequency evolves at wall-clock rate while demand, ramps, and the clock run 48× faster.
 
-With `S_BASE=1000`, `H_sys≈5`, a 100 MW imbalance yields `df_dt = 0.5 Hz per real second`. A 500 MW unit trip reaches `F_CRITICAL_LOW` in **~0.2 real seconds** and the 45 Hz clamp in **~2 real seconds**.
+With `S_BASE=1000`, `H_sys≈5`, a 100 MW imbalance yields `df_dt = 0.5 Hz per real second`. The mechanism is real: frequency does evolve at wall-clock rate while everything else is compressed.
 
-The player's corrective action is ramp-limited: a 300 MW CCGT at 8 %/min delivers **~19 MW per real second**.
+**Correction (2026-07-26 — measured against real game data, not inferred).** The first draft's specific figures and its blanket conclusion were both too strong. A headless harness driving the real `GridSimulation` exactly as `main.py`'s loop does (tick every `SIM_TICK_INTERVAL_S` real seconds, `dt = SIM_TICK_INTERVAL_S × TIME_COMPRESSION`), tripping the largest online unit through the real `FleetModel.trip_unit()` path, shows:
 
-> **The disturbance is roughly 100× faster than the response.**
+| Scenario (real trip) | → F_ALERT_LOW | → F_CRITICAL_LOW | → 45 Hz clamp | min freq | outcome |
+|---|---|---|---|---|---|
+| **Shift 3**: trip RIVE-2 (200 MW), only ASHC-1 as fast reserve | 0.2 s | **0.5 s** | **8.5 s** | 45.0 (blackout) | slides to clamp |
+| **Shift 5**: trip RIVE-1 (270 MW), deep fast fleet (BATH/PIKE hydro) online | 0.1 s | 0.4 s | **never** | **49.43 Hz** | AGC arrests it, back to 50.0 Hz by ~1.5 s |
+
+Two things the original got wrong. First, the numbers: time-to-critical is ~0.4–0.5 s (not 0.2 s) and time-to-clamp is ~8.5 s (not 2 s) even in the worst measured case. Second, and more important, **the outcome is regime-dependent, not universal.** It is governed by *how much AGC-eligible fast reserve is online at the moment of the trip*, not by the player's reaction speed. A bigger trip (270 MW) on a deep fleet **self-recovers**; a smaller trip (200 MW) on a thin one **blacks out**. The developer's own play experience — "the frequency change is fast but you can still make corrections" — is the deep-fleet regime, and it is the correct observation for that regime.
+
+The player's *real-time* corrective action is nonetheless ramp-limited: a 300 MW CCGT at 8 %/min delivers **~19 MW per real second**. But the harness also modelled a *superhuman* response — instantly commanding every surviving unit to maximum at the instant of the trip — and it made **zero difference** in both shifts (byte-identical trajectories). That is the sharper finding: for a large trip the outcome is already decided by online reserve and ramp capacity before any human could act. What the player genuinely controls is **pre-positioning** — how much reserve was spinning *before* the trip — which is exactly the reserve/N-1 lesson Shift 3 already teaches (§9.2).
+
+> **For a large trip, the initial fall is faster than a human can react to (sub-second out of the alert band) — but whether that fall is caught is set by pre-positioned reserve, and the grid frequently catches it automatically.** The original "disturbance is 100× faster than the response" holds only for the thin-reserve regime, and even there the lever is pre-positioning, not reaction time.
 
 **Finding B — `TRIP_DELAY_S = 60.0` is 60 *simulated* seconds ≈ 1.25 real seconds.**
 
 `cascade.py:115-153` accumulates in sim seconds. From overload alarm to line trip the player has about **thirteen ticks**. The alarm text at `simulation.py:1276` reads *"Protection trips in 60s if sustained"* — which any player will read as a minute. It is wrong by 48×.
 
-**The designer's read:** this single pair of constants converts an action game into a spectator game. Every dramatic beat resolves before the player's hand reaches the keyboard. The player is not *bad at the game* — the player is **not in the game**. And crucially, they will not diagnose this; they will conclude either "the game is unfair" or "nothing I do matters". Both are churn.
+**The designer's read (revised per the measured data):** the risk is not that *every* dramatic beat resolves before the player's hand reaches the keyboard — the Shift 5 data shows large trips that the grid catches and recovers in ~1.5 s, which reads as tense-but-survivable. The real risk is narrower and more insidious: in the **thin-reserve regime**, the *real-time* trip is unwinnable by reaction (Shift 3 blacks out identically whether the player does nothing or slams every unit to max), and nothing on screen tells the player the die was cast at pre-positioning time, not at reaction time. A player who does not understand that will conclude "nothing I do matters" and churn — not because they are bad at the game, but because the game is not surfacing the lever that actually exists (pre-positioned reserve). The fix is therefore less "slow the physics down" and more "make pre-positioning legible and consequential" — droop (#1b) to widen the reaction window at the margins, and reserve/N-1 instrumentation (#5f) so the player can see the losing position *before* the trip.
 
-**The gamer's read:** *"I saw the alarm. I clicked the unit. By the time I'd typed '250' the frequency was already pinned and there was nothing on screen suggesting I could have done anything differently. So I stopped trying."*
+**The gamer's read:** *"I saw the alarm. I clicked the unit. By the time I'd typed '250' the frequency was already pinned — but the shift before, a bigger unit tripped and the grid just... caught it. I couldn't tell why one was fine and one killed me."* That inconsistency — same action, opposite outcome, no visible reason — is the churn risk, more than raw speed is.
 
-## 3.2 No primary response, and an AGC that mathematically cannot settle
+## 3.2 No primary response, and an AGC that only settles under small imbalance
 
 Real grids arrest a frequency excursion in **seconds** via governor droop, then restore it over **minutes** via AGC. GRIDCOM implements only the second half.
 
 `DROOP_R = 0.04` is defined at `constants.py:122` and **never imported anywhere in the codebase**. `frequency.py:119-120` is explicit: *"Governor/droop response is handled externally."* Nothing arrests anything.
 
-And AGC cannot finish the job either. `AGC_KI = 0.01` against `AGC_INTEGRAL_MAX = 5.0` caps the integral term at **0.05 MW**. Integral action is numerically absent — this is a **PD controller**, and a PD controller has no steady-state error rejection by construction. A persistent 200 MW gap parks frequency at roughly a 0.2 Hz offset, which is *exactly* `F_IN_BOUNDS_TOL` — the only thing scored.
+And AGC cannot fully *trim* the job either. `AGC_KI = 0.01` against `AGC_INTEGRAL_MAX = 5.0` caps the integral term at **0.05 MW**. Integral action is numerically absent — this is effectively a **PD controller**, and a PD controller has no steady-state error rejection by construction: its residual offset is `imbalance / AGC_KP`.
 
-`AGC_KD = 1000` then dominates, differentiating a signal already moving at 0.5 Hz/s. That is a twitchy, oscillation-prone configuration.
+**Correction (2026-07-26 — the first draft overstated this).** That offset formula is why the earlier heading, "an AGC that mathematically cannot settle," was wrong, and why the developer's own play experience — frequency sitting sharp at 50.0 Hz under a slowly-changing load — is the *correct* observation for most of the campaign. **The offset scales with the imbalance.** With `AGC_KP = 100 MW/Hz`, a large 200 MW sustained gap parks frequency at ~0.2 Hz (≈ `F_IN_BOUNDS_TOL`, the only thing scored) — but a gentle tutorial load is only a few MW out of balance at any instant, so the offset is a few *hundredths* of a Hz and rounds to 50.0 on the display. Below ~1 MW imbalance (|Δf| ≤ `AGC_DEADBAND_HZ = 0.01`) AGC goes silent entirely and holds.
+
+This is confirmed empirically by `logs/agc_log.csv` from a real run: a large opening transient shows Δf = 0.14→0.31 Hz (the offset, exactly as predicted), but once load is slowly-changing the same run settles to Δf = ±0.010–0.014 Hz — 49.99–50.01 Hz — with `i_term_mw` logged at ~0.001–0.008 MW, confirming the dead integral. **So AGC works for the small, slow imbalances of the tutorial shifts and is deficient only under large sustained gaps** (a 500 MW trip, a big derate), where the missing integral leaves it parked short of 50.00 Hz rather than trimming back. The fix in **#1c** — restoring real PI action — targets that large-disturbance case, not normal operation.
+
+`AGC_KD = 1000` then dominates during a *transient*, differentiating a signal already moving at 0.5 Hz/s. That is a twitchy, oscillation-prone configuration when a disturbance hits (visible in the log's early rows) — though it too quiets once the imbalance is small.
 
 **Silent saturation:** `apply_agc_signal` returns `{}` when every AGC unit is at its limit (`units.py:595`) — with no alarm, no state flag, no indication. The player watches frequency drift with AGC displaying "ON" and no way to learn why. **This is the single most player-hostile behaviour in the codebase**, because it is a failure the game actively conceals.
 
@@ -246,7 +259,9 @@ Compounding it: there is **no save/load anywhere**. `saves/` is empty, nothing i
 
 ## 3.6 Difficulty scale rises; difficulty pressure does not
 
-Scale escalates genuinely: 3→4→6→13→25 buses, 1→2→3→4→12 dispatchable units, 100→1540 MW.
+**Scope note (2026-07-26):** everything built so far is a **tutorial**. Shifts 1–5 are the tutorial arc, authored deliberately at low pressure; Shifts 6–10 are **unauthored placeholders** (9-line docstring stubs), not attempts that fell short. So the observations below are about the *tutorial* shifts as tutorials — the "pressure doesn't rise" critique is a statement about what the campaign will need *once the non-tutorial shifts are built* (see #4c), not a defect in the tutorials themselves. A tutorial arc that stays calm is doing its job; the open work is the escalation that lives in the shifts that do not exist yet.
+
+Scale escalates genuinely across the tutorial arc: 3→4→6→13→25 buses, 1→2→3→4→12 dispatchable units, 100→1540 MW.
 
 Pressure does not:
 
@@ -259,7 +274,7 @@ Pressure does not:
 
 The campaign teaches **breadth** (manual → two units → AGC + N-1 → voltage → planning) but never **depth**. The player is never asked to do a thing they already know how to do, faster, or under load, or with something else going wrong simultaneously. That second axis is where mastery — and therefore fun — actually lives.
 
-And it stops at 5: `shift_06.py` through `shift_10.py` are 305-byte docstring stubs. Loading Shift 6 yields a zero-demand grid, and `main.py:1057` still gates `if shift < 10`, so a player receives **five consecutive empty shifts** before "CAMPAIGN END".
+The playable campaign is the tutorial arc, and it ends at 5 by design of *how far authoring has reached*, not by a decision to stop there: `shift_06.py` through `shift_10.py` are unauthored 9-line docstring placeholders. One practical consequence worth fixing regardless of when those shifts are built — loading Shift 6 today yields a zero-demand grid, and `main.py:1057` still gates `if shift < 10`, so a player who reaches the end of the tutorial arc receives **five consecutive empty shifts** before "CAMPAIGN END" rather than a clean "campaign continues here" boundary. That gating/placeholder behaviour is a loose end to tidy (end the campaign cleanly at the last authored shift), separate from the content work of authoring 6–10.
 
 ## 3.7 One demand curve, and no uncertainty at all
 
@@ -360,7 +375,7 @@ Ordered strictly by fun-per-unit-of-work. Each is independently shippable and in
 **Impact: transformative. Effort: low — a handful of constants and one new term.**
 **Files:** `simulation/frequency.py`, `units.py`, `simulation.py`, `cascade.py`, `constants.py`
 
-Nothing else in this list matters until this is done. Every other fun deficit is downstream of the fact that consequences arrive ~100× faster than the player can respond.
+Nothing else in this list matters until this is done. Every other fun deficit is downstream of the fact that, *in the thin-reserve regime*, consequences arrive faster than the player can respond (§3.1, as corrected 2026-07-26: the effect is regime-dependent, and the real lever is pre-positioned reserve rather than reaction time — so this improvement is as much about droop widening the margin and making reserve legible as about the raw timescale).
 
 **1a. Decouple physics timescale from clock timescale.** Replace the implicit `/ TIME_COMPRESSION` cancellation at `frequency.py:123` with an explicit, named, tunable game-design constant:
 
@@ -736,7 +751,7 @@ This is not a small foundation. **The hard-to-fake part is done.**
 
 ## 9.3 The three things standing in the way
 
-**1. The player is not at the decision layer.** Consequences arrive ~100× faster than any response (§3.1). In fun-simulator terms this is the cardinal sin: the game simulates a layer the player cannot inhabit. Every other deficit is downstream of it.
+**1. The player is not at the *real-time* decision layer for a large trip.** The initial frequency fall is faster than a human can react to (§3.1, corrected 2026-07-26); but the measured data qualifies this — the grid often catches the fall automatically, and the outcome is set by *pre-positioned reserve*, not reaction speed. The cardinal sin is therefore not "the player cannot inhabit the layer" wholesale, but that the layer they *can* inhabit — pre-positioning, reserve management, N-1 foresight — is under-instrumented and under-taught, so it doesn't read as the decision layer it is.
 
 **2. Nothing is at stake.** You cannot fail, voltage is not scored, campaign end hardcodes grade `'A'` (§2.3, §3.5). Fun simulators are almost entirely tension-driven — **the credible threat of loss is the product.** Without it, the 95% spent watching is dead air rather than vigilance.
 
@@ -781,13 +796,36 @@ Four consequences follow directly, and they sharpen the plan rather than change 
 
 **1. Improvement #2 is not optional, and its failure conditions should bite.** A tension machine without a credible threat of loss is a contradiction. `is_shift_complete()` being a clock check (§3.5) is the single most anti-tension line in the codebase — it guarantees that nothing the player does can matter. Blackout, sustained frequency excursion and excessive shedding should all end a shift as FAILED, and the debrief should say so plainly.
 
-**2. The 95%-watching figure (§2.2) is now unambiguously a defect.** Under the contemplative reading it could have been defended as atmosphere. It cannot be here: tension requires either action or the *imminent possibility* of action, and Shift 2 — where optimal play is provably zero inputs (§3.6) — is the clearest failure. Decision density is a primary metric, not a secondary one.
+**2. The 95%-watching figure (§2.2) is now unambiguously a defect.** Under the contemplative reading it could have been defended as atmosphere. It cannot be here: tension requires either action or the *imminent possibility* of action, and Shift 2 — where optimal play is provably zero inputs (§3.6) — is the clearest failure. Decision density is a primary metric, not a secondary one. *(Refined in §9.7: the defect is not the watching per se but its being **passive** — the fix for the tutorial shifts is to make attention live, not to add crises.)*
 
 **3. Uncertainty (§9.3 item 3) becomes the highest-value content work.** Tension is manufactured almost entirely by *not knowing*. With a perfect forecast the player is executing a solved plan, which is the emotional opposite of the target. This promotes **#4a (forecast error)** from "where replay value lives" to a core-loop requirement — arguably it should be pulled forward within Improvement #4.
 
 **4. The reaction window is a tension dial, not just a playability fix.** The 10–20 second target (see Appendix) is now doing double duty: long enough to act, short enough to be frightening. When tuning #1a, err toward the **lower** end of that range. A 20-second window is comfortable; a 12-second one is a tension machine. This is worth revisiting empirically once Improvement #1 lands.
 
 **What does not change:** the priority ordering in Part VII, and §9.4's warning that Phase G is craftsmanship rather than fun. If anything the tension framing strengthens that warning — `I²R` losses generate no tension whatsoever, while the `solver_stressed` flag (§8.4) and the overload countdown (#1d) generate a great deal. **Prefer, throughout, the items that make the player nervous.**
+
+---
+
+## 9.7 Two kinds of watching — refining the defect for the tutorial shifts
+
+*Added 2026-07-26, after the developer pushed back on §9.6 item 2.*
+
+§9.6 item 2 called the 95%-watching figure "unambiguously a defect." That is true of the *game as shipped*, but stated that baldly it over-reaches, and the developer was right to say so: **real TSO operators genuinely do mostly watch**, and **Shifts 1–5 are tutorials that should feel calmer than the finale.** A frantic tutorial is a bad tutorial. The correction is not to retreat from the tension-machine framing — it is to be precise about what the defect actually is.
+
+**Watching splits into two kinds, and only one is dead air:**
+
+- **Passive watching** — what the game has now. Nothing can happen that a `TUTOR` alarm has not already announced by name, with the exact key to press (confirmed: the key-naming lives in each shift's authored `detail` text, e.g. `shift_04.py:309/375` "select BATH-1, press V…"). The player is watching a guided tour. This *is* dead air, and §9.6 item 2 is right about it.
+- **Active watching** — what the job actually is. Scanning for what *might* go wrong, holding an N-1 mental model, deciding when *not* to act. This is not idleness; it is the core cognitive work of the role, and a tutorial can teach it while staying calm.
+
+**The consequence for Shifts 1–5 is a different prescription than "add pressure."** The fix is to convert passive watching into active watching — give the player a reason to look and something to notice — *before* adding any new crises. Three source facts show how cheap this is, because the deficit is not "too few events" but "attention is inconsequential":
+
+- **The levers that exist barely matter.** Shift 2 demand is flat within ±10 MW (`shift_02.py:18`); Shift 3's own docstring flags a ~120 MW oversupply at start (`shift_03.py:47-50`). Even the acting the player *could* do changes nothing. Tightening the dispatch margin makes the existing levers bite **without adding a single event** — the screen-saver quality is a margin problem first, an event-count problem second.
+- **No fast-forward in PLAYING** (`main.py:978-984`; the speed ladder exists only in `DESIGNER_TEST`). The quiet stretches are *enforced* dead time the player cannot compress — a pure negative even under the contemplative reading, and trivially removable.
+- **Zero forecast error** (`demand.py:56-57`: "the forecast is always identical to the live demand"). There is nothing uncertain to watch *for*. A bounded, seeded divergence on the **live path only** — leaving `get_forecast_mw`/`forecast_by_hour` deterministic so Phase 1 planning stays honest — is what turns the frequency strip and the reserve readout into instruments worth watching. This is the same mechanic as #4a, here doing tutorial-scale work.
+
+**How this reconciles with §9.6, precisely:** decision density remains a primary metric (item 2 stands), but for the *tutorial* shifts the target is raised by making attention live — tighter margins, an uncertain future to watch, and the ability to skip the quiet — rather than by cranking Shift 2 toward finale intensity. Only *after* that baseline feels alive do a few discrete decisions get layered on, using Shift 3's L09 pattern (§9.2). This is a sequencing refinement, not a reversal: the finale shifts still escalate toward the tension machine; the tutorials get there by teaching vigilance, not by manufacturing panic.
+
+*Sequenced, per developer decision (2026-07-26): foundation first (make watching active — margins, forecast error, fast-forward), then a few authored beats on top. See Appendix.*
 
 ---
 
@@ -806,6 +844,10 @@ Newton-Raphson rejected (§8.5). Phase G sequenced after Improvement #1, so the 
 **Design intent: GRIDCOM is a tension machine** *(developer decision, 2026-07-25)*.
 
 Not a contemplative night-shift piece. Resolves the open question in §9.6. Consequences: failure conditions in #2 are required and should bite; decision density is a primary metric; forecast error (#4a) is promoted to a core-loop requirement; and the reaction window should be tuned toward the **lower** end of 10–20 s. Throughout, prefer the items that make the player nervous.
+
+**Tutorial-shift pacing: make watching *active* before adding crises; foundation first, then a few authored beats** *(developer decision, 2026-07-26)*.
+
+Refines §9.6 item 2 (see §9.7). Shifts 1–5 stay deliberately calmer than the finale — the defect is *passive* watching, not watching itself. Phase A (foundation): tighten dispatch margins so existing levers matter (Shift 2's flat ±10 MW band, Shift 3's flagged ~120 MW oversupply), add a bounded seeded forecast-vs-actual divergence on the live demand path only (planning's forecast stays deterministic), and add a fast-forward key in PLAYING (bind clear of the digit-key MW entry). Phase B: 1–2 L09-style condition-gated beats per shift (3–5), pure `SCRIPTED_EVENTS` content, only after Phase A is playtested. Shift 1 stays a pure single-lever observation tutorial.
 
 ---
 

@@ -695,7 +695,13 @@ def test_frequency_model() -> bool:
 
     try:
         from simulation.frequency import FrequencyModel
-        from simulation.constants import F_NOMINAL, F_MIN, F_MAX
+        from simulation.constants import F_NOMINAL, F_MIN, F_MAX, TIME_COMPRESSION
+
+        # A realistic in-game tick carries dt_sim_seconds = real_dt * TIME_COMPRESSION
+        # (see main.py's sim.tick() call site) -- use that scale here rather than a
+        # bare 1.0, since FREQ_DYNAMICS_SCALE is tuned against compressed sim-seconds,
+        # not raw real seconds.
+        _dt_tick = 1.0 * TIME_COMPRESSION
 
         # ── Generation deficit lowers frequency ───────────────────────────
         try:
@@ -704,12 +710,10 @@ def test_frequency_model() -> bool:
                 f"Initial frequency should be {F_NOMINAL} Hz, got {fm.frequency_hz}"
 
             # 500 MW deficit on a 5000 MW system (all coal, H=5).
-            # With no droop (first tick from nominal, Δf=0 → droop=0):
-            # df/dt = (50 / (2×5)) × (-500/1000) = 5 × (-0.5) = -2.5 Hz/s
-            # After 1s: f ≈ 47.5 Hz (well below nominal).
+            # df/dt = (50 / (2×5)) × (-500/1000) = 5 × (-0.5) = -2.5 Hz/sim-s.
             online_units = [('COAL', 4500.0)]
             fm.update(
-                dt_sim_seconds=1.0,
+                dt_sim_seconds=_dt_tick,
                 p_generation_mw=4500.0,
                 p_load_mw=5000.0,
                 online_unit_types=online_units,
@@ -729,7 +733,7 @@ def test_frequency_model() -> bool:
         try:
             fm2 = FrequencyModel()
             fm2.update(
-                dt_sim_seconds=1.0,
+                dt_sim_seconds=_dt_tick,
                 p_generation_mw=5500.0,
                 p_load_mw=5000.0,
                 online_unit_types=[('NUCLEAR', 5500.0)],

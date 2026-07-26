@@ -201,6 +201,7 @@ def draw_power_panel(
     agc_cur   = state.agc_current_mw       if state else 40.0
     agc_max   = state.agc_max_mw           if state else 65.0
     agc_min   = state.agc_min_mw           if state else 6.5
+    agc_saturated = state.agc_saturated    if state else False
 
     _fill_panel(surf)
     _right_border(surf)
@@ -251,10 +252,11 @@ def draw_power_panel(
     headroom_dn = agc_cur - agc_min
     margin = min(headroom_up, headroom_dn) / band_range if has_agc else 0.0
     reg_col = COL_TEXT_GOOD if margin >= 0.20 else (COL_TEXT_WARN if margin >= 0.05 else COL_TEXT_CRIT)
+    reg_now_col = COL_TEXT_CRIT if agc_saturated else reg_col
 
     reg_rows: list[tuple[str, str, tuple]] = [
         ('REG MIN', _reg_val(agc_min), COL_TEXT_DIM),
-        ('REG NOW', _reg_val(agc_cur), reg_col),
+        ('REG NOW', (_reg_val(agc_cur) + ' SAT') if agc_saturated else _reg_val(agc_cur), reg_now_col),
         ('REG MAX', _reg_val(agc_max), COL_TEXT_SECONDARY),
     ]
     base_y = sub_y + rh

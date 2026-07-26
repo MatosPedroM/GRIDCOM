@@ -45,12 +45,12 @@ from display.symbols import (
     get_port_point,
     _draw_dashed_line,
 )
-from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC
+from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC, COL_LOAD_CRIT
 from display.geometry import point_segment_dist
 from data.layout_override import get_label_anchor
 from simulation.constants import (
     CANVAS_HEIGHT, FONT_SIZE_LABEL, LABEL_PAD_PX, NATIVE_WIDTH,
-    DEVICE_GLYPH_OFFSET_PX,
+    DEVICE_GLYPH_OFFSET_PX, FONT_SIZE_OVERLAY, TRIP_DELAY_S, TIME_COMPRESSION,
 )
 import simulation.constants as _sim_const
 from utils.helpers import resource_path
@@ -650,6 +650,48 @@ class GridCanvas:
                             font_scale)
             self._canvas_key = canvas_key
         surf.blit(self._canvas_surf_cache, (0, 0))
+
+    def draw_overload_countdowns(
+        self,
+        surf: pygame.Surface,
+        state,
+        font_scale: float = 1.0,
+    ) -> None:
+        """
+        Draw a live "trip in Ns" countdown at the midpoint of every line
+        currently accumulating overload time (state.overload_timers).
+
+        Deliberately NOT part of the cached draw()/_redraw_to() pass — the
+        canvas cache quantises line_loading to 5% steps specifically to cap
+        redraw frequency, which would make a live per-second countdown text
+        stutter or lag. This is a cheap always-fresh top-layer pass, called
+        once per frame after draw() blits its cached surface (same pattern
+        as draw_load_triangles in renderer.py).
+        """
+        if state is None or not state.overload_timers:
+            return
+
+        sz = int(FONT_SIZE_OVERLAY * font_scale)
+        for line in self._lines:
+            elapsed = state.overload_timers.get(line.label)
+            if not elapsed:
+                continue
+            waypoints = self._line_waypoints.get(line.label)
+            if not waypoints or len(waypoints) < 2:
+                continue
+
+            remaining_s = max(0.0, (TRIP_DELAY_S - elapsed) / TIME_COMPRESSION)
+            text = f'{remaining_s:.0f}s'
+
+            mid = len(waypoints) // 2
+            (x1, y1), (x2, y2) = waypoints[mid - 1], waypoints[mid]
+            cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+
+            rect = self._font.get_rect(text, size=sz)
+            self._font.render_to(
+                surf, (int(cx - rect.width / 2), int(cy - rect.height / 2)),
+                text, COL_LOAD_CRIT, size=sz,
+            )
 
     def _build_canvas_key(
         self,

@@ -771,6 +771,11 @@ class Renderer:
                                 self._canvas._lines, self._canvas._line_waypoints)
             native_changed = True
 
+        # ── Overload trip countdowns (live, uncached — see draw_overload_countdowns) ──
+        if state is not None and state.overload_timers:
+            self._canvas.draw_overload_countdowns(self._canvas_surf, state, font_scale=self._scale)
+            native_changed = True
+
         if _perf:
             _t1 = time.perf_counter()
             self._perf_last_ms['triangles'] = (_t1 - _t0) * 1000.0

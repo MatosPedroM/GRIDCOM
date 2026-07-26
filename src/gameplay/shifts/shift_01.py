@@ -79,7 +79,7 @@ HANDOVER_NOTES: tuple[str, ...] = (
 
 # Starting dispatch — units absent from this dict start OFFLINE.
 INITIAL_SCHEDULE: dict[str, float] = {
-    'ASHC-1': 30.0,     # Ashcombe Hydro Unit 1 — the unit the player actively works
+    'ASHC-1': 103.0,     # Ashcombe Hydro Unit 1 — the unit the player actively works
     'RIVE-1': 105.0,    # Riverside Coal Unit 1 — idling at its technical minimum
 }
 

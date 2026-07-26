@@ -850,9 +850,6 @@ class Renderer:
             paused,
             len(self._freq_history),
             round(self._freq_history[0], 2) if self._freq_history else None,
-            len(self._load_rate_history),
-            round(self._load_rate_history[0], 2) if self._load_rate_history else None,
-            round(self._load_rate_history[-1], 2) if self._load_rate_history else None,
         )
         power_key = (
             round(state.total_generation_mw)  if state else None,
@@ -861,6 +858,7 @@ class Renderer:
             round(state.spinning_reserve_mw)  if state else None,
             round(state.system_inertia_h, 1)  if state else None,
             round(state.losses_mw)            if state else None,
+            round(self._load_rate_history[-1], 2) if self._load_rate_history else None,
         )
         dispatch_key = (
             ''.join(v[:1] for _, v in sorted(state.unit_states.items())) if state else None,
@@ -895,14 +893,13 @@ class Renderer:
         if freq_key != self._panel_keys['freq']:
             draw_frequency_panel(
                 self._panel_cache['freq'], self._font, self._blink_on, state,
-                paused=paused, freq_history=self._freq_history,
-                load_rate_history=self._load_rate_history, font_scale=_fs)
+                paused=paused, freq_history=self._freq_history, font_scale=_fs)
             self._panel_keys['freq'] = freq_key
             panel_changed = True
 
         if power_key != self._panel_keys['power']:
             draw_power_panel(self._panel_cache['power'], self._font, state,
-                             font_scale=_fs)
+                             load_rate_history=self._load_rate_history, font_scale=_fs)
             self._panel_keys['power'] = power_key
             panel_changed = True
 

@@ -88,9 +88,14 @@ def draw_frequency_panel(
     state=None,
     paused:       bool  = False,
     freq_history=None,
+    load_rate_history=None,
     font_scale:   float = 1.0,
 ) -> None:
-    """Frequency panel: large Hz readout, analog bar, trend/clock line, history plot."""
+    """Frequency panel: left half is the large Hz readout, analog bar,
+    trend/clock line and a vertical frequency history plot (time top-to-
+    bottom, newest sample nearest the bar); right half is a load-variation
+    (MW/min rate of change) readout and its own vertical history plot,
+    auto-scaled to visible history."""
 
     freq_hz: float = state.frequency_hz    if state else 49.85
     trend:   str   = state.frequency_trend if state else 'FALLING'
@@ -108,6 +113,8 @@ def draw_frequency_panel(
     pad = int(_PAD      * fs)
     bh  = max(2, int(_BAR_H * fs))
 
+    half_w = w // 2
+
     def _freq_col(f: float) -> tuple:
         if f < 49.0 or f > 51.0:
             return COL_FREQ_CRITICAL
@@ -119,12 +126,12 @@ def draw_frequency_panel(
 
     hz_str = f'{freq_hz:.2f} Hz'
     rect = font.get_rect(hz_str, size=sl)
-    tx = (w - rect.width) // 2
+    tx = (half_w - rect.width) // 2
     font.render_to(surf, (tx, hh + max(1, int(6 * fs))), hz_str, col, size=sl)
 
     bar_y = hh + int(48 * fs)
     bar_x = pad
-    bar_w = w - pad * 2
+    bar_w = half_w - pad * 2
 
     def _fill_frac(f: float) -> float:
         return (f - 45.0) / 10.0
@@ -157,29 +164,71 @@ def draw_frequency_panel(
             clock_str += '  PAUSED'
         clock_col = COL_TEXT_WARN if paused else COL_TEXT_SECONDARY
         crect = font.get_rect(clock_str, size=sp)
-        font.render_to(surf, (w - pad - crect.width, status_y), clock_str, clock_col, size=sp)
+        font.render_to(surf, (half_w - pad - crect.width, status_y), clock_str, clock_col, size=sp)
 
-    # ── Frequency history — bottom-to-top strip chart, newest sample nearest the bar ──
-    if freq_history:
-        plot_top    = status_y + max(10, int(18 * fs))
-        plot_bottom = h - pad
-        plot_h      = plot_bottom - plot_top
-        if plot_h > 4:
-            for hz_val in (49.5, 50.0, 50.5):
-                lx = bar_x + int(_fill_frac(hz_val) * bar_w)
-                pygame.draw.line(surf, COL_METER_TICK,
-                                 (lx, plot_top), (lx, plot_bottom), 1)
+    # ── Frequency history — vertical strip chart, newest sample nearest the bar,
+    # older samples toward the bottom of the left half. ──
+    plot_top    = status_y + max(10, int(18 * fs))
+    plot_bottom = h - pad
+    plot_h      = plot_bottom - plot_top
+    if freq_history and plot_h > 4:
+        for hz_val in (49.5, 50.0, 50.5):
+            lx = bar_x + int(_fill_frac(hz_val) * bar_w)
+            pygame.draw.line(surf, COL_METER_TICK,
+                             (lx, plot_top), (lx, plot_bottom), 1)
 
-            samples = list(freq_history)
-            n = len(samples)
-            max_n = max(n, 1)
-            points = []
-            for i, f in enumerate(reversed(samples)):  # i=0 → most recent
-                x = bar_x + int(max(0.0, min(1.0, _fill_frac(f))) * bar_w)
-                y = plot_top + int((i / max_n) * plot_h)
-                points.append((x, y))
-            if len(points) >= 2:
-                pygame.draw.lines(surf, col, False, points, 1)
+        samples = list(freq_history)
+        n = len(samples)
+        max_n = max(n, 1)
+        points = []
+        for i, f in enumerate(reversed(samples)):  # i=0 → most recent
+            x = bar_x + int(max(0.0, min(1.0, _fill_frac(f))) * bar_w)
+            y = plot_top + int((i / max_n) * plot_h)
+            points.append((x, y))
+        if len(points) >= 2:
+            pygame.draw.lines(surf, col, False, points, 1)
+
+    # ── Right half — load variation (MW/min rate of change) ──
+    rx = half_w + pad
+    rw = w - half_w - pad * 2
+    pygame.draw.line(surf, COL_PANEL_BORDER, (half_w, hh), (half_w, h), 1)
+
+    rate_now = load_rate_history[-1] if load_rate_history else 0.0
+    font.render_to(surf, (rx, hh + max(1, int(6 * fs))), 'LOAD VAR', COL_TEXT_DIM, size=sp)
+    rate_str = f'{rate_now:+.1f} MW/min'
+    rrect = font.get_rect(rate_str, size=sl)
+    rtx = half_w + (rw + pad * 2 - rrect.width) // 2
+    font.render_to(surf, (rtx, hh + max(1, int(24 * fs))), rate_str, COL_FORECAST_DEMAND, size=sl)
+
+    rate_plot_top    = hh + max(1, int(64 * fs))
+    rate_plot_bottom = h - pad
+    rate_plot_h      = rate_plot_bottom - rate_plot_top
+    if load_rate_history and rate_plot_h > 4:
+        rate_samples = list(load_rate_history)
+        lo = min(rate_samples)
+        hi = max(rate_samples)
+        span = hi - lo
+        rate_pad = span * 0.1 if span > 0.0 else max(1.0, abs(hi) * 0.1, 1.0)
+        lo -= rate_pad
+        hi += rate_pad
+        span2 = hi - lo
+
+        def _rate_frac(v: float) -> float:
+            return (v - lo) / span2 if span2 > 0.0 else 0.5
+
+        zero_frac = max(0.0, min(1.0, _rate_frac(0.0)))
+        zero_y = rate_plot_bottom - int(zero_frac * rate_plot_h)
+        pygame.draw.line(surf, COL_METER_TICK, (rx, zero_y), (rx + rw, zero_y), 1)
+
+        n = len(rate_samples)
+        max_n = max(n, 1)
+        points = []
+        for i, v in enumerate(reversed(rate_samples)):  # i=0 → most recent
+            x = rx + int(max(0.0, min(1.0, _rate_frac(v))) * rw)
+            y = rate_plot_top + int((i / max_n) * rate_plot_h)
+            points.append((x, y))
+        if len(points) >= 2:
+            pygame.draw.lines(surf, COL_FORECAST_DEMAND, False, points, 1)
 
 
 # ── Panel 2 — Power Balance ────────────────────────────────────────────────────

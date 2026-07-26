@@ -10,23 +10,37 @@ Narrative:
   nothing to do there yet. AGC and governor droop are both off — the player
   observes basic frequency and load behaviour and must manually correct
   ASHC-1's output to hold frequency nominal as demand ramps through the
-  pre-dawn trough.
+  mid-morning climb.
 
   As demand keeps climbing, ASHC-1 needs to cover load minus RIVE-1's fixed
-  105 MW floor — it crosses 200 MW around T+254 (~08:14) and keeps rising
-  toward its 250 MW ceiling by shift end. This is a real mechanical forcing
-  function, not just a narrative cue, but it lands late in this shift's
-  demand curve (RIVE-1's 105 MW minimum plus a 400 MW peak means the
-  two-unit phase is necessarily a last-90-minutes affair, not a mid-shift
-  one) — the player finishes the shift managing both units together as
-  demand keeps rising toward the mid-morning peak.
+  105 MW floor — with a realistic player tracking demand, it crosses 195 MW
+  around T+105 (~08:15) and keeps rising toward its 250 MW ceiling by shift
+  end (~242 MW at T+180). This is a real mechanical forcing function, not
+  just a narrative cue, and lands in the back half of this shift's
+  (deliberately shortened) window — the player finishes the shift managing
+  both units together as demand keeps rising toward the late-morning peak.
 
   Demand is derived at load time from GREY/OAKE's saved peak_load_mw in
   shift2.json (200 MW each, 400 MW combined) scaled by the campaign's
   shared DEMAND_PROFILE_NORMALISED curve (src/data/profiles.py) — not
-  authored here. Across this shift's 04:00-10:00 window that curve runs
-  128 -> 140 -> 176 -> 232 -> 288 -> 328 -> 348 MW hour-by-hour, a single
-  continuous ramp rather than two separately-shaped windows.
+  authored here. Across this shift's 06:30-09:30 window that curve runs
+  204 -> 232 -> 288 -> 328 -> 338 MW hour-by-hour, a single continuous ramp.
+  START_HOUR was deliberately moved later (was 4.0/04:00) when the shift's
+  DURATION_HOURS was halved (6.0 -> 3.0) — demand here is driven by
+  real sim-hour-of-day, not shift-relative time, so simply halving the
+  duration at the old 04:00 start would have left the shift entirely within
+  the flattest part of the morning ramp and never actually forced ASHC-1
+  past its single-unit capacity within the shorter window (confirmed via a
+  headless trace before picking 06:30). All SCRIPTED_EVENTS trigger_min
+  values are re-timed against this window, not simply halved from the old
+  6-hour shift's timings, for the same reason.
+
+  FREQ_TOLERANCE_MULT = 2.0 roughly doubles the alarm/crisis band from the
+  default (see constants.py FREQ_TOLERANCE_MULT) — a first-time player
+  needs more reaction room than the standard shifts allow. The G-key
+  active-power nudge (select unit, G, Up/Down) is the fast path for
+  splitting load between two units under time pressure; typing an exact
+  MW value via digit keys + Enter still works identically.
 
 Grid: RIVE ──L01──► ASHC ──{L02,L03}──► GREY, ASHC ──{L04,L05}──► OAKE
       (4 buses, 5 lines)
@@ -49,17 +63,18 @@ SHIFT_DATE: str = 'MON 07 NOV 1994'
 
 DIFFICULTY_LABEL: str = 'Tutorial'
 
-START_HOUR: float = 4.0
+START_HOUR: float = 6.5
 
-DURATION_HOURS: float = 6.0
+DURATION_HOURS: float = 3.0
 
 HANDOVER_NOTES: tuple[str, ...] = (
-    'Night handover from R. Ferris.',
+    'Morning handover from R. Ferris.',
     'Ashcombe Hydro Unit 1 (ASHC-1) on-line at 30 MW — the unit to watch.',
     'Riverside Coal Unit 1 (RIVE-1) on-line at its 105 MW minimum, idling — nothing to do there yet.',
     'AGC off, governor droop off — manual dispatch only.',
-    'Demand very low — pre-dawn trough, a long morning ramp ahead.',
+    'Demand climbing fast through the morning ramp — stay ahead of it.',
     'Your task: keep frequency nominal as demand rises. Ashcombe alone can carry it for now.',
+    'Tip: select a unit, press G, then Up/Down to adjust its output (Ctrl for a bigger step).',
 )
 
 # Starting dispatch — units absent from this dict start OFFLINE.
@@ -74,6 +89,12 @@ MAINTENANCE_UNITS: set[str] = set()
 AGC_ENABLED: bool = False
 
 DROOP_ENABLED: bool = False
+
+# Roughly doubles the alarm/crisis band (~+-0.4 Hz alert, +-1.0 Hz critical
+# instead of the default +-0.2/+-0.5 Hz) — a first-time player needs more
+# room to react manually than the standard shifts allow. F_MIN/F_MAX (the
+# hard 45/55 Hz clamp) are not affected by this multiplier.
+FREQ_TOLERANCE_MULT: float = 2.0
 
 SCRIPTED_EVENTS: list[dict] = [
     {
@@ -91,17 +112,29 @@ SCRIPTED_EVENTS: list[dict] = [
         'condition':   None,
     },
     {
-        'trigger_min': 60.0,
+        'trigger_min': 2.5,
+        'priority':    'TUTOR',
+        'message':     'To adjust ASHC-1: select it, press G, then Up/Down.',
+        'detail':      ('Tab selects a unit (or click it on the canvas). With ASHC-1 '
+                        'selected, press G to arm output adjust, then Up raises its '
+                        'target output, Down lowers it — hold Ctrl for a bigger 5x '
+                        'step. You can also type an exact MW number: press Enter, '
+                        'type the digits, press Enter again to commit.'),
+        'element':     'ASHC-1',
+        'condition':   None,
+    },
+    {
+        'trigger_min': 30.0,
         'priority':    'TUTOR',
         'message':     'Demand is rising. Raise ASHC-1 output to hold frequency.',
-        'detail':      ('Load is climbing through the pre-dawn ramp. If frequency '
+        'detail':      ('Load is climbing through the morning ramp. If frequency '
                         'has started drifting low, increase ASHC-1\'s target output '
                         '— hydro responds almost immediately.'),
         'element':     'ASHC-1',
         'condition':   {'metric': 'FREQUENCY_HZ', 'op': '<', 'value': 49.9},
     },
     {
-        'trigger_min': 120.0,
+        'trigger_min': 60.0,
         'priority':    'TUTOR',
         'message':     'Morning ramp continuing. Keep ASHC-1 tracking demand.',
         'detail':      ('Demand keeps climbing. Keep an eye on both frequency and '
@@ -112,7 +145,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'op': '<', 'value': 33.0},
     },
     {
-        'trigger_min': 250.0,
+        'trigger_min': 80.0,
         'priority':    'WARNING',
         'message':     'Ashcombe nearing its ceiling. Bring Riverside up to help.',
         'detail':      ('ASHC-1 is approaching its 250 MW rated output as demand '
@@ -125,7 +158,20 @@ SCRIPTED_EVENTS: list[dict] = [
                         'op': '>', 'value': 195.0},
     },
     {
-        'trigger_min': 285.0,
+        'trigger_min': 90.0,
+        'priority':    'TUTOR',
+        'message':     'To bring Riverside up: Tab to select RIVE-1, press G, hold Up.',
+        'detail':      ('Press Tab until RIVE-1 is selected (or click it on the '
+                        'canvas), press G to arm output adjust, then hold Up to '
+                        'raise its target — Ctrl+Up steps faster. RIVE-1 is coal and '
+                        'ramps slowly, so raise it gradually and keep watching '
+                        'ASHC-1 and frequency at the same time.'),
+        'element':     'RIVE-1',
+        'condition':   {'metric': 'UNIT_OUTPUT_MW', 'target': 'ASHC-1',
+                        'op': '>', 'value': 195.0},
+    },
+    {
+        'trigger_min': 105.0,
         'priority':    'WARNING',
         'message':     'Ashcombe nearing its ceiling. Bring Riverside up to help.',
         'detail':      ('ASHC-1 is approaching its 250 MW rated output as demand '
@@ -138,7 +184,7 @@ SCRIPTED_EVENTS: list[dict] = [
                         'op': '>', 'value': 195.0},
     },
     {
-        'trigger_min': 290.0,
+        'trigger_min': 110.0,
         'priority':    'TUTOR',
         'message':     'Two units now. Split the load between Ashcombe and Riverside.',
         'detail':      ('Demand keeps rising toward the mid-morning peak. You now '
@@ -149,7 +195,7 @@ SCRIPTED_EVENTS: list[dict] = [
         'condition':   None,
     },
     {
-        'trigger_min': 340.0,
+        'trigger_min': 165.0,
         'priority':    'TUTOR',
         'message':     'Approaching handover. Confirm both units are tracking demand.',
         'detail':      ('The shift is nearly over. If either unit has drifted from '

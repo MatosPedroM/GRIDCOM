@@ -59,6 +59,7 @@ def draw_unit_context(
     setpoint_active: bool = False,
     dispatch_mode:  str | None = None,
     mode_cmd_active: bool = False,
+    adjust_active:  bool = False,
 ) -> None:
     """
     Draw the unit context panel at the top-left of the canvas surface.
@@ -86,6 +87,9 @@ def draw_unit_context(
                         the row entirely — only shown when this shift has a
                         Phase 1 hourly schedule covering the unit.
         mode_cmd_active: Whether the AUTO/MANUAL toggle button has keyboard focus.
+        adjust_active:  Whether active-power nudge mode (G + Up/Down) is armed
+                        for this unit — shown as a magenta Target field border,
+                        distinct from input_active's green typed-entry border.
     """
     fs  = font_scale
     x   = int(CONTEXT_OVERLAY_X   * fs)
@@ -164,7 +168,12 @@ def draw_unit_context(
 
         field_rect = pygame.Rect(field_x, row1_y - 1, field_w, field_h)
         pygame.draw.rect(surf, COL_CONTEXT_FIELD_BG, field_rect)
-        border_col = COL_CONTEXT_FIELD_ACTIVE if input_active else COL_PANEL_BORDER
+        if input_active:
+            border_col = COL_CONTEXT_FIELD_ACTIVE
+        elif adjust_active:
+            border_col = COL_SVC
+        else:
+            border_col = COL_PANEL_BORDER
         pygame.draw.rect(surf, border_col, field_rect, 1)
 
         display_text = input_buffer if input_active else f'{target_mw:.0f}'
@@ -178,8 +187,13 @@ def draw_unit_context(
 
         font.render_to(surf, (field_x + field_w + 2, row1_y), mw_str, COL_TEXT_DIM, size=sz)
 
-        hint = f'[{unit.min_mw:.0f} – {unit.rated_mw:.0f} MW]'
-        font.render_to(surf, (x + pad, _ry(2)), hint, COL_TEXT_DIM, size=sz)
+        if adjust_active:
+            hint     = 'ADJUST ARMED — Up/Down step, Ctrl+Up/Down fast'
+            hint_col = COL_SVC
+        else:
+            hint     = f'[{unit.min_mw:.0f} – {unit.rated_mw:.0f} MW]  (G to adjust)'
+            hint_col = COL_TEXT_DIM
+        font.render_to(surf, (x + pad, _ry(2)), hint, hint_col, size=sz)
 
         cmd_row = 3
         if show_avr:

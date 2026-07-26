@@ -61,6 +61,7 @@ from simulation.constants import (
     PERF_DEBUG_LOG, PERF_LOG_INTERVAL_S,
     TARGET_FPS, FREQ_HISTORY_WINDOW_S,
     SVC_Q_STEP_MVAR,
+    UNIT_MW_STEP, UNIT_MW_STEP_FAST_MULT,
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
@@ -147,9 +148,17 @@ class Renderer:
         # Panel scroll offsets
         self._alarm_scroll: int = 0
 
-        # Frequency history — sampled once per rendered frame, display-only concern
+        # Frequency / load-variation history — sampled once per rendered frame,
+        # display-only concern (simulation.py holds no history of its own for
+        # either). Load variation is MW/min, derived from consecutive load
+        # samples using sim-time elapsed (not real-time — the game runs at
+        # variable speed multipliers, so a real-time derivative would mean a
+        # different thing at each speed).
         _freq_hist_len = max(1, int(FREQ_HISTORY_WINDOW_S * TARGET_FPS))
         self._freq_history: deque[float] = deque(maxlen=_freq_hist_len)
+        self._load_rate_history: deque[float] = deque(maxlen=_freq_hist_len)
+        self._prev_load_mw:      float | None = None
+        self._prev_load_sim_hour: float | None = None
 
         # Panel surface cache: converted to display pixel format for fast blits.
         _sc = self._scale
@@ -190,6 +199,10 @@ class Renderer:
 
         # SVC adjust command keyboard focus
         self._svc_cmd_active: bool = False
+
+        # Active-power nudge mode (G arms it, Up/Down steps target_mw) —
+        # alternative to the digit+Enter buffer above for fast adjustments.
+        self._adjust_active: bool = False
 
         # Debug state
         self._mouse_pos:       tuple[int, int] = (0, 0)
@@ -254,6 +267,7 @@ class Renderer:
         self._setpoint_buffer = ''
         self._setpoint_active = False
         self._svc_cmd_active  = False
+        self._adjust_active   = False
 
     def _get_selected_unit(self):
         """Return the GenerationUnit for _selected_label if it is a unit, else None."""
@@ -426,6 +440,33 @@ class Renderer:
         self._setpoint_buffer = ''
         self._setpoint_active = False
 
+    def on_adjust_toggle(self) -> None:
+        """Arm active-power nudge mode for the selected dispatchable unit."""
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        self._adjust_active = True
+
+    def on_target_adjust(self, sim, direction: int, fast: bool = False) -> None:
+        """
+        Nudge the selected unit's MW target by one UNIT_MW_STEP (direction
+        = +1 or -1), or UNIT_MW_STEP * UNIT_MW_STEP_FAST_MULT if fast=True
+        (Ctrl held). Clamped to [unit.min_mw, unit.rated_mw], same bounds
+        on_enter() applies. No-op unless adjust mode is armed.
+        """
+        if not self._adjust_active:
+            return
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        state = sim.get_state()
+        if state is None:
+            return
+        step = UNIT_MW_STEP * (UNIT_MW_STEP_FAST_MULT if fast else 1.0)
+        current = state.unit_targets_mw.get(unit.label, unit.min_mw)
+        clamped = max(unit.min_mw, min(unit.rated_mw, current + direction * step))
+        sim.set_unit_target(unit.label, clamped)
+
     def on_svc_adjust(self, sim, direction: int) -> None:
         """
         Adjust the selected bus's manual SVC setpoint by one step
@@ -488,6 +529,7 @@ class Renderer:
         self._setpoint_buffer = ''
         self._setpoint_active = False
         self._svc_cmd_active  = False
+        self._adjust_active   = False
 
     def on_escape(self) -> None:
         """
@@ -506,6 +548,8 @@ class Renderer:
             self._line_cmd_active = False
         elif self._svc_cmd_active:
             self._svc_cmd_active = False
+        elif self._adjust_active:
+            self._adjust_active = False
         elif self._selected_label is not None:
             self.clear_selection()
 
@@ -784,10 +828,19 @@ class Renderer:
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
         paused = (speed_mult == 0.0)
 
-        # Sample frequency history once per rendered frame (display-only concern —
-        # simulation.py holds no history of its own, see FREQ_HISTORY_WINDOW_S).
+        # Sample frequency/load-variation history once per rendered frame
+        # (display-only concern — simulation.py holds no history of its own,
+        # see FREQ_HISTORY_WINDOW_S). Load variation (MW/min) is derived from
+        # consecutive load samples using sim-time elapsed, not real-time.
         if state:
             self._freq_history.append(state.frequency_hz)
+            if self._prev_load_mw is not None:
+                dt_sim_min = (state.sim_hour - self._prev_load_sim_hour) * 60.0
+                if dt_sim_min > 0.0:
+                    rate = (state.total_load_mw - self._prev_load_mw) / dt_sim_min
+                    self._load_rate_history.append(rate)
+            self._prev_load_mw = state.total_load_mw
+            self._prev_load_sim_hour = state.sim_hour
 
         # Dirty keys: tuples of values visible in each panel, rounded to display precision
         freq_key = (
@@ -797,6 +850,9 @@ class Renderer:
             paused,
             len(self._freq_history),
             round(self._freq_history[0], 2) if self._freq_history else None,
+            len(self._load_rate_history),
+            round(self._load_rate_history[0], 2) if self._load_rate_history else None,
+            round(self._load_rate_history[-1], 2) if self._load_rate_history else None,
         )
         power_key = (
             round(state.total_generation_mw)  if state else None,
@@ -839,7 +895,8 @@ class Renderer:
         if freq_key != self._panel_keys['freq']:
             draw_frequency_panel(
                 self._panel_cache['freq'], self._font, self._blink_on, state,
-                paused=paused, freq_history=self._freq_history, font_scale=_fs)
+                paused=paused, freq_history=self._freq_history,
+                load_rate_history=self._load_rate_history, font_scale=_fs)
             self._panel_keys['freq'] = freq_key
             panel_changed = True
 
@@ -917,6 +974,7 @@ class Renderer:
                     if selected_unit.label in state.unit_has_schedule else None
                 ),
                 mode_cmd_active=self._mode_cmd_active,
+                adjust_active=self._adjust_active,
             )
             native_changed = True
         elif self._selected_label is not None:

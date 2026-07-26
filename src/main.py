@@ -39,7 +39,7 @@ import pygame
 import pygame.freetype
 
 from display.renderer import Renderer
-from display.palette import COL_TEXT_BODY, COL_TEXT_SCREEN_HDR
+from display.palette import COL_TEXT_BODY, COL_TEXT_SCREEN_HDR, COL_ALARM_CRIT
 from display.menus import (
     build_splash_lines,
     build_main_menu_items,
@@ -136,10 +136,16 @@ def build_briefing_lines(shift_number: int) -> list:
     return lines
 
 
-def build_debrief_lines(shift_number: int, state) -> list:
-    """Return list of (text, colour) pairs for the end-of-shift report screen."""
+def build_debrief_lines(shift_number: int, state, failed: bool = False) -> list:
+    """Return list of (text, colour) pairs for the end-of-shift report screen.
+
+    failed: True if the shift ended early via GridSimulation.is_shift_failed()
+    (frequency pinned at the F_MIN/F_MAX hard clamp for BLACKOUT_TRIP_S) —
+    overrides the usual metric-based assessment with a hard FAILED verdict.
+    """
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
+    C = COL_ALARM_CRIT
     cfg = load_shift_config(shift_number)
     date_str = cfg.get('shift_date', 'MON 07 NOV 1994')
     dur_h = int(cfg['duration_hours'])
@@ -147,7 +153,9 @@ def build_debrief_lines(shift_number: int, state) -> list:
     trips  = sum(1 for s in state.unit_states.values() if s == 'TRIPPED')
     alarms = len(state.active_alarms)
     freq_pct = state.frequency_in_bounds_pct
-    if freq_pct >= 95.0 and state.load_shed_events == 0 and state.cascade_events == 0:
+    if failed:
+        assessment = 'FAILED — SYSTEM BLACKOUT'
+    elif freq_pct >= 95.0 and state.load_shed_events == 0 and state.cascade_events == 0:
         assessment = 'EXCELLENT'
     elif freq_pct >= 80.0 and state.load_shed_events <= 1:
         assessment = 'SATISFACTORY'
@@ -162,6 +170,15 @@ def build_debrief_lines(shift_number: int, state) -> list:
         (_SEP, H),
         (f' SHIFT: {shift_number} OF 10    DURATION: {dur_h:02d}H {dur_m:02d}M    DATE: {date_str}', B),
         (_SEP, H),
+    ]
+    if failed:
+        lines += [
+            (' FREQUENCY COLLAPSE:', H),
+            ('   System frequency remained outside safe limits until protective', C),
+            ('   systems isolated the network. Shift terminated early.', C),
+            ('', B),
+        ]
+    lines += [
         (' FREQUENCY PERFORMANCE:', H),
         (f'   Within \xb10.2 Hz: {freq_pct:.1f}%    Max line loading: {state.max_line_loading_seen:.0f}%', B),
         ('', B),
@@ -276,6 +293,7 @@ def _make_sim_and_renderer(
         renderer.set_grid(grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.DROOP_ENABLED = cfg['droop_enabled']
+    _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
     return sim, grid, renderer
 
 
@@ -333,6 +351,7 @@ def _make_designer_test(
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = True
     _const.DROOP_ENABLED = True
+    _const.FREQ_TOLERANCE_MULT = 1.0
     return sim, designer_grid, renderer
 
 
@@ -388,6 +407,7 @@ def _make_shift_test(
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.DROOP_ENABLED = cfg.get('droop_enabled', True)
+    _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
     return sim, designer_grid, renderer
 
 
@@ -942,6 +962,19 @@ def main() -> None:
                           and not renderer._input_active and not ctrl):
                         renderer.on_setpoint_toggle()
 
+                    elif (event.key == pygame.K_g and not _const.EDITOR_MODE
+                          and not renderer._input_active and not renderer._setpoint_active
+                          and not ctrl):
+                        renderer.on_adjust_toggle()
+
+                    elif (event.key == pygame.K_UP and not _const.EDITOR_MODE
+                          and renderer._adjust_active):
+                        renderer.on_target_adjust(sim, +1, fast=ctrl)
+
+                    elif (event.key == pygame.K_DOWN and not _const.EDITOR_MODE
+                          and renderer._adjust_active):
+                        renderer.on_target_adjust(sim, -1, fast=ctrl)
+
                     elif event.key == pygame.K_d:
                         _const.DEBUG_DISPLAY = not _const.DEBUG_DISPLAY
 
@@ -1030,7 +1063,8 @@ def main() -> None:
             renderer.tick(dt, state=state, speed_mult=speed)
 
             if sim.is_shift_complete():
-                debrief_lines = build_debrief_lines(shift, sim.get_state())
+                debrief_lines = build_debrief_lines(shift, sim.get_state(),
+                                                     failed=sim.is_shift_failed())
                 game_state    = GameState.DEBRIEF
                 debrief_chars = 0.0
 

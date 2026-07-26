@@ -48,6 +48,12 @@ def load_shift_config(shift_number: int) -> dict:
                                                           a shift_NN.py for a pure manual-dispatch
                                                           tutorial where nothing corrects frequency
                                                           but the player)
+        freq_tolerance_mult float                     — multiplier on F_ALERT_*/F_CRITICAL_*'s
+                                                          deltas from nominal (default 1.0 — see
+                                                          constants.py FREQ_TOLERANCE_MULT; set > 1.0
+                                                          in a shift_NN.py to widen the alarm/crisis
+                                                          band for a tutorial shift. F_MIN/F_MAX, the
+                                                          hard clamp, are never scaled)
         substation_load_mw  dict[str, dict[float, float]] — per-bus hourly load table (MW), built by
                                                           scaling each LOAD bus's peak_load_mw by the
                                                           shared DEMAND_PROFILE_NORMALISED curve; empty
@@ -110,6 +116,7 @@ def load_shift_config(shift_number: int) -> dict:
         'maintenance_lines':       getattr(mod, 'MAINTENANCE_LINES',       set()),
         'agc_enabled':             getattr(mod, 'AGC_ENABLED',             False),
         'droop_enabled':           getattr(mod, 'DROOP_ENABLED',           True),
+        'freq_tolerance_mult':     getattr(mod, 'FREQ_TOLERANCE_MULT',     1.0),
         'substation_load_mw':      substation_load_mw,
         'substation_types':        dict(getattr(mod, 'SUBSTATION_TYPES', {})),
         'shunt_bank_overrides':    dict(getattr(mod, 'SHUNT_BANK_OVERRIDES', {})),

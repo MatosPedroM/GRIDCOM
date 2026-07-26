@@ -104,6 +104,11 @@ SVC_Q_MIN_MVAR:  float = -150.0
 SVC_Q_MAX_MVAR:  float =  150.0
 SVC_Q_STEP_MVAR: float =   10.0  # per keyboard adjust command
 
+# Unit active-power nudge (G to arm, Up/Down to step) — alternative to
+# typing an exact MW target via digit keys + Enter.
+UNIT_MW_STEP:       float =  1.0  # MW per keyboard adjust command
+UNIT_MW_STEP_FAST_MULT: float = 5.0  # Ctrl+Up/Down multiplier (1 MW * 5 = 5 MW)
+
 # ─────────────────────────────────────────────
 # FREQUENCY THRESHOLDS (Hz)
 # ─────────────────────────────────────────────
@@ -117,6 +122,11 @@ F_TRIP_ISLAND_HIGH: float = 50.5  # Over-frequency relay trip for isolated islan
 F_TRIP_ISLAND_LOW:  float = 49.5  # Under-frequency relay trip for isolated islands
 F_IN_BOUNDS_TOL:  float = 0.2   # Tolerance for frequency_in_bounds_pct scoring
 F_STABLE_TOL:     float = 0.005 # Hz — threshold for STABLE vs RISING/FALLING trend
+
+FREQ_TOLERANCE_MULT: float = 1.0  # Per-shift multiplier on F_ALERT_*/F_CRITICAL_*'s
+                                   # deltas from F_NOMINAL — widened for tutorial
+                                   # shifts via shift_NN.py's FREQ_TOLERANCE_MULT.
+                                   # F_MIN/F_MAX (hard clamp) are never scaled.
 
 FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the frequency trend plot
 
@@ -173,6 +183,10 @@ LOSSES_FRACTION: float = 0.025  # 2.5% of total generation added to load
 TRIP_DELAY_S:        float = 720.0  # Seconds (SIM-time) a line must be >100% before tripping —
                                      # 720 / TIME_COMPRESSION(48) = 15 real seconds at 1x speed,
                                      # raised from 60.0 (was only 1.25 real seconds — unreadable).
+
+BLACKOUT_TRIP_S:     float = 360.0  # Seconds (SIM-time) frequency must stay pinned at the
+                                     # F_MIN/F_MAX hard clamp before the shift ends as FAILED —
+                                     # 360 / TIME_COMPRESSION(48) = 7.5 real seconds at 1x speed.
 OVERLOAD_WARN_PCT:   float = 85.0   # Loading % at which WARNING alarm fires
 OVERLOAD_CRIT_PCT:   float = 100.0  # Loading % at which overload timer starts
 

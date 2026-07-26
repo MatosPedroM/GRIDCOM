@@ -21,6 +21,7 @@ JSON schema version 1:
     "duration_hours": float,
     "agc_enabled": bool,
     "droop_enabled": bool,
+    "freq_tolerance_mult": float,
     "handover_notes": [str, ...],
     "initial_schedule": {unit_label: mw},
     "maintenance_units": [unit_label, ...],
@@ -99,6 +100,7 @@ class ShiftDefinition:
     duration_hours:     float = 8.0
     agc_enabled:        bool = False
     droop_enabled:      bool = True
+    freq_tolerance_mult: float = 1.0
     handover_notes:     list[str] = field(default_factory=list)
     initial_schedule:   dict[str, float] = field(default_factory=dict)
     maintenance_units:  list[str] = field(default_factory=list)
@@ -132,6 +134,7 @@ def save_shift_named(shift_def: ShiftDefinition, name: str) -> None:
         'duration_hours':     shift_def.duration_hours,
         'agc_enabled':        shift_def.agc_enabled,
         'droop_enabled':      shift_def.droop_enabled,
+        'freq_tolerance_mult': shift_def.freq_tolerance_mult,
         'handover_notes':     list(shift_def.handover_notes),
         'initial_schedule':   dict(shift_def.initial_schedule),
         'maintenance_units':  list(shift_def.maintenance_units),
@@ -169,6 +172,7 @@ def load_shift_named(name: str) -> ShiftDefinition:
         duration_hours=data.get('duration_hours', 8.0),
         agc_enabled=data.get('agc_enabled', False),
         droop_enabled=data.get('droop_enabled', True),
+        freq_tolerance_mult=data.get('freq_tolerance_mult', 1.0),
         handover_notes=list(data.get('handover_notes', [])),
         initial_schedule=dict(data.get('initial_schedule', {})),
         maintenance_units=list(data.get('maintenance_units', [])),
@@ -205,6 +209,7 @@ def shift_def_to_config(shift_def: ShiftDefinition) -> dict:
         'maintenance_lines':  set(shift_def.maintenance_lines),
         'agc_enabled':        shift_def.agc_enabled,
         'droop_enabled':      shift_def.droop_enabled,
+        'freq_tolerance_mult': shift_def.freq_tolerance_mult,
         'substation_load_mw': shift_def.substation_load_mw,
         'scripted_events':    [asdict(e) for e in shift_def.events],
     }
@@ -219,7 +224,8 @@ def shift_def_to_config(shift_def: ShiftDefinition) -> dict:
 # DIFFICULTY_LABEL) are read for display only and are never written back
 # here — only the mechanical/tabular constants Shift Builder actually
 # edits (INITIAL_SCHEDULE, MAINTENANCE_UNITS, MAINTENANCE_LINES,
-# SUBSTATION_LOAD_MW, AGC_ENABLED, DROOP_ENABLED, SCRIPTED_EVENTS) are round-tripped, via
+# SUBSTATION_LOAD_MW, AGC_ENABLED, DROOP_ENABLED, FREQ_TOLERANCE_MULT,
+# SCRIPTED_EVENTS) are round-tripped, via
 # a targeted AST-located source-text splice that replaces only the exact
 # line span of each edited constant and leaves every other byte of the
 # file — docstrings, comments, unedited constants — untouched.
@@ -228,7 +234,8 @@ def shift_def_to_config(shift_def: ShiftDefinition) -> dict:
 # Constants Shift Builder is allowed to write back via save_campaign_shift_fields.
 CAMPAIGN_EDITABLE_FIELDS = (
     'initial_schedule', 'maintenance_units', 'maintenance_lines',
-    'substation_load_mw', 'agc_enabled', 'droop_enabled', 'events',
+    'substation_load_mw', 'agc_enabled', 'droop_enabled',
+    'freq_tolerance_mult', 'events',
 )
 
 # Maps a ShiftDefinition field name to the shift_NN.py constant it round-trips to.
@@ -239,6 +246,7 @@ _FIELD_TO_CONSTANT = {
     'substation_load_mw': 'SUBSTATION_LOAD_MW',
     'agc_enabled':        'AGC_ENABLED',
     'droop_enabled':      'DROOP_ENABLED',
+    'freq_tolerance_mult': 'FREQ_TOLERANCE_MULT',
     'events':             'SCRIPTED_EVENTS',
 }
 
@@ -292,6 +300,7 @@ def load_campaign_shift_for_editing(shift_number: int) -> ShiftDefinition:
         duration_hours=0.0,
         agc_enabled=cfg['agc_enabled'],
         droop_enabled=cfg.get('droop_enabled', True),
+        freq_tolerance_mult=cfg.get('freq_tolerance_mult', 1.0),
         handover_notes=list(cfg['handover_notes']),
         initial_schedule=dict(cfg['initial_schedule']),
         maintenance_units=sorted(cfg['maintenance_units']),
@@ -336,6 +345,7 @@ def _constant_source(name: str, value) -> str:
         'SUBSTATION_LOAD_MW': 'dict[str, dict[float, float]]',
         'AGC_ENABLED':        'bool',
         'DROOP_ENABLED':      'bool',
+        'FREQ_TOLERANCE_MULT': 'float',
         'SCRIPTED_EVENTS':    'list[dict]',
     }
     ann = annotations.get(name)
@@ -382,6 +392,7 @@ def save_campaign_shift_fields(
         'SUBSTATION_LOAD_MW': shift_def.substation_load_mw,
         'AGC_ENABLED':        shift_def.agc_enabled,
         'DROOP_ENABLED':      shift_def.droop_enabled,
+        'FREQ_TOLERANCE_MULT': shift_def.freq_tolerance_mult,
         'SCRIPTED_EVENTS':    [asdict(e) for e in shift_def.events],
     }
 

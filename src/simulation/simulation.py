@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 from simulation.constants import (
     F_NOMINAL,
+    F_MIN, F_MAX,
     F_ALERT_LOW, F_ALERT_HIGH,
     F_CRITICAL_LOW, F_CRITICAL_HIGH,
     F_TRIP_ISLAND_HIGH, F_TRIP_ISLAND_LOW,
@@ -43,6 +44,7 @@ from simulation.constants import (
     DEBUG_SIMULATION, SIM_DEBUG_LOG,
     AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ, AGC_INTEGRAL_MAX,
     TRIP_DELAY_S, TIME_COMPRESSION,
+    BLACKOUT_TRIP_S,
 )
 import simulation.constants as _sim_const
 from simulation.grid import Grid
@@ -314,6 +316,13 @@ class GridSimulation:
         self._seen_v_crit: set  = set()   # bus labels with active voltage crit alarm
         self._freq_alarm_state: str = 'OK'  # 'OK' | 'ALERT' | 'CRITICAL'
 
+        # Blackout / frequency-collapse fail state — consecutive sim-seconds
+        # spent pinned at the F_MIN/F_MAX hard clamp. Reset to 0 whenever
+        # frequency is back inside the clamp; triggers a FAILED shift end
+        # once it exceeds BLACKOUT_TRIP_S (see is_shift_complete()).
+        self._blackout_clamp_s: float = 0.0
+        self._shift_failed:     bool  = False
+
         # Simulation time
         self._sim_time_min: float = 0.0
 
@@ -531,6 +540,10 @@ class GridSimulation:
         # 13. Crisis state
         self._update_crisis(lf_result.line_loading_pct, v_eff)
 
+        # 13b. Blackout / frequency-collapse fail state — track consecutive
+        # sim-seconds pinned at the F_MIN/F_MAX hard clamp.
+        self._update_blackout_state(dt_sim_seconds)
+
         # 14. Performance counters
         self._total_ticks += 1
         if abs(self._frequency.frequency_hz - F_NOMINAL) <= F_IN_BOUNDS_TOL:
@@ -572,7 +585,13 @@ class GridSimulation:
         return self._state
 
     def is_shift_complete(self) -> bool:
-        return self._sim_time_min >= self._duration_minutes
+        return self._shift_failed or self._sim_time_min >= self._duration_minutes
+
+    def is_shift_failed(self) -> bool:
+        """True if the shift ended early because frequency stayed pinned at
+        the F_MIN/F_MAX hard clamp for BLACKOUT_TRIP_S — a real blackout,
+        distinct from reaching the shift's scheduled end time."""
+        return self._shift_failed
 
     def set_unit_target(self, unit_label: str, target_mw: float) -> bool:
         return self._fleet.set_unit_target(unit_label, target_mw)
@@ -1382,11 +1401,27 @@ class GridSimulation:
                 self._seen_v_warn.discard(bus_label)
                 self._seen_v_crit.discard(bus_label)
 
+    def _freq_bounds(self) -> tuple[float, float, float, float]:
+        """
+        Effective (alert_low, alert_high, critical_low, critical_high), scaled
+        by _sim_const.FREQ_TOLERANCE_MULT (shift_NN.py's FREQ_TOLERANCE_MULT,
+        1.0 by default) around F_NOMINAL. F_MIN/F_MAX (the hard clamp) are
+        never scaled — only the alarm/crisis band widens for tutorial shifts.
+        """
+        mult = _sim_const.FREQ_TOLERANCE_MULT
+        return (
+            F_NOMINAL - (F_NOMINAL - F_ALERT_LOW) * mult,
+            F_NOMINAL + (F_ALERT_HIGH - F_NOMINAL) * mult,
+            F_NOMINAL - (F_NOMINAL - F_CRITICAL_LOW) * mult,
+            F_NOMINAL + (F_CRITICAL_HIGH - F_NOMINAL) * mult,
+        )
+
     def _update_frequency_alarms(self) -> None:
         f = self._frequency.frequency_hz
-        if f <= F_CRITICAL_LOW or f >= F_CRITICAL_HIGH:
+        alert_low, alert_high, crit_low, crit_high = self._freq_bounds()
+        if f <= crit_low or f >= crit_high:
             new_state = 'CRITICAL'
-        elif f <= F_ALERT_LOW or f >= F_ALERT_HIGH:
+        elif f <= alert_low or f >= alert_high:
             new_state = 'ALERT'
         else:
             new_state = 'OK'
@@ -1421,12 +1456,13 @@ class GridSimulation:
         f        = self._frequency.frequency_hz
         max_load = max(loading.values(), default=0.0)
         min_v    = min(voltages.values(), default=1.0)
+        alert_low, alert_high, crit_low, crit_high = self._freq_bounds()
 
         crisis   = False
         ctype:   str | None = None
         celement: str | None = None
 
-        if f <= F_CRITICAL_LOW or f >= F_CRITICAL_HIGH:
+        if f <= crit_low or f >= crit_high:
             crisis, ctype = True, 'CRITICAL'
         elif max_load >= OVERLOAD_CRIT_PCT:
             crisis, ctype = True, 'CRITICAL'
@@ -1434,7 +1470,7 @@ class GridSimulation:
         elif min_v < V_CRITICAL_LOW:
             crisis, ctype = True, 'CRITICAL'
             celement = min(voltages, key=voltages.get)
-        elif f <= F_ALERT_LOW or f >= F_ALERT_HIGH:
+        elif f <= alert_low or f >= alert_high:
             crisis, ctype = True, 'WARNING'
         elif max_load >= OVERLOAD_WARN_PCT:
             crisis, ctype = True, 'WARNING'
@@ -1443,6 +1479,24 @@ class GridSimulation:
         self._crisis_active  = crisis
         self._crisis_type    = ctype
         self._crisis_element = celement
+
+    # ─────── BLACKOUT / FREQUENCY-COLLAPSE FAIL STATE ─────────────────────
+
+    def _update_blackout_state(self, dt_sim_seconds: float) -> None:
+        """
+        Track consecutive sim-seconds spent pinned at the F_MIN/F_MAX hard
+        clamp. Resets to 0 the moment frequency is back inside the clamp,
+        so a brief spike can't accumulate toward BLACKOUT_TRIP_S across
+        separate excursions. Sets self._shift_failed once the threshold is
+        exceeded — checked by is_shift_complete().
+        """
+        f = self._frequency.frequency_hz
+        if f <= F_MIN or f >= F_MAX:
+            self._blackout_clamp_s += dt_sim_seconds
+            if self._blackout_clamp_s >= BLACKOUT_TRIP_S:
+                self._shift_failed = True
+        else:
+            self._blackout_clamp_s = 0.0
 
     def _refresh_crisis(self) -> None:
         if not any(not a.acknowledged and a.priority == 'CRITICAL'

@@ -1,0 +1,1508 @@
+% COALCOM OPERATIONS MANUAL — PLAIN EDITION
+% Engine : XeLaTeX  (required for Unicode block chars in logo)
+% Style  : A5, black/white, monospace, needle-printer aesthetic
+% Compile: xelatex coalcom_manual_plain.tex  (run twice for TOC)
+
+\documentclass[10pt,a5paper]{article}
+
+% ── Encoding / font ──────────────────────────────────────────────────────────
+\usepackage{fontspec}
+%\setmonofont[Scale=0.82]{DejaVu Sans Mono}
+%\setmonofont[Scale=1]{Classic Console}
+\setmonofont[Scale=0.80]{Consolas}
+% If you want the WHOLE document to look like DOS:
+%\setmainfont{IBM Plex Mono}
+
+% If you only want "code" blocks to look like DOS:
+%\setmonofont[Scale=0.85]{More Perfect DOS VGA}
+
+\renewcommand{\familydefault}{\ttdefault}
+
+
+% \usepackage{newunicodechar}
+% \newfontfamily{\fallbackfont}{Consolas} % A font that definitely has the block
+% \newunicodechar{█}{{\fallbackfont █}}
+% \newunicodechar{╔}{{\fallbackfont ╔}}
+% \newunicodechar{╗}{{\fallbackfont ╗}}
+% \newunicodechar{╚}{{\fallbackfont ╚}}
+% \newunicodechar{╝}{{\fallbackfont ╝}}
+% \newunicodechar{═}{{\fallbackfont ═}}
+% \newunicodechar{║}{{\fallbackfont ║}}
+
+\usepackage{etoolbox}
+\BeforeBeginEnvironment{tabular}{\vspace{4pt}}
+\AfterEndEnvironment{tabular}{\vspace{8pt}}
+
+
+
+% ── Page layout ──────────────────────────────────────────────────────────────
+\usepackage[
+  a5paper,
+  %top=18mm,
+  %bottom=18mm,
+  %left=16mm,
+  %right=16mm,
+  top=9mm,
+  bottom=9mm,
+  left= 16mm,
+  right=16mm,
+  includeheadfoot
+]{geometry}
+
+% ── Core packages ────────────────────────────────────────────────────────────
+\usepackage{microtype}          % better line breaking / margin kerning
+\usepackage{parskip}            % space between paragraphs, no indent
+\usepackage{booktabs}           % cleaner tables
+\usepackage{tabularx}           % auto-width tables
+\usepackage{longtable}          % multi-page tables
+\usepackage{array}              % column formatting
+\usepackage{fancyhdr}           % header / footer
+\usepackage{titlesec}           % section formatting
+\usepackage{hyperref}           % TOC links (black, no boxes)
+\usepackage{setspace}           % line spacing control
+\usepackage{enumitem}           % list spacing control
+\usepackage{calc}               % arithmetic in lengths
+\usepackage{pdflscape}          % landscape pages (rotated in PDF viewer)
+
+% ── Hyperref — no colour, no boxes ───────────────────────────────────────────
+\hypersetup{
+  colorlinks=false,
+  hidelinks,
+  pdfauthor={Pedro Matos},
+  pdftitle={COALCOM Operations Manual},
+}
+
+% ── No fancy colours — everything is black ───────────────────────────────────
+% (No xcolor needed; we use black/white only)
+
+% ── Line spacing — slightly open for readability on A5 ───────────────────────
+%\setstretch{1.05}
+%\setstretch{1.0}
+\linespread{0.9}
+
+% ── Ragged right: monospace on A5 cannot justify cleanly (needle-printer) ────
+\AtBeginDocument{\raggedright}
+
+% ── List spacing ─────────────────────────────────────────────────────────────
+\setlist{nosep, leftmargin=*}
+
+% ── Section headings — plain, uppercase, with rule ───────────────────────────
+\titleformat{\section}
+  {\newpage\normalfont\vspace*{4pt}\Large\bfseries\MakeUppercase}
+  {\thesection.}{0.5em}{}
+  % [\vspace{-4pt}\rule{\linewidth}{0.4pt}\vspace{2pt}]
+  [\vspace{14pt}]
+
+\titleformat{\subsection}
+  {\normalfont\vspace{4pt}\normalsize\large\bfseries\MakeUppercase}
+  {\thesubsection}{0.5em}{}
+  [\vspace{4pt}]
+
+\titlespacing*{\section}{0pt}{14pt}{6pt}
+\titlespacing*{\subsection}{0pt}{8pt}{4pt}
+
+% ── Header / footer — minimal, plain ─────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\small COALCOM OPERATIONS MANUAL}
+\fancyhead[R]{\small v1.0.0 / 1987}
+\fancyfoot[L]{\small FOR AUTHORISED PERSONNEL ONLY}
+\fancyfoot[R]{\small\thepage}
+
+\fancypagestyle{plain}{%   title page / TOC pages
+  \fancyhf{}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0pt}%{0.4pt}
+  %\fancyfoot[R]{\small\thepage}
+}
+
+% ── Convenience: preformatted verbatim block ──────────────────────────────────
+% Used for ASCII tables and keyboard diagrams
+\usepackage{fancyvrb}
+\RecustomVerbatimEnvironment{Verbatim}{Verbatim}{
+  fontsize=\normalsize, %\scriptsize,
+  baselinestretch=0.82,
+}
+
+% ── Simple note box (no colour — just a ruled frame) ─────────────────────────
+\newenvironment{notebox}{%
+  \vspace{4pt}%
+  %\begin{list}{}{%
+  %  \setlength{\leftmargin}{6pt}%
+  %  \setlength{\rightmargin}{6pt}%
+  %  \setlength{\topsep}{2pt}%
+  %}\item
+  %\rule{\linewidth}{0.4pt}\par\vspace{2pt}%
+  %\small
+  \textbf{SUPERVISOR'S NOTE:} \bfseries%\par\nointerlineskip
+}{%
+  %\par\vspace{2pt}\rule{\linewidth}{0.4pt}%
+  %\end{list}\vspace{4pt}%
+}
+
+% ── Helper: keyboard key ─────────────────────────────────────────────────────
+\newcommand{\key}[1]{\textbf{[#1]}}
+
+% ── Suppress overfull warnings below 6pt ─────────────────────────────────────
+\hfuzz=6pt
+\vfuzz=6pt
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Title page ───────────────────────────────────────────────────────────────
+\thispagestyle{plain}
+\begin{center}
+\vspace*{8mm}
+
+{\linespread{0.5}
+\begin{verbatim}
+       ██████╗ ██████╗  █████╗ ██╗      ██████╗ ██████╗ ███╗   ███╗
+      ██╔════╝██╔═══██╗██╔══██╗██║     ██╔════╝██╔═══██╗████╗ ████║
+      ██║     ██║   ██║███████║██║     ██║     ██║   ██║██╔████╔██║
+      ██║     ██║   ██║██╔══██║██║     ██║     ██║   ██║██║╚██╔╝██║
+      ╚██████╗╚██████╔╝██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚═╝ ██║
+       ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝
+\end{verbatim}}
+
+{\large\textbf{POWER STATION OPERATIONS TERMINAL}}\\[1mm]
+
+
+\vspace{4mm}
+\rule{\linewidth}{0.6pt}%\\[2mm]
+
+{\normalsize OFFICIAL OPERATIONS MANUAL - RIVERSIDE COAL POWER STATION}
+%\\[2mm]
+%{\normalsize OFFICIAL OPERATIONS MANUAL}\\[0.5mm]
+%{\normalsize RIVERSIDE COAL POWER STATION}\\[2mm]
+
+\rule{\linewidth}{0.6pt}
+
+\textit{Keep the lights on. Keep your job.}
+\end{center}
+
+
+\vfill
+
+%\vspace{26mm}
+\begin{tabular}{ll}
+  DOCUMENT CLASS & : OPERATOR REFERENCE \\
+  REVISION       & : v1.0.0\\
+  DATE           & : 1987 (UPDATED FOR CURRENT OPERATIONS) \\
+  STATUS         & : FOR AUTHORISED PERSONNEL ONLY \\
+\end{tabular}
+
+
+
+\newpage
+
+% ── Table of contents ────────────────────────────────────────────────────────
+\tableofcontents
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Welcome to the Job}
+
+It is 6:00 AM on a Monday morning.
+
+You are sitting in the control room of the Riverside Coal Power Station, 
+watching steam pressure gauges and listening to the hum of turbines.
+
+Three months ago you were an IT consultant. You had a comfortable office job,
+spent your days in meetings about "synergising cross-functional paradigms,"
+and your biggest worry was whether the coffee machine would be fixed by noon.
+Then came the conference call. Your manager, Karen, with her MBA from a school
+you had never heard of, decided your entire department could be "optimised"
+by outsourcing to an AI chatbot that cost twelve dollars a month.
+
+After weeks of sending resumes into the void you finally got a call back. Not
+from a tech company. From Earl. Earl was the night-shift operator at Riverside
+for 37 years. He was three weeks from retirement when he decided to test whether
+the plant could run itself while he took a nap. It could not. The resulting
+incident involved a minor steam leak, the evacuation of two city blocks, and
+Earl's immediate retirement without the gold watch he had been promised.
+
+The plant needed a new operator. Desperately. Your resume mentioned you
+"worked with computers" and "solved complex problems." Close enough.
+
+Your training lasted exactly four hours. The plant supervisor - a grizzled man
+named Chuck who smells permanently of diesel and disappointment - walked you
+through the control room once.
+
+He pointed at the pressure readings: \textit{"Keep it around 160 bar. Too low,
+no power. Too high, boom."}
+
+He pointed at the drum level gauge: \textit{"Keep water between 40\% and 60\%.
+Too low, tubes overheat. Too high, turbine gets wet. Wet turbines are expensive.
+Don't make the turbine wet."}
+
+He gestured at the pulverizers: \textit{"These grind coal into dust. They
+vibrate. Sometimes too much. If one trips, start another. We have four. Try to
+keep at least two running."}
+
+Then Chuck handed you a coffee-stained operations manual from 1987, said
+\textit{"You'll figure it out,"} and left to deal with a situation in Unit 2.
+
+\begin{notebox}
+Read the gauges. Press the buttons. Don't panic.
+\end{notebox}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\newpage
+\section{How a Coal Power Plant Works}
+
+You are responsible for a 300 MW coal-fired power station. Understanding what
+you are operating will help you keep it alive. This is the short version. The
+1987 manual has 400 pages of the long version. Nobody reads the long version.
+
+\subsection{Stage 1: Coal System - Fuel Preparation}
+
+Raw coal arrives by conveyor and is fed into four \textbf{PULVERIZERS} - large
+grinding mills that reduce it to a fine powder. Pulverised coal is blown into
+the boiler furnace by primary air fans where it ignites and burns at
+approximately 1400°C. More coal burning = more heat = more steam. You control
+coal burn rate by adjusting each pulverizer's load from 0\% to 100\%.
+Overloading them causes vibration and motor overheating.
+
+\subsection{Stage 2: Boiler - Steam Generation}
+
+The boiler is a large vessel surrounded by water tubes. Heat from the burning
+coal converts that water to high-pressure steam. The target conditions are
+160 bar pressure and 530°C temperature. A drum at the top of the boiler
+maintains the water level - this must stay close to 50\%. Too low and the
+tubes overheat and rupture. Too high and water carryover damages the turbine.
+The \textbf{FEEDWATER SYSTEM} continuously replaces the water that boils off.
+
+\subsection{Stage 3: Turbine - Mechanical Energy}
+
+High-pressure steam from the boiler flows through the \textbf{MAIN STEAM VALVE}
+into the turbine. The steam expands across multiple blade stages, spinning the
+turbine shaft at 3000 RPM (50 Hz). The shaft drives the \textbf{GENERATOR}
+which produces the electrical output. Opening the steam valve increases power;
+closing it reduces power. The turbine responds to valve changes within 5-15
+seconds.
+
+\subsection{Stage 4: Cooling System - Heat Rejection}
+
+Steam exhausted from the turbine enters the \textbf{CONDENSER}. Three
+\textbf{CIRCULATION PUMPS} draw cool water from the river through the condenser,
+removing heat and condensing the steam back into water. This creates a vacuum
+(0.046 bar) in the condenser - the lower the vacuum pressure, the more
+efficiently the turbine extracts energy from the steam. Condensed water is
+returned to the boiler by the feedwater pumps, completing the cycle.
+
+\subsection{Your Job}
+
+Balance all four stages to match the power demand issued by the grid operator
+(TSO) while keeping the plant within safe limits. Equipment will degrade.
+Faults will occur. The TSO does not care about any of that. Your job is to keep
+the lights on.
+
+% ══════════════════════════════════════════════════════════════════════════════
+
+\section{Getting Started}
+
+\subsection{System Requirements}
+
+\begin{Verbatim}
+MINIMUM CONFIGURATION:
+  OS      : Windows 10 or later
+  PYTHON  : 3.12 or later  (source version)
+  DISPLAY : 960 x 540 minimum resolution
+  MEMORY  : 512 MB RAM
+  STORAGE : 100 MB
+\end{Verbatim}
+
+\subsection{Launching the Game}
+
+\textbf{Executable version:} Double-click \texttt{COALCOM.exe}
+
+The game auto-detects your monitor resolution and selects the best display
+preset. Press \key{ALT+ENTER} at any time to toggle fullscreen.
+
+\subsection{Main Menu Options}
+
+\begin{Verbatim}
+  NEW GAME        Start Campaign
+  LOAD GAME       Resume saved
+  CONTINUOUS MODE Sandbox play
+  OPTIONS         Settings
+  EXIT            Leave
+\end{Verbatim}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Game Modes}
+
+\subsection{Campaign Mode}
+
+Campaign is the main game. You work through 10 shifts of increasing difficulty
+at Riverside Power Station. Equipment health persists between shifts - a fault
+you mismanage today will cost you next shift. Complete all 10 shifts to finish
+the campaign.
+
+\textbf{\uppercase{Shift Progression:}}
+
+\begin{center}
+%\small
+\begin{tabular}{clcl}
+\toprule
+\textbf{Shift} & \textbf{Name} & \textbf{Duration (min)} & \textbf{Difficulty} \\
+%& & \textbf{min} &  \\
+
+\midrule
+1  & First Day           & 3     & ROOKIE       \\
+2  & Morning Routine     & 3.5   & ROOKIE       \\
+3  & Afternoon Peak      & 5     & ROOKIE       \\
+4  & Load Cycling        & 7     & OPERATOR     \\
+5  & Equipment Stress    & 8     & OPERATOR     \\
+6  & Maintenance Deficit & 12    & OPERATOR     \\
+7  & Grid Emergency      & 12    & EXPERT       \\
+8  & Cascading Failures  & 14    & EXPERT       \\
+9  & Perfect Storm       & 14    & EXPERT       \\
+10 & The Gauntlet        & 16    & PROFESSIONAL \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{notebox}
+Shifts 1 and 2 have no faults. Consider them practice. Shift 3 introduces your
+first equipment failure. Shift 10 will test everything you know. Good luck. You
+will need it.
+\end{notebox}
+
+\textbf{\uppercase{Control Unlock Progression:}}
+
+Controls are introduced gradually to avoid overwhelming new operators.
+
+\begin{center}
+%\small
+\begin{tabular}{cll}
+\toprule
+\textbf{Shift} & \textbf{Controls Unlocked} & \textbf{Page} \\
+\midrule
+1   & Main Steam Valve \key{S}                                      & F1  \\
+2   & + Feedwater Valve \key{W}                                     & —   \\
+3   & + FW Pumps \key{Q}\key{A}                                     & F4  \\
+4   & + Coal Pulverizers \key{0-4} \key{R}                         & F2  \\
+5+  & + Circ Pumps \key{Z}\key{X}\key{C} + Backwash \key{B}        & F3  \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\newpage
+\textbf{\uppercase{Equipment Health:}}
+
+All seven major systems (BOILER, TURBINE, COAL, FEEDWATER, COOLING, CONTROL,
+ELECTRICAL) carry degraded health into the next shift. Health is tracked as
+\textbf{Equivalent Operating Hours (EOH)} --- the higher the EOH, the lower
+the health. Poor management and excessive start/stop cycles accelerate EOH
+accumulation. Low health increases the probability and severity of faults.
+
+\textbf{\uppercase{Maintenance System}} (spending available from Shift 5 onward):
+
+Maintenance points are earned from Shift 1. From Shift 5 onward, you may
+spend them to reduce equipment EOH before the next shift. Each maintenance
+tier reduces EOH uniformly across \textit{all} components. Maintenance is
+not available if the plant tripped.
+
+%\vspace{8pt}
+\begin{center}
+%\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Level} & \textbf{Cost (pts)} & \textbf{EOH Reduction} \\
+\midrule
+Basic          & 1  & $-$200 EOH per component  \\
+Standard       & 4  & $-$1,000 EOH per component \\
+Full Overhaul  & 10 & $-$3,000 EOH per component \\
+Skip           & 0  & No change                 \\
+\bottomrule
+\end{tabular}
+\end{center}
+%\vspace{8pt}
+
+\textbf{Points earned per grade:} A = +2 pts, B = +1 pt, C = 0 pts, D = $-$1 pt,
+F = $-$3 pts (penalty).
+
+\subsection{Continuous Mode}
+
+Continuous Mode unlocks after completing Campaign Shift 5. It provides
+unrestricted sandbox play with full configuration control. There is no
+progression or equipment persistence - it is a training and practice
+environment.
+
+\textbf{\uppercase{Configuration options:}}
+
+\begin{tabular}{ll}  
+Difficulty        & Rookie / Operator / Expert / Professional \\
+Faults Enabled    & ON/OFF \\
+Equipment Health  & NEW / GOOD / WORN / POOR / CRITICAL\\
+Control Preset    & All / Tutorial / Progressive / Custom \\
+Autopilot         & ON/OFF \\
+\end{tabular}
+
+\newpage
+\textbf{\uppercase{Training Scenarios:}}
+
+\begin{center}
+%\small
+\begin{tabular}{clcc}
+\toprule
+\textbf{\#} & \textbf{Name} & \textbf{Duration (min)} & \textbf{Faults} \\
+\midrule
+1 & Morning Ramp              & 10  & 1 \\
+2 & Afternoon Peak            & 15  & 3 \\
+3 & Night Shift               & 12  & 3 \\
+4 & Storm Surge - Rapid Response & 10  & 3 \\
+5 & Monday Morning            & 15  & 4 \\
+6 & Friday Afternoon          & 12  & 4 \\
+7 & Summer Heat Wave          & 18  & 7 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Press \key{E} at any time during a Continuous Mode session to end the shift
+early.
+
+\begin{notebox}
+The demo limits campaign to Shift 4 and caps Continuous Mode
+sessions at 20 minutes. All features are otherwise available.
+\end{notebox}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The Control Room}
+
+Your control room has five information pages accessible at any time with the
+function keys. A KEY INDICATORS BOX in the upper-right corner of every page
+always shows the most critical plant parameters.
+
+\textbf{\uppercase{Key Indicators Box (all pages):}}
+
+\begin{Verbatim}
+POWER: 247 MW   PRESSURE: 163 bar  TEMP: 520 oC  DRUM: 50 %  COAL: 13 kg/s
+\end{Verbatim}
+
+Five numbers. Always visible. Always honest. If any of them is heading in the
+wrong direction, something needs your attention now --- regardless of which page
+you are on. Target: POWER matches the TSO order; PRESSURE 155--165 bar; TEMP
+520--535°C; DRUM 40--60\%; COAL appropriate for current load.
+
+The plant STATUS banner below the box reads \texttt{NORMAL}, \texttt{WARNING},
+\texttt{ALARM}, or \texttt{TRIPPED}. If it is not \texttt{NORMAL}, find out why
+before doing anything else.
+
+\subsection{\key{F1} Main Ops}
+
+Your home page. You will run most of your shift from here without switching away.
+
+\textbf{TSO ORDER panel} (top left) --- current target MW, your actual output,
+and whether you are IN RANGE. This is the only number the TSO cares about.
+Watch the countdown; if it starts dropping fast, stop fine-tuning and hit
+the target.
+
+\textbf{BOILER panel} (top centre) --- pressure, drum level, and steam
+temperature at a glance. Three numbers that tell you whether the boiler is
+happy. If pressure is drifting and you have not touched the coal load, suspect
+a leak.
+
+\textbf{FEEDWATER and COOLING panels} (bottom row) --- pump status and valve
+position. If a pump shows STOPPED unexpectedly, act immediately. Drum level
+will not wait.
+
+\textbf{PLANT SCHEMATIC} (right column) --- a live diagram of the full plant.
+Running equipment is highlighted; failed equipment goes dark. Use it to confirm
+your mental model when multiple things are happening at once.
+
+\subsection{\key{F2} Coal System} \textit{(Unlocked at Shift 4.)}
+
+Four pulverizers, one table. Switch here the moment vibration or temperature
+misbehaves on the main page.
+
+\textbf{Watch:} VIBRATION column. Green is fine; approaching 60 means reduce
+load; 80 is an alarm; 95 trips the mill automatically. MOTOR TEMP: alarm at
+85°C, trip at 92°C. Catch either early and shed load before the mill forces
+your hand.
+
+\textbf{Summary line} at the bottom shows total coal output (kg/s). Cross-check
+this against the COAL figure in the Key Indicators Box --- if they disagree, a
+feeder jam may have partially cut output.
+
+\subsection{\key{F3} Cooling System} \textit{(Unlocked at Shift 5.)}
+
+Cooling is invisible until it goes wrong, then it quietly destroys your
+efficiency rating.
+
+\textbf{Condenser panel} (left) --- vacuum and fouling percentage are the two
+numbers to watch. Fouling above 30\% means run a backwash \key{B}. A degraded
+vacuum costs you turbine efficiency; at full degradation you lose around 7\%
+output for the same fuel burn.
+
+\textbf{Circ Pump table} (right) --- three pumps, bearing temperature, and
+vibration. Normally A and B run; C is standby. If a pump trips, start C
+immediately --- do not wait for the tripped pump's 20-second cooldown.
+
+\subsection{\key{F4} Water/Steam Cycle} \textit{(Unlocked at Shift 3.)}
+
+The detailed view of everything between the drum and the turbine. Go here when
+the drum level is misbehaving and \key{F1} does not give you enough information.
+
+\textbf{Feedwater Pump table} (top) --- status, load, bearing temperature,
+and vibration for both pumps. Pump A shows no power reading because it is
+turbine-driven. If bearing temperature on either pump is climbing toward 80°C,
+back off its load or prepare the other pump.
+
+\textbf{Boiler Heat Balance} (bottom) --- coal feed in versus steam out. Any
+active tube leak appears here as unexplained steam loss. If the numbers do not
+add up, you have a leak.
+
+\subsection{\key{F5} Equipment Health}
+
+Check this at the start of each shift and after any fault. It tells you how
+much trouble is waiting for you.
+
+\textbf{Systems Health} (left) --- bar graphs for Boiler, Coal, Feedwater,
+Cooling, and Turbine. A system below 50\% health will start generating faults
+with increasing frequency. Plan your load accordingly.
+
+\textbf{EOH table} (centre) --- Equivalent Operating Hours per component.
+Higher EOH means higher fault probability. This is what maintenance spending
+reduces between shifts.
+
+\textbf{Shift Statistics} (right) --- TSO order results, alarm and fault counts,
+fuel efficiency, and current auxiliary load. Your end-of-shift grade is
+calculated from these numbers. Check efficiency mid-shift if you are running
+heavy on coal.
+
+\subsection{Alarms \& Messages Panel (all pages)}
+
+Six-line event log at the bottom of every page.
+GREEN = information; YELLOW = TSO order expired; RED = alarm, fault, or trip.
+
+Alarms freeze your attention until you acknowledge them with \key{SPACE}. Do
+not acknowledge blindly --- read the message first, identify the page you need
+(\key{F2} for coal, \key{F3} for cooling, \key{F4} for feedwater and boiler),
+then act. Acknowledging an alarm does not fix the underlying problem.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Keyboard Reference}
+
+\subsection{Control Focus Selection}
+
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{S} & Select MAIN STEAM VALVE for adjustment \\
+\key{W} & Select FEEDWATER VALVE for adjustment \\
+\key{0} & Select ALL PULVERIZERS simultaneously \\
+\key{1} & Select PULVERIZER A only \\
+\key{2} & Select PULVERIZER B only \\
+\key{3} & Select PULVERIZER C only \\
+\key{4} & Select PULVERIZER D only \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Value Adjustment}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{UP}      & Increase selected control by 1 step \\
+\key{DOWN}    & Decrease selected control by 1 step \\
+\key{PAGE UP} & Increase selected control by 5 steps \\
+\key{PAGE DN} & Decrease selected control by 5 steps \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Step size: $\pm$0.5\% for valves, $\pm$1\% for pulverizer load.
+
+\subsection{Pulverizer Operations}
+
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{R} & TOGGLE selected pulverizer (START if stopped, STOP if running) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Select a pulverizer with keys \key{1}-\key{4} then press \key{R} to start or stop.
+Ramp time: 30 seconds to full speed or full stop. A tripped pulverizer resets
+automatically after its cooldown expires --- select it and press \key{R} to restart.
+
+\subsection{Feedwater Pump Control}
+
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{Q} & Toggle FEEDWATER PUMP A (ON / OFF) \\
+\key{A} & Toggle FEEDWATER PUMP B (ON / OFF, backup) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Pumps ramp over 10 seconds. Log shows: STARTING $\to$ RUNNING or STOPPING $\to$ STOPPED.
+
+\subsection{Cooling / Circulation Pump Control}
+
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{Z} & Toggle CIRC PUMP A (ON / OFF) \\
+\key{X} & Toggle CIRC PUMP B (ON / OFF) \\
+\key{C} & Toggle CIRC PUMP C (ON / OFF, backup) \\
+\key{B} & Start BACKWASH CYCLE (clears intake screens) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Pumps ramp over 20 seconds. Backwash cycle takes 90 seconds.
+
+\subsection{Page Navigation}
+
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{F1} & MAIN OPS - Primary dashboard (always active) \\
+\key{F2} & COAL SYSTEM - Pulverizer detail (Shift 4+) \\
+\key{F3} & COOLING SYSTEM - Condenser / pumps (Shift 5+) \\
+\key{F4} & WATER/STEAM CYCLE - Boiler / FW (Shift 3+) \\
+\key{F5} & EQUIPMENT HEALTH - System health status (all shifts) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{System Controls}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{ESC}       & Pause game / open pause menu \\
+\key{SPACE}     & Acknowledge active alarm \\
+\key{I}         & Show / hide in-game instruction manual \\
+\key{E}         & End shift (Continuous Mode only) \\
+\key{ALT+ENTER} & Toggle fullscreen \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Pause Controls}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Key} & \textbf{Function} \\
+\midrule
+\key{ESC} & Resume game \\
+\key{S}   & Save game (Campaign only) \\
+\key{Q}   & Quit to main menu \\
+\key{I}   & Show in-game manual \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Plant Systems}
+
+\subsection{Main Steam Valve}
+
+The primary power control. Opening the valve allows more steam to reach the
+turbine; closing it reduces flow. Power responds within 5-15 seconds. This is
+the first control you learn and the one you will use most often.
+
+Select: \key{S} \quad Adjust: \key{UP} / \key{DOWN} ($\pm$0.5\% per step) \quad
+Range: 0\% to 100\% \quad Effect: $\pm$0.5-2 MW per 1\% valve change.
+
+\begin{notebox}
+Make small, deliberate adjustments. A 10\% lurch on the steam valve will upset
+the boiler pressure and drum level simultaneously. Chuck calls this "the domino
+effect." It is not complimentary.
+\end{notebox}
+
+\subsection{Boiler System}
+
+The boiler converts water to high-pressure steam. Three parameters demand
+constant attention: pressure and drum level.%, and temperature.
+
+% \textbf{Target:} 160 bar pressure / 50\% drum level / 530°C temperature.
+
+\begin{center}
+\begin{tabular}{p{2cm}p{15mm}p{15mm}p{2cm}p{2cm}}
+\toprule
+\textbf{Parameter} & \textbf{Target} & \textbf{Warning} & \textbf{Alarm} & \textbf{Trip} \\
+\midrule
+Steam Pressure & 160 bar & $<$128 bar       & $>$192 bar               & $>$228 bar or $<$50 bar \\ [5mm]
+Drum Level     & 50\% & $<$40\%          & $>$60\%                  & $>$95\% or $<$15\%  \\ [5mm]
+%Steam Temperature    & 530°C & N/A              & N/A                      & $>$600°C           \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Feedwater System}
+
+Water must be continuously supplied to replace what boils off. Two pumps provide
+redundancy: \key{Q} Pump A is turbine-driven (turbo-pump --- it runs from HP steam
+extraction and draws no electrical power). \key{A} Pump B is motor-driven and
+consumes 4.0 MW of auxiliary power. Prefer Pump A in normal operation; use Pump B
+as backup or when A is unavailable. Nominal flow: 265 kg/s at 100\% valve.
+
+Both pumps are monitored for bearing temperature (alarm 80°C, trip 88°C) and
+vibration (warn 55\%, alarm 75\%, auto-trip 90\%). Monitor the \key{F4} pump table for
+early warning signs. After a pump trips, a 10-second cooldown is required before
+restart.
+
+\begin{notebox}
+If the drum level drops below 40\%, open the feedwater valve. If it rises above
+60\%, close it. If both pumps fail simultaneously, pray. Then reduce load
+immediately and start the backup.
+\end{notebox}
+
+\subsection{Coal Pulverizers (A, B, C, D)}
+
+Four mills grind coal to powder and deliver it to the furnace. Total coal burn
+rate determines the boiler's heat input and therefore the maximum achievable
+steam output and power.
+
+\begin{center}
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Parameter} & \textbf{Warning} & \textbf{Trip} \\
+\midrule
+Mill Load     & $>$90\%  & N/A     \\
+Vibration     & $>$60    & $>$95   \\
+Motor Temp.   & $>$85°C  & $>$92°C \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Motor power draw: up to 0.5 MW per pulverizer at 100\% load (scales with load \%). Running
+all four at full load consumes $\sim$2 MW of auxiliary load.
+
+\subsection{Cooling System}
+
+Three circulation pumps move river water through the condenser to remove heat
+from the exhaust steam. Adequate cooling maintains the condenser vacuum - poor
+vacuum reduces turbine efficiency significantly (−7\% at fully degraded vacuum).
+
+Pumps A \key{Z} and B \key{X} normally running. Pump C \key{C} standby.
+Backwash \key{B} clears river debris (90 sec). Target vacuum: 0.046 bar.
+Backwash recommended when fouling exceeds 25--30\%. Each pump draws 2.5 MW of
+auxiliary electrical power when running. After stopping, a 20-second cooldown
+must elapse before a pump can restart.
+
+\subsection{Turbine / Generator}
+
+The turbine converts steam energy into shaft rotation at 3000 RPM, driving
+the generator. You do not directly control the turbine beyond the main steam
+valve. Nominal output: 300 MW. Efficiency improves with higher condenser vacuum.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{TSO Orders - Meeting Demand}
+
+The Transmission System Operator (TSO) manages the national grid and issues
+power output targets to all generators. Your job is to match those targets
+within the compliance window before the order expires.
+
+An order is COMPLETE when you maintain power within the tolerance band
+continuously for the required hold duration.
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Difficulty} & \textbf{Tolerance} & \textbf{Hold Time} & \textbf{Expiry} \\
+\midrule
+Rookie       & $\pm$5 MW & 20 sec & 100 sec \\
+Operator     & $\pm$5 MW & 25 sec & 90 sec  \\
+Expert       & $\pm$5 MW & 30 sec & 80 sec  \\
+Professional & $\pm$4 MW & 35 sec & 70 sec  \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+If the order timer runs out before you reach compliance, the order is marked
+EXPIRED and the next order is issued after a 15-second window. Expired orders
+reduce your TSO Compliance score.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Scoring and Grades}
+
+At the end of each shift your performance is assessed across three areas and
+combined into an overall grade:
+
+\begin{center}
+\textbf{50\% TSO Compliance + 30\% Equipment Management + 20\% Fuel Efficiency }
+\end{center}
+
+\textbf{TSO Compliance} --- percentage of grid orders successfully completed on time:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Grade} & \textbf{Orders completed} \\
+\midrule
+A & $\geq$95\% \\
+B & $\geq$85\% \\
+C & $\geq$70\% \\
+D & $\geq$50\% \\
+F & $<$50\%   \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Equipment Management} --- penalty points accumulated from alarms and faults:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Grade} & \textbf{Penalty points} \\
+\midrule
+A & 0       \\
+B & 1       \\
+C & 2--3    \\
+D & 4--5    \\
+F & 6+      \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Fuel Efficiency} --- energy produced per kg of coal burned, vs.\ the target rate:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Grade} & \textbf{Efficiency vs.\ target} \\
+\midrule
+A & $\geq$95\% \\
+B & $\geq$85\% \\
+C & $\geq$70\% \\
+D & $\geq$50\% \\
+F & $<$50\%   \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Maintenance points} are earned based on your overall grade: A = +2 pts,
+B = +1 pt, C = 0 pts, D = $-$1 pt, F = $-$3 pts.
+
+\begin{notebox}
+Tripping the plant is an automatic grade F regardless of TSO compliance or
+efficiency scores. Don't trip the plant.
+\end{notebox}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Fault Reference}
+
+Equipment will fail. This is expected, budgeted for, and entirely your problem.
+
+\begin{notebox}
+Read this section. Memorise it if you can. Faults managed within 30 seconds
+rarely cause lasting damage. Faults ignored for two minutes regularly cause
+plant trips.
+\end{notebox}
+
+\subsection{Boiler Faults}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{p{2cm}lX}
+\toprule
+\textbf{Fault} & \textbf{Severity} & \textbf{Symptoms / Response} \\
+\midrule
+Minor Tube Leak    & MINOR    & Steam loss 10 kg/s, pressure drop. Reduce load, increase feedwater. Permanent. \\[4pt] \hline
+Major Tube Leak    & MAJOR    & Steam loss 20 kg/s, severe pressure drop. Emergency load reduction, max feedwater immediately. Permanent. \\[4pt] \hline
+Superheater Rupture & CRITICAL & Steam loss 40 kg/s. Plant trip imminent. No recovery - automatic shutdown in seconds. \\[4pt] \hline
+Economizer Fouling & MODERATE & 15\% turbine efficiency loss, rising fuel demand. Wait for automatic soot blowing cycle. Clears in $\sim$45 sec. \\ %\hline
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Coal System Faults}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{p{2cm}lX}
+\toprule
+\textbf{Fault} & \textbf{Severity} & \textbf{Symptoms / Response} \\
+\midrule
+Pulverizer Seizure  & MAJOR    & Mill stops immediately. Switch to remaining mills, reduce load. Permanent. \\[4pt] \hline
+Coal Feeder Jam     & MODERATE & Affected mill output drops 50\%. Stop and restart pulverizer to clear jam. $\sim$2 min. \\[4pt] \hline
+Motor Overload      & MODERATE & Pulverizer trips (load was $>$95\% too long). Restart at lower load ($<$90\%). 1 min cooldown. \\[4pt] \hline
+Primary Air Fan Fail & CRITICAL & All pulverizers drop to 30\% output. Immediate emergency load reduction. Permanent. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Cooling System Faults}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{p{2cm}lX}
+\toprule
+\textbf{Fault} & \textbf{Severity} & \textbf{Symptoms / Response} \\
+\midrule
+Circ Pump Trip       & MAJOR    & Loss of cooling flow, vacuum degrades. Start backup pump within 30 seconds. \\[4pt] \hline
+Intake Screen Block  & MODERATE & 30\% cooling flow reduction, rising condenser temp. Press \key{B} for backwash ($\sim$3 min). \\[4pt] \hline
+Condenser Tube Leak  & MAJOR    & 10\% efficiency loss, rising back-pressure. Reduce load. Permanent until maintenance. \\[4pt] \hline
+Cooling Tower Fan    & MODERATE & Cooling water temp rises +5°C, reduced heat rejection. Increase pump flow or reduce load. Permanent. \\ 
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Water / Steam System Faults}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{p{2cm}lX}
+\toprule
+\textbf{Fault} & \textbf{Severity} & \textbf{Symptoms / Response} \\
+\midrule
+Feedwater Pump Trip  & CRITICAL & Drum level falling fast. \textbf{START BACKUP PUMP IMMEDIATELY.} Approx.\ 10 seconds before trip. \\[4pt] \hline
+Steam Valve Stuck    & MAJOR    & Cannot adjust power output. Wait - valve auto-recovers within 5-15 seconds. \\[4pt] \hline
+Attemperator Failure & MODERATE & Steam temperature rising uncontrolled. Lower firing rate (reduce pulverizer load). Resolves in $\sim$4 min. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Control / Electrical Faults}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{p{2cm}lX}
+\toprule
+\textbf{Fault} & \textbf{Severity} & \textbf{Symptoms / Response} \\
+\midrule
+Drum Level Sensor Malfunction & MODERATE & Drum level reading erratic / noisy. Trust the trend, not the exact number. Resolves in $\sim$10 seconds. \\[4pt] \hline
+Power Meter Malfunction       & MODERATE & Power reading erratic / noisy. Use steam valve position as proxy for output. Resolves in $\sim$10 seconds. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Operator's Guide - Efficient Operation}
+
+\subsection{Power Ramping Strategy}
+
+When a new TSO order arrives, resist the urge to slam the steam valve to the
+new target. The correct sequence is:
+
+\begin{enumerate}
+  \item \textbf{Anticipate the load direction.} Is the new target higher or lower?
+  \item \textbf{Adjust the steam valve first.} This gives immediate power response.
+  \item \textbf{Adjust coal feed to match.} More power = more coal. Allow 10-15 seconds
+        for coal burn changes to affect steam pressure.
+  \item \textbf{Balance feedwater.} Higher firing rate means more steam; open the
+        feedwater valve slightly to maintain drum level.
+  \item \textbf{Wait and observe.} Let the plant stabilise before further adjustment.
+        Power oscillations usually damp out in 15-30 seconds.
+\end{enumerate}
+
+\textbf{Rule of thumb:} Move the valve, wait, then move coal. Never move both
+at maximum rate simultaneously.
+
+\subsection{Pulverizer Load Balancing}
+
+Running all four mills at 50\% is safer than running two at 100\%. Spread the
+load evenly across running mills to minimise vibration, reduce motor
+temperatures, and extend equipment life.
+
+% Recommended loading: 2 mills $\to$ 55-65\% each; 3 mills $\to$ 45-55\% each;
+% 4 mills $\to$ 40-50\% each. Keep all running mills below 90\%.
+
+Watch vibration closely. A mill climbing toward 60 units should have its load
+reduced. A mill at 80 is alarming. At 95 it will trip automatically.
+
+\subsection{Feedwater Pump Strategy}
+
+Normally only one pump needs to run. Run both when output is above 270 MW,
+one pump shows degradation warnings, or you anticipate a rapid load increase.
+If a pump trips unexpectedly, start the other immediately --- you have
+approximately 10 seconds before drum level drops to alarm. Pump A \key{Q}
+is turbine-driven (no electrical load --- always prefer it as primary). Pump B
+\key{A} is motor-driven and consumes 4.0 MW. Keep Pump A running whenever possible;
+switch to Pump B only when A has tripped or is in cooldown.
+
+\subsection{Cooling Pump Strategy}
+
+Two circulation pumps (A and B) are normally running. Pump C is the backup.
+Never run fewer than two pumps at full load --- insufficient cooling raises
+condenser back-pressure and reduces turbine efficiency by up to 7\%. Check fouling
+percentage on the \key{F3} page periodically; backwash when fouling exceeds
+25--30\%. Monitor bearing temperature (alarm at 80°C) and vibration on the pump
+table. If a pump trips, remember the 20-second cooldown before it can restart ---
+start Pump C immediately rather than waiting.
+
+\subsection{Responding to Faults}
+
+When an alarm appears: (1) note the fault type; (2) check the relevant page
+(\key{F2} coal, \key{F3} cooling, \key{F4} feedwater/boiler); (3) take the
+prescribed response from Section 10; (4) acknowledge the alarm \key{SPACE};
+(5) monitor the outcome.
+
+Most time-critical faults: Feedwater pump trip (10 sec to start backup);
+circ pump trip (30 sec to restore cooling); major tube leak (immediate load
+reduction).
+
+\subsection{Reading Trends, Not Snapshots}
+
+A drum level of 42\% is not alarming. A drum level falling from 55\% to 42\%
+over the last 20 seconds is alarming. Always assess whether a value is stable,
+rising, or falling. A parameter near a warning threshold but stable is usually
+fine. A parameter heading toward the limit at speed requires intervention
+\textit{now}, not when the alarm activates.
+
+\subsection{Efficiency Tips}
+
+Efficiency score is based on coal burned relative to electricity produced.
+
+Avoid unnecessary load cycling --- combustion efficiency drops temporarily
+during rapid ramps. Match coal feed to actual demand: do not run four mills
+at 70\% when two at 75\% would produce the same output. Maintain good
+condenser vacuum. Avoid high drum level, as water carryover reduces steam
+quality and turbine efficiency.
+
+\textbf{Auxiliary load:} pumps and mills draw from your own output before the
+meter reaches the grid. The \key{F5} Shift Statistics box shows the live total.
+
+\begin{center}
+\begin{tabular}{llr}
+\toprule
+\textbf{Equipment} & \textbf{Notes} & \textbf{Load (MW)} \\
+\midrule
+Feedwater Pump A  & Steam-driven                         & --- \\
+Feedwater Pump B  & Motor-driven                           & 4.0 \\
+Circ Pump A       & Per pump when running                  & 2.5 \\
+Circ Pump B       & Per pump when running                  & 2.5 \\
+Circ Pump C       & Per pump when running                  & 2.5 \\
+Pulverizer (each) & At 100\% load; scales with load \%     & 0.5 \\
+\midrule
+\textit{Worst case} & \textit{FW-B + 3 circ + 4 pulv @ 100\%} & \textit{13.5} \\
+\textit{Best case}  & \textit{FW-A + 2 circ + 2 pulv @ 50\%}  & \textit{5.5}  \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Prefer Pump A whenever possible. Run only the circ pumps you need. Keep
+pulverizer loads balanced and no higher than demand requires. The difference
+between worst and best case is nearly 8 MW --- enough to push a borderline
+TSO order into compliance.
+
+
+\begin{notebox}
+The operators who score A-grades are not faster than the others. They make
+fewer large corrections. Small movements, steady hands, read the trend. That is
+the whole secret. You are welcome.
+\end{notebox}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Alarm Reference}
+
+Quick reference for all alarm conditions and trigger thresholds.
+
+\textbf{Pressure Alarms} (target: 160 bar):
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Condition} & \textbf{Threshold} & \textbf{Action} \\
+\midrule
+Low Pressure Warning  & $<$128 bar & Yellow log   \\
+High Pressure Warning & $>$192 bar & Yellow log   \\
+Low Pressure Trip     & $<$50 bar  & PLANT TRIP   \\
+High Pressure Trip    & $>$228 bar & PLANT TRIP   \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Drum Level Alarms} (target: 50\%):
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Condition} & \textbf{Threshold} & \textbf{Action} \\
+\midrule
+Low Level Warning  & $<$40\% & Yellow log \\
+High Level Warning & $>$60\% & Yellow log \\
+Low Level Trip     & $<$15\% & PLANT TRIP \\
+High Level Trip    & $>$95\% & PLANT TRIP \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Pulverizer Alarms:}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Condition} & \textbf{Threshold} & \textbf{Action} \\
+\midrule
+Vibration Warning       & $>$60   & Reduce load \\
+Vibration Alarm         & $>$80   & Red log     \\
+Vibration Auto-Trip     & $>$95   & Mill trips  \\
+Bearing Temp Warning    & $>$85°C & Yellow log  \\
+Bearing Temp Trip       & $>$92°C & Mill trips  \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Pump Alarms (Feedwater and Circulation):}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Condition} & \textbf{Threshold} & \textbf{Action} \\
+\midrule
+Vibration Warning       & $>$55\%  & Reduce load or start backup \\
+Vibration Alarm         & $>$75\%  & Red log \\
+Vibration Auto-Trip     & $>$90\%  & Pump trips \\
+Bearing Temp Warning    & $>$80°C  & Yellow log \\
+Bearing Temp Trip       & $>$88°C  & Pump trips (motor pumps only) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ══════════════════════════════════════════════════════════════════════════════
+% \section*{Appendix: Shift History Log}
+% \addcontentsline{toc}{section}{Appendix: Shift History Log}
+
+% Use this table to track your campaign progress.
+
+% \begin{center}
+% \begin{tabular}{cl|c|c|p{5cm}}
+% \toprule
+% \textbf{Shift} & \textbf{Name} & \textbf{Grade} & \textbf{Pts} & \textbf{Notes} \\
+% \midrule
+% 1  & First Day           & & & \\[6pt]
+% 2  & Morning Routine     & & & \\[6pt]
+% 3  & Afternoon Peak      & & & \\[6pt]
+% 4  & Load Cycling        & & & \\[6pt]
+% 5  & Equipment Stress    & & & \\[6pt]
+% 6  & Maintenance Deficit & & & \\[6pt]
+% 7  & Grid Emergency      & & & \\[6pt]
+% 8  & Cascading Failures  & & & \\[6pt]
+% 9  & Perfect Storm       & & & \\[6pt]
+% 10 & The Gauntlet        & & & \\[6pt]
+% \bottomrule
+% \end{tabular}
+% \end{center}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Quick Reference}
+
+\subsection{Plant Schematic}
+
+The diagram below shows how the major plant systems connect. This schematic
+appears on every information page in the control room.
+
+\begin{center}
+
+\begin{Verbatim}
+
+                             ┌─►◄───────┐   ┌────┬────┐
+                    ╔═══╦════════════╗ ╔╪═╦════╦═╪════╪═╗
+                    ║ D ║            ║ ║HP║ MP ║   LP   ║═(G)
+                    ╚═══╣     ═╗     ║ ╚══╩═╪══╬══:══:══╣
+                        ║      ╚╗    ╫──┘   │  ║░░CNDS░░║
+                        ║       ╚╗   ║──────┘  ║░░░░░░░░║────────§
+                        ║        ║   ║         ║▒▒▒▒▒▒▒▒╫────┐
+              PULVER    ║ BOILER ║   ║         ╚════════╝ ┌──┼──┐
+            A  B  C  D  ║        ║   ║                │   A  B  C
+           [ ][ ][ ][ ] ║        ║   ║                │  [ ][ ][ ]
+            │  │  │  │  ║        ╠═╪═╝                │   └──┼──┘
+            │  │  │  └──╫<       ║ │             ╔═══╗│ CIRC │
+            │  │  └─────╫<       ║ │         A   ║FWT╫┘ PUMPS│
+            │  └────────╫<       ║ │       ┌[ ]┐ ║▒▒▒║       └───§
+            └───────────╫<       ║ └────►◄─┤ B ├─║▒▒▒║       RIVER
+                        ║        ║         └[ ]┘ ╚═══╝
+                        ╚═╗    ╔═╝          FDW
+                          ╚════╝            PUMPS
+                          
+\end{Verbatim}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+A B C D (left) & Coal pulverizers \\
+D               & Steam drum (top of boiler) \\
+HP / MP / LP    & Turbine stages: High / Medium / Low Pressure \\
+(G)             & Generator \\
+CNDS            & Condenser \\
+A B C (right)   & Circulating water pumps \\
+§               & River intake / discharge \\
+FWT             & Feedwater tank (deaerator) \\
+A B  (center)     & Feedwater pumps (A = turbo-driven, B = motor-driven) \\
+
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Control Room Screens}
+
+The following pages show real control room screens captured during operation.
+Each page is shown at full width --- rotate the manual (or your PDF viewer)
+if reading in print.
+
+\begin{landscape}
+\thispagestyle{fancy}
+{\small\textbf{[F1] MAIN OPERATIONS DASHBOARD}}
+\vspace{2mm}
+\begin{Verbatim}[fontsize=\scriptsize, baselinestretch=0.85]
+  [CONTINUOUS MODE]                                        COALCOM: POWER STATION OPERATIONS TERMINAL
+  Time: 00:15                                                    Scenario: Morning Ramp
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+┌─────────────────────────────────────────────────────────────────────── KEY INDICATORS ───────────────────────────────────────────────────────────────────────┐
+│              POWER: 153.3 MW          PRESSURE:156.8 bar       TEMPERATURE: 525 C            DRUM LEVEL: 50.7 %            COAL RATE: 13.6 kg/s              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────── TSO ORDER ──────────┐┌───────── TURBINE/GEN ──────────┐┌─────────── BOILER ────────────┐┌──────────────────── PLANT SCHEMATIC ─────────────────────┐
+│ Target: 150 MW                ││ RPM: 3000                      ││ Pressure:      Drum Level:    ││                                                          │
+│ Actual: 153.6 MW (+3.6 MW)    ││ Power: 153.6 MW                ││ 156.0 bar      51.1 %         ││                                                          │
+│ IN RANGE                      ││ ██████████░░░░░░░░░░           ││ ░░░░░█░░░░     ░░░░░█░░░░     ││                                                          │
+│                               ││ Steam: 141.9 kg/s              ││ Temperature:                  ││                    55 %    142                           │
+│ Next: 170 MW                  ││ Steam Valve: 55.0% (55.0%)     ││  527 C                        ││                   ┌─►◄───────┐   ┌────┬────┐             │
+└───────────────────────────────┘└────────────────────────────────┘└───────────────────────────────┘│          ╔═══╦════════════╗ ╔╪═╦════╦═╪════╪═╗ 154 MW    │
+┌────── FEEDWATER SYSTEM ───────┐┌───────── COAL SYSTEM ──────────┐┌─────────── COOLING ───────────┐│          ║ D ║      527 C ║ ║HP║ MP ║   LP   ║═(G)       │
+│ Pumps:                        ││ Pulverizers:                   ││ Condenser Vacuum:             ││     51 % ╚═══╣     ═╗     ║ ╚══╩═╪══╬══:══:══╣           │
+│ A: █ - 100.0%                 ││ Pulv A:█ 40%  V:24   3.4 kg/s  ││ 0.046 bar                     ││    156 bar   ║      ╚╗    ╫──┘   │  ║░░CNDS░░║    9000   │
+│ B: ░ -   0.0%                 ││ Pulv B:█ 40%  V:25   3.4 kg/s  ││ Fouling:  0.0%                ││              ║       ╚╗   ║──────┘  ║░░0.05░░║────────§  │
+│                               ││ Pulv C:█ 40%  V:25   3.4 kg/s  ││ ░░░░░░░░░░░░░░░░░░░░          ││              ║        ║   ║         ║▒▒▒▒▒▒▒▒╫────┐      │
+│ Feedwater flow: 150 kg/s      ││ Pulv D:█ 40%  V:27   3.4 kg/s  ││ Circ Pumps:                   ││    PULVER    ║ BOILER ║   ║         ╚════════╝ ┌──┼──┐   │
+│ Valve: 50.0 % (50.0 %)        ││                                ││ A:█  B:█  C:░                 ││  A  B  C  D  ║        ║   ║                │   A  B  C   │
+│ ███████████░░░░░░░░░░░        ││ ────────────────────────────── ││ Backwash: Ready               ││ [█][█][█][█] ║        ║   ║                │  [█][█][░]  │
+│                               ││ Total:              13.6 kg/s  ││ River: 20.0 C                 ││  │  │  │  │  ║        ╠═╪═╝                │   └──┼──┘   │
+│                               ││                                ││ Flow:   9000 kg/s             ││  │  │  │  └──╫<  3.4  ║ │             ╔═══╗│ CIRC │      │
+└───────────────────────────────┘└────────────────────────────────┘└───────────────────────────────┘│  │  │  └─────╫<  3.4  ║ │         A   ║FWT╫┘ PUMPS│      │
+  STATUS: NORMAL                                                               Overall Health: 98%  │  │  └────────╫<  3.4  ║ │   50 %┌[█]┐ ║▒▒▒║       └───§  │
+┌─────────────────────────────────────── ALARMS & MESSAGES ────────────────────────────────────────┐│  └───────────╫<  3.4  ║ └────►◄─┤ B ├─║▒▒▒║       RIVER  │
+│ 00:00 > TSO : Set power to 150 MW                                                                ││              ║        ║  150    └[░]┘ ╚═══╝       20.0 C │
+│                                                                                                  ││              ╚═╗    ╔═╝          FDW                     │
+│                                                                                                  ││                ╚════╝            PUMPS                   │
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     [S]            [W]            [↑][↓]            [Q][A]            [1-4, 0]            [R]            [Z][X][C]            [B]            [SPACE]
+     Steam valve    Feed valve     Adjust            I/O Feed pumps    Select pulv         I/O pulv       I/O Circ pumps       Backwash       Mute alarm
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                   [F1] MAIN OPS  [F2] COAL  [F3] COOLING  [F4] WATER/STEAM  [F5] EQ HEALTH  [I] INSTRUCTIONS
+\end{Verbatim}
+\end{landscape}
+
+\begin{landscape}
+\thispagestyle{fancy}
+{\small\textbf{[F2] COAL PULVERIZER SYSTEM}}
+\vspace{2mm}
+\begin{Verbatim}[fontsize=\scriptsize, baselinestretch=0.85]
+  [CONTINUOUS MODE]                                        COALCOM: POWER STATION OPERATIONS TERMINAL
+  Time: 00:17                                                    Scenario: Morning Ramp
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+┌─────────────────────────────────────────────────────────────────────── KEY INDICATORS ───────────────────────────────────────────────────────────────────────┐
+│              POWER: 153.3 MW          PRESSURE:156.8 bar       TEMPERATURE: 525 C            DRUM LEVEL: 50.7 %            COAL RATE: 13.6 kg/s              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────── COAL PULVERIZER SYSTEM ─────────────────────────────────────┐┌──────────────────── PLANT SCHEMATIC ─────────────────────┐
+│  PULV   STATUS  LOAD %            OUTPUT      VIBRATION     MOTOR oC       MOTOR MW              ││                                                          │
+│                                                                                                  ││                                                          │
+│  [1] A  NORMAL   40.0% (40.0%)     3.4 kg/s      24.3       54.9 oC        0.2 MW                ││                                                          │
+│                 █████░░░░░░░░                 ██░░░░░░░░                                         ││                    55 %    142                           │
+│                                                                                                  ││                   ┌─►◄───────┐   ┌────┬────┐             │
+│  [2] B  NORMAL   40.0% (40.0%)     3.4 kg/s      24.3       54.9 oC        0.2 MW                ││          ╔═══╦════════════╗ ╔╪═╦════╦═╪════╪═╗ 154 MW    │
+│                 █████░░░░░░░░                 ██░░░░░░░░                                         ││          ║ D ║      527 C ║ ║HP║ MP ║   LP   ║═(G)       │
+│                                                                                                  ││     51 % ╚═══╣     ═╗     ║ ╚══╩═╪══╬══:══:══╣           │
+│  [3] C  NORMAL   40.0% (40.0%)     3.4 kg/s      24.7       54.9 oC        0.2 MW                ││    156 bar   ║      ╚╗    ╫──┘   │  ║░░CNDS░░║    9000   │
+│                 █████░░░░░░░░                 ██░░░░░░░░                                         ││              ║       ╚╗   ║──────┘  ║░░0.05░░║────────§  │
+│                                                                                                  ││              ║        ║   ║         ║▒▒▒▒▒▒▒▒╫────┐      │
+│  [4] D  NORMAL   40.0% (40.0%)     3.4 kg/s      26.6       54.9 oC        0.2 MW                ││    PULVER    ║ BOILER ║   ║         ╚════════╝ ┌──┼──┐   │
+│                 █████░░░░░░░░                 ██░░░░░░░░                                         ││  A  B  C  D  ║        ║   ║                │   A  B  C   │
+│ ──────────────────────────────────────────────────────────────────────────────────────────────── ││ [█][█][█][█] ║        ║   ║                │  [█][█][░]  │
+│    ONLINE: 4/4                    13.6 kg/s      25.0       54.9 oC        0.8 MW                ││  │  │  │  │  ║        ╠═╪═╝                │   └──┼──┘   │
+│                                                                                                  ││  │  │  │  └──╫<  3.4  ║ │             ╔═══╗│ CIRC │      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘│  │  │  └─────╫<  3.4  ║ │         A   ║FWT╫┘ PUMPS│      │
+  STATUS: NORMAL                                                               Overall Health: 98%  │  │  └────────╫<  3.4  ║ │   50 %┌[█]┐ ║▒▒▒║       └───§  │
+┌─────────────────────────────────────── ALARMS & MESSAGES ────────────────────────────────────────┐│  └───────────╫<  3.4  ║ └────►◄─┤ B ├─║▒▒▒║       RIVER  │
+│ 00:00 > TSO : Set power to 150 MW                                                                ││              ║        ║  150    └[░]┘ ╚═══╝       20.0 C │
+│                                                                                                  ││              ╚═╗    ╔═╝          FDW                     │
+│                                                                                                  ││                ╚════╝            PUMPS                   │
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     [S]            [W]            [↑][↓]            [Q][A]            [1-4, 0]            [R]            [Z][X][C]            [B]            [SPACE]
+     Steam valve    Feed valve     Adjust            I/O Feed pumps    Select pulv         I/O pulv       I/O Circ pumps       Backwash       Mute alarm
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                   [F1] MAIN OPS  [F2] COAL  [F3] COOLING  [F4] WATER/STEAM  [F5] EQ HEALTH  [I] INSTRUCTIONS
+\end{Verbatim}
+\end{landscape}
+
+\begin{landscape}
+\thispagestyle{fancy}
+{\small\textbf{[F3] COOLING SYSTEM}}
+\vspace{2mm}
+\begin{Verbatim}[fontsize=\scriptsize, baselinestretch=0.85]
+  [CONTINUOUS MODE]                                        COALCOM: POWER STATION OPERATIONS TERMINAL
+  Time: 00:18                                                    Scenario: Morning Ramp
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+┌─────────────────────────────────────────────────────────────────────── KEY INDICATORS ───────────────────────────────────────────────────────────────────────┐
+│              POWER: 153.3 MW          PRESSURE:156.8 bar       TEMPERATURE: 525 C            DRUM LEVEL: 50.7 %            COAL RATE: 13.6 kg/s              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────── CONDENSER & COOLING ────────────┐ ┌──────────────── CIRCULATING PUMPS ─────────────────┌──────────────────── PLANT SCHEMATIC ─────────────────────┐
+│                                            │ │                                                    │                                                          │
+│  CONDENSER                                 │ │  PUMP   STATUS    FLOW  kg/s    VIB     oC     MW  │                                                          │
+│  Vacuum (bar abs):                         │ │                                                    │                                                          │
+│    0.046 bar                               │ │  [Z] A  RUNNING      4500        18     49    2.5  │                    55 %    142                           │
+│  █████████████████████████████████████░    │ │                   ██████████   ░░░░░  ██░░░        │                   ┌─►◄───────┐   ┌────┬────┐             │
+│                                            │ │                                                    │          ╔═══╦════════════╗ ╔╪═╦════╦═╪════╪═╗ 154 MW    │
+│  Fouling Level:                            │ │                                                    │          ║ D ║      527 C ║ ║HP║ MP ║   LP   ║═(G)       │
+│      0.0%                                  │ │  [X] B  RUNNING      4500        22     49    2.5  │     51 % ╚═══╣     ═╗     ║ ╚══╩═╪══╬══:══:══╣           │
+│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    │ │                   ██████████   █░░░░  ██░░░        │    156 bar   ║      ╚╗    ╫──┘   │  ║░░CNDS░░║    9000   │
+│                                            │ │                                                    │              ║       ╚╗   ║──────┘  ║░░0.05░░║────────§  │
+│  [B] Start Backwash Cycle                  │ │                                                    │              ║        ║   ║         ║▒▒▒▒▒▒▒▒╫────┐      │
+│                                            │ │  [C] C  STOPPED         0         5     25    0.0  │    PULVER    ║ BOILER ║   ║         ╚════════╝ ┌──┼──┐   │
+│  COOLING WATER                             │ │                   ░░░░░░░░░░   ░░░░░  █░░░░        │  A  B  C  D  ║        ║   ║                │   A  B  C   │
+│  River Temp:   20.0 C                      │ │                                                    │ [█][█][█][█] ║        ║   ║                │  [█][█][░]  │
+│  Turbine Eff:  100.00%                     │ │ ────────────────────────────────────────────────── │  │  │  │  │  ║        ╠═╪═╝                │   └──┼──┘   │
+│                                            │ │  RUNNING: 2/3        9000                    5.0   │  │  │  │  └──╫<  3.4  ║ │             ╔═══╗│ CIRC │      │
+└────────────────────────────────────────────┘ └────────────────────────────────────────────────────│  │  │  └─────╫<  3.4  ║ │         A   ║FWT╫┘ PUMPS│      │
+  STATUS: NORMAL                                                               Overall Health: 98%  │  │  └────────╫<  3.4  ║ │   50 %┌[█]┐ ║▒▒▒║       └───§  │
+┌─────────────────────────────────────── ALARMS & MESSAGES ────────────────────────────────────────┐│  └───────────╫<  3.4  ║ └────►◄─┤ B ├─║▒▒▒║       RIVER  │
+│ 00:00 > TSO : Set power to 150 MW                                                                ││              ║        ║  150    └[░]┘ ╚═══╝       20.0 C │
+│                                                                                                  ││              ╚═╗    ╔═╝          FDW                     │
+│                                                                                                  ││                ╚════╝            PUMPS                   │
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     [S]            [W]            [↑][↓]            [Q][A]            [1-4, 0]            [R]            [Z][X][C]            [B]            [SPACE]
+     Steam valve    Feed valve     Adjust            I/O Feed pumps    Select pulv         I/O pulv       I/O Circ pumps       Backwash       Mute alarm
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                   [F1] MAIN OPS  [F2] COAL  [F3] COOLING  [F4] WATER/STEAM  [F5] EQ HEALTH  [I] INSTRUCTIONS
+\end{Verbatim}
+\end{landscape}
+
+\begin{landscape}
+\thispagestyle{fancy}
+{\small\textbf{[F4] WATER/STEAM SYSTEM}}
+\vspace{2mm}
+\begin{Verbatim}[fontsize=\scriptsize, baselinestretch=0.85]
+  [CONTINUOUS MODE]                                        COALCOM: POWER STATION OPERATIONS TERMINAL
+  Time: 00:20                                                    Scenario: Morning Ramp
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+┌─────────────────────────────────────────────────────────────────────── KEY INDICATORS ───────────────────────────────────────────────────────────────────────┐
+│              POWER: 153.3 MW          PRESSURE:156.8 bar       TEMPERATURE: 525 C            DRUM LEVEL: 50.7 %            COAL RATE: 13.6 kg/s              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────── FEEDWATER PUMPS ────────────┐┌─────── VALVES & FLOW ────────┐┌── STEAM CONDITIONS ───┐┌──────────────────── PLANT SCHEMATIC ─────────────────────┐
+│ PMP STATUS    LOAD     oC    VIB     MW ││                              ││                       ││                                                          │
+│                                         ││ STEAM VALVE                  ││ DRUM LEVEL      51.3% ││                                                          │
+│ [Q] RUNNING   100%     47     21    --- ││  55.0% ( 55.0%) : 141.8 kg/s ││ ░░░░░░░░░░█░░░░░░░░░░ ││                                                          │
+│  TURBO       █████   ██░░░  █░░░░       ││ ███████████████░░░░░░░░░░░░░ ││                       ││                    55 %    142                           │
+│                                         ││                              ││ PRESSURE    155.4 bar ││                   ┌─►◄───────┐   ┌────┬────┐             │
+│ [A] STOPPED     0%     25      4    0.0 ││ FEEDWATER VALVE              ││ ░░░░░░░░░░█░░░░░░░░░░ ││          ╔═══╦════════════╗ ╔╪═╦════╦═╪════╪═╗ 154 MW    │
+│  MOTOR       ░░░░░   █░░░░  ░░░░░       ││  50.0% ( 50.0%) : 150.0 kg/s ││                       ││          ║ D ║      527 C ║ ║HP║ MP ║   LP   ║═(G)       │
+│                                         ││ ██████████████░░░░░░░░░░░░░░ ││ TEMPERATURE  527.3 oC ││     51 % ╚═══╣     ═╗     ║ ╚══╩═╪══╬══:══:══╣           │
+│                                         ││                              ││ ░░░░░░░░░░█░░░░░░░░░░ ││    155 bar   ║      ╚╗    ╫──┘   │  ║░░CNDS░░║    9000   │
+│  RUN:1/2                0.0 MW          ││                              ││                       ││              ║       ╚╗   ║──────┘  ║░░0.05░░║────────§  │
+└─────────────────────────────────────────┘└──────────────────────────────┘└───────────────────────┘│              ║        ║   ║         ║▒▒▒▒▒▒▒▒╫────┐      │
+┌────────────────────────────────────── BOILER HEAT BALANCE ───────────────────────────────────────┐│    PULVER    ║ BOILER ║   ║         ╚════════╝ ┌──┼──┐   │
+│ FUEL INPUT:                      WATER/STEAM BALANCE:             TURBINE OUTPUT:                ││  A  B  C  D  ║        ║   ║                │   A  B  C   │
+│ Coal Feed:  13.60 kg/s           Feedwater: 150 (150) kg/s        Power:  153.8 MW               ││ [█][█][█][█] ║        ║   ║                │  [█][█][░]  │
+│ Fuel Flow:  13.6 kg/s            Steam Out:     141.8 kg/s        RPM:    3000                   ││  │  │  │  │  ║        ╠═╪═╝                │   └──┼──┘   │
+│ Heat Input: 289.0 MW             Net Balance:   +8.2 kg/s         Eff:    100.0%                 ││  │  │  │  └──╫<  3.4  ║ │             ╔═══╗│ CIRC │      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘│  │  │  └─────╫<  3.4  ║ │         A   ║FWT╫┘ PUMPS│      │
+  STATUS: NORMAL                                                               Overall Health: 98%  │  │  └────────╫<  3.4  ║ │   50 %┌[█]┐ ║▒▒▒║       └───§  │
+┌─────────────────────────────────────── ALARMS & MESSAGES ────────────────────────────────────────┐│  └───────────╫<  3.4  ║ └────►◄─┤ B ├─║▒▒▒║       RIVER  │
+│ 00:00 > TSO : Set power to 150 MW                                                                ││              ║        ║  150    └[░]┘ ╚═══╝       20.0 C │
+│ 00:20 > TSO : Set power to 150 MW - DONE                                                         ││              ╚═╗    ╔═╝          FDW                     │
+│                                                                                                  ││                ╚════╝            PUMPS                   │
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+│                                                                                                  ││                                                          │ 
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     [S]            [W]            [↑][↓]            [Q][A]            [1-4, 0]            [R]            [Z][X][C]            [B]            [SPACE]
+     Steam valve    Feed valve     Adjust            I/O Feed pumps    Select pulv         I/O pulv       I/O Circ pumps       Backwash       Mute alarm
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                   [F1] MAIN OPS  [F2] COAL  [F3] COOLING  [F4] WATER/STEAM  [F5] EQ HEALTH  [I] INSTRUCTIONS
+\end{Verbatim}
+\end{landscape}
+
+\begin{landscape}
+\thispagestyle{fancy}
+{\small\textbf{[F5] EQUIPMENT HEALTH \& STATISTICS SYSTEM}}
+\vspace{2mm}
+\begin{Verbatim}[fontsize=\scriptsize, baselinestretch=0.85]
+  [CONTINUOUS MODE]                                        COALCOM: POWER STATION OPERATIONS TERMINAL
+  Time: 00:10                                                    Scenario: Morning Ramp
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+┌─────────────────────────────────────────────────────────────────────── KEY INDICATORS ───────────────────────────────────────────────────────────────────────┐
+│              POWER: 153.3 MW          PRESSURE:156.8 bar       TEMPERATURE: 525 C            DRUM LEVEL: 50.7 %            COAL RATE: 13.6 kg/s              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌── SYSTEMS HEALTH ──┐┌──────────────────────── EQUIVALENT OPERATION HOURS ────────────────────────┐┌──────────────────── PLANT SCHEMATIC ─────────────────────┐
+│                    ││  FEED PMP           CIRC PUMPS         PULVERIZERS        TURBINE          ││                                                          │
+│  BOILER     99%    ││  Pump A     564     Pump A     564     Mill A    514      Turbine    514   ││                                                          │
+│  ███████████████░  ││  Pump B     500     Pump B     564     Mill B    514                       ││                                                          │
+│                    ││                     Pump C     500     Mill C    514                       ││                    55 %    142                           │
+│  COAL       97%    ││                                        Mill D    514                       ││                   ┌─►◄───────┐   ┌────┬────┐             │
+│  ███████████████░  ││                                                                            ││          ╔═══╦════════════╗ ╔╪═╦════╦═╪════╪═╗ 153 MW    │
+│                    │└────────────────────────────────────────────────────────────────────────────┘│          ║ D ║      525 C ║ ║HP║ MP ║   LP   ║═(G)       │
+│  FEEDWATER  96%    │┌───────────────────────────── SHIFT STATISTICS ─────────────────────────────┐│     51 % ╚═══╣     ═╗     ║ ╚══╩═╪══╬══:══:══╣           │
+│  ███████████████░  ││                                                                            ││    157 bar   ║      ╚╗    ╫──┘   │  ║░░CNDS░░║    9000   │
+│                    ││ COAL CONS.  GENERATION  AVG BURN    FUEL EFFIC.  PEAK POWER   AUX LOAD     ││              ║       ╚╗   ║──────┘  ║░░0.05░░║────────§  │
+│  COOLING    98%    ││   0.1 ton     0.5 MWh   13.6 kg/s   3.1 MWh/ton   153.3 MW     5.8 MW      ││              ║        ║   ║         ║▒▒▒▒▒▒▒▒╫────┐      │
+│  ███████████████░  ││                                                                            ││    PULVER    ║ BOILER ║   ║         ╚════════╝ ┌──┼──┐   │
+│                    ││ TSO ORDERS  ALARMS      FAULTS      AVG POWER   LOW WATER INC.             ││  A  B  C  D  ║        ║   ║                │   A  B  C   │
+│  TURBINE    99%    ││    1/0/0       0           0         152.7 MW       0                      ││ [█][█][█][█] ║        ║   ║                │  [█][█][░]  │
+│  ███████████████░  ││                                                                            ││  │  │  │  │  ║        ╠═╪═╝                │   └──┼──┘   │
+│                    ││                                                                            ││  │  │  │  └──╫<  3.4  ║ │             ╔═══╗│ CIRC │      │
+└────────────────────┘└────────────────────────────────────────────────────────────────────────────┘│  │  │  └─────╫<  3.4  ║ │         A   ║FWT╫┘ PUMPS│      │
+  STATUS: NORMAL                                                               Overall Health: 98%  │  │  └────────╫<  3.4  ║ │   50 %┌[█]┐ ║▒▒▒║       └───§  │
+┌─────────────────────────────────────── ALARMS & MESSAGES ────────────────────────────────────────┐│  └───────────╫<  3.4  ║ └────►◄─┤ B ├─║▒▒▒║       RIVER  │
+│ 00:00 > TSO : Set power to 150 MW                                                                ││              ║        ║  150    └[░]┘ ╚═══╝       20.0 C │
+│                                                                                                  ││              ╚═╗    ╔═╝          FDW                     │
+│                                                                                                  ││                ╚════╝            PUMPS                   │
+│                                                                                                  ││                                                          │
+│                                                                                                  ││                                                          │
+│                                                                                                  ││                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                        SELECT A CONTROL
+     [S]          [W]          [↑][↓]          [Q][A]          [1-4, 0]          [R]          [Z][X][C]          [B]          [SPACE]          [CTRL+Y]
+     Steam valve  Feed valve   Adjust          I/O Feed pumps  Select pulv       I/O pulv     I/O Circ pumps     Backwash     Mute alarm       SCRAM
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                   [F1] MAIN OPS  [F2] COAL  [F3] COOLING  [F4] WATER/STEAM  [F5] EQ HEALTH  [I] INSTRUCTIONS
+\end{Verbatim}
+\end{landscape}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\newpage
+\thispagestyle{empty}
+\vspace*{\fill}
+
+\begin{center}
+\rule{\linewidth}{0.4pt}\\[2mm]
+{ \bfseries COALCOM - POWER STATION OPERATIONS TERMINAL}\\
+{ \bfseries Created by Pedro Matos @ 2026}\\[1mm]
+{ \textit{Keep the lights on. Keep your job.}}\\[1mm]
+\rule{\linewidth}{0.4pt}
+\end{center}
+
+This manual is provided as-is. Riverside Power Station accepts no
+liability for plant trips, grid outages, loss of employment, or
+incidents involving Earl-style supervisory napping.
+
+If in doubt: read the gauges, press the buttons, don't panic.
+
+\end{document}

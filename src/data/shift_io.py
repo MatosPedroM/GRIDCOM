@@ -48,6 +48,7 @@ Event 'action' is a declarative dict or None:
   { "type": "UNIT_TRIP", "unit": "RVSD-1" }
   { "type": "UNIT_DERATE", "unit": "RVSD-1", "cap_mw": 105.0 }
   { "type": "DEMAND_OVERRIDE", "schedule": {hour_str: mw} }
+  { "type": "AGC_SET", "enabled": true }
 UNIT_DERATE reduces the unit's dispatch ceiling to cap_mw and holds it
 there — unlike UNIT_TRIP, the unit stays ONLINE and keeps producing, just
 below its nameplate rating (e.g. a cooling fault). Output snaps down
@@ -57,6 +58,12 @@ hour->MW schedule (linearly interpolated between given hours) from the
 moment it fires — used for a mid-shift surprise (e.g. a demand spike)
 that the Phase 1 planning forecast did not show. Pass an empty schedule
 to revert to the standard profile. See DemandModel.set_demand_override().
+AGC_SET mutates the runtime AGC_ENABLED flag mid-shift (the same
+process-wide global main.py's Ctrl+A debug toggle flips) — for a shift
+that wants to teach the *transition* from manual-only to AGC-assisted
+dispatch within a single continuous session, rather than fixing
+AGC_ENABLED for the shift's whole duration via the shift file's
+AGC_ENABLED constant.
 Executed by GridSimulation._process_scripted_events() after the alarm
 for that event fires.
 """
@@ -99,7 +106,7 @@ class ShiftDefinition:
     start_hour:         float = 0.0
     duration_hours:     float = 8.0
     agc_enabled:        bool = False
-    droop_enabled:      bool = True
+    droop_enabled:      bool = False
     freq_tolerance_mult: float = 1.0
     handover_notes:     list[str] = field(default_factory=list)
     initial_schedule:   dict[str, float] = field(default_factory=dict)
@@ -171,7 +178,7 @@ def load_shift_named(name: str) -> ShiftDefinition:
         start_hour=data.get('start_hour', 0.0),
         duration_hours=data.get('duration_hours', 8.0),
         agc_enabled=data.get('agc_enabled', False),
-        droop_enabled=data.get('droop_enabled', True),
+        droop_enabled=data.get('droop_enabled', False),
         freq_tolerance_mult=data.get('freq_tolerance_mult', 1.0),
         handover_notes=list(data.get('handover_notes', [])),
         initial_schedule=dict(data.get('initial_schedule', {})),
@@ -299,7 +306,7 @@ def load_campaign_shift_for_editing(shift_number: int) -> ShiftDefinition:
         start_hour=0.0,
         duration_hours=0.0,
         agc_enabled=cfg['agc_enabled'],
-        droop_enabled=cfg.get('droop_enabled', True),
+        droop_enabled=cfg.get('droop_enabled', False),
         freq_tolerance_mult=cfg.get('freq_tolerance_mult', 1.0),
         handover_notes=list(cfg['handover_notes']),
         initial_schedule=dict(cfg['initial_schedule']),

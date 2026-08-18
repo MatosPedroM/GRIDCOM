@@ -386,18 +386,20 @@ class UnitModel:
 
     def set_voltage_setpoint(self, v_pu: float) -> bool:
         """
-        Set AVR voltage setpoint. Only valid when ONLINE.
+        Set AVR voltage setpoint. Valid in any state — an OFFLINE unit's
+        setpoint is stored and takes effect once it comes ONLINE (e.g. a
+        shift's INITIAL_VOLTAGE_SETPOINTS pre-configuring a unit that
+        starts OFFLINE and is brought online later by the player). Has no
+        electrical effect until the unit is ONLINE and included in
+        pv_bus_constraints().
 
         Args:
             v_pu: Target voltage in per-unit. Clamped to
                   [GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU].
 
         Returns:
-            True if accepted (unit is ONLINE).
-            False otherwise.
+            True (always accepted).
         """
-        if self._state != 'ONLINE':
-            return False
         self._v_setpoint_pu = max(
             GEN_VOLTAGE_SETPOINT_MIN_PU,
             min(GEN_VOLTAGE_SETPOINT_MAX_PU, float(v_pu))

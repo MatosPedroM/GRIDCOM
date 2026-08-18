@@ -406,7 +406,7 @@ def _make_shift_test(
                         display_size=display_surf.get_size())
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
-    _const.DROOP_ENABLED = cfg.get('droop_enabled', True)
+    _const.DROOP_ENABLED = cfg.get('droop_enabled', False)
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
     return sim, designer_grid, renderer
 

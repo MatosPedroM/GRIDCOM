@@ -45,6 +45,9 @@ from simulation.constants import (
     AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ, AGC_INTEGRAL_MAX,
     TRIP_DELAY_S, TIME_COMPRESSION,
     BLACKOUT_TRIP_S,
+    LINE_CHARGING_MVAR_PER_KM_150KV,
+    LINE_CHARGING_MVAR_PER_KM_220KV,
+    LINE_CHARGING_MVAR_PER_KM_400KV,
 )
 import simulation.constants as _sim_const
 from simulation.grid import Grid
@@ -62,6 +65,15 @@ from gameplay.shifts.loader import load_shift_config
 # Real-seconds equivalent of TRIP_DELAY_S, for alarm text — avoids a hardcoded
 # literal going stale if TRIP_DELAY_S is retuned (see CLAUDE.md Rule 1).
 _TRIP_DELAY_REAL_S: float = TRIP_DELAY_S / TIME_COMPRESSION
+
+
+def _line_charging_mvar_per_km(voltage_kv: float) -> float:
+    """Per-tier line-charging (Ferranti effect) rate, keyed by a line's voltage_kv."""
+    if voltage_kv >= 400.0:
+        return LINE_CHARGING_MVAR_PER_KM_400KV
+    if voltage_kv >= 220.0:
+        return LINE_CHARGING_MVAR_PER_KM_220KV
+    return LINE_CHARGING_MVAR_PER_KM_150KV
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -889,6 +901,14 @@ class GridSimulation:
             if bus_label not in blackout_zones:
                 q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
 
+        for line in self._get_in_service_lines():
+            if not line.length_km:
+                continue
+            mvar = line.length_km * _line_charging_mvar_per_km(line.voltage_kv)
+            for bus_label in (line.from_bus, line.to_bus):
+                if bus_label not in blackout_zones and bus_label in q_inj:
+                    q_inj[bus_label] += mvar
+
         pv_buses = self._fleet.pv_bus_constraints()
         return q_inj, pv_buses
 
@@ -1284,6 +1304,10 @@ class GridSimulation:
             schedule = {float(h): mw for h, mw in action['schedule'].items()}
             sim_hour = self._start_hour + self._sim_time_min / 60.0
             self._demand.set_demand_override(schedule, sim_hour)
+        elif action_type == 'AGC_SET':
+            # Mirrors main.py's Ctrl+A debug toggle — AGC_ENABLED is a
+            # runtime-mutable module global, not per-instance state.
+            _sim_const.AGC_ENABLED = bool(action['enabled'])
 
     def _process_scripted_events(self) -> None:
         """Fire any scripted events whose trigger time has been reached."""

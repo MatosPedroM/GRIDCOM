@@ -102,6 +102,28 @@ SHUNT_SWITCH_DWELL_S:     float = 30.0  # minimum simulated seconds between swit
 # Manual continuous SVC/STATCOM — player-set MVAr setpoint.
 SVC_Q_MIN_MVAR:  float = -150.0
 SVC_Q_MAX_MVAR:  float =  150.0
+
+# Line charging (Ferranti effect) — an energised line injects reactive
+# power locally at BOTH ends, proportional to its length, raising nearby
+# voltage even when it carries no load. Modelled the same way the shunt
+# bank/SVC reactive devices already are (reactive_devices.py) — a fixed
+# MVAr injection per bus, fed into simulation.py's _build_q_injections()
+# — NOT a change to voltage.py's B' matrix, since Q injections here are
+# solver inputs, not admittance terms (VSHUNT_REG is a numerical-stability
+# regulariser and a different thing). Only in-service lines contribute
+# (simulation.py's _get_in_service_lines() — a tripped/open line charges
+# nothing), so closing a spare/parallel circuit and leaving it closed has
+# a real, small, visible voltage cost instead of being a free action —
+# first used by the Shift 2/3 N-1 tutorial lesson but applies to every
+# shift. Magnitude is a first-pass playtest value, not derived from a
+# formula — verified empirically against the new tutorial.json grid:
+# small enough that a 100+km weak-feed line (Shift 2's Fenwick lesson)
+# doesn't pre-saturate the supporting generator's Q range regardless of
+# AVR setpoint, while still giving a short ~20km spare/parallel circuit
+# (Shift 2/3's N-1 lesson) a real, non-zero MVAr contribution when closed.
+LINE_CHARGING_MVAR_PER_KM_150KV: float = 0.06
+LINE_CHARGING_MVAR_PER_KM_220KV: float = 0.15
+LINE_CHARGING_MVAR_PER_KM_400KV: float = 0.4
 SVC_Q_STEP_MVAR: float =   10.0  # per keyboard adjust command
 
 # Unit active-power nudge (G to arm, Up/Down to step) — alternative to
@@ -140,12 +162,14 @@ FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the freq
 DROOP_R: float = 0.04
 
 # Per-shift override, mirroring AGC_ENABLED's plumbing (see gameplay/shifts
-# loader.py's 'droop_enabled' config key). Defaults True -- droop is
-# intended to be universal/always-active plant behaviour -- but a manual-
-# dispatch tutorial (e.g. Shift 1) can set DROOP_ENABLED = False in its
-# shift_NN.py to teach "nothing corrects frequency but you" honestly,
-# since AGC_ENABLED alone no longer guarantees that once droop exists.
-DROOP_ENABLED: bool = True
+# loader.py's 'droop_enabled' config key). Defaults False -- playtesting
+# found universal droop (non-ramp-limited, re-anchoring target_mw every
+# tick on every synchronous unit including slow-ramping COAL) fought a
+# player's manual setpoint hard enough to read as a control bug, and with
+# AGC already handling fast correction on HYDRO/CCGT, droop's realism
+# wasn't earning its confusion cost. Any shift_NN.py can still set
+# DROOP_ENABLED = True explicitly to opt back in.
+DROOP_ENABLED: bool = False
 
 # ─────────────────────────────────────────────
 # AUTOMATIC GENERATION CONTROL (AGC)
@@ -157,7 +181,7 @@ AGC_KI:            float = 5.0    # Integral gain (MW per Hz·sim-second of erro
                                    # significant against AGC_INTEGRAL_MAX (was capped at
                                    # 0.05 MW, effectively dead — AGC parked at a P-term-only
                                    # offset instead of returning frequency to nominal).
-AGC_KD:            float = 200.0  # Derivative gain (MW per Hz/sim-second of error) —
+AGC_KD:            float = 2000.0  # Derivative gain (MW per Hz/sim-second of error) —
                                    # cut from 1000.0 so it damps transients without
                                    # dominating now that KI is doing real work.
 AGC_MAX_RATE_MW_S: float = 100.0   # Max total AGC correction rate (MW per sim-second)
@@ -181,12 +205,12 @@ LOSSES_FRACTION: float = 0.025  # 2.5% of total generation added to load
 # LINE TRIP / CASCADE
 # ─────────────────────────────────────────────
 TRIP_DELAY_S:        float = 720.0  # Seconds (SIM-time) a line must be >100% before tripping —
-                                     # 720 / TIME_COMPRESSION(48) = 15 real seconds at 1x speed,
+                                     # 720 / TIME_COMPRESSION(24) = 30 real seconds at 1x speed,
                                      # raised from 60.0 (was only 1.25 real seconds — unreadable).
 
 BLACKOUT_TRIP_S:     float = 360.0  # Seconds (SIM-time) frequency must stay pinned at the
                                      # F_MIN/F_MAX hard clamp before the shift ends as FAILED —
-                                     # 360 / TIME_COMPRESSION(48) = 7.5 real seconds at 1x speed.
+                                     # 360 / TIME_COMPRESSION(24) = 15 real seconds at 1x speed.
 OVERLOAD_WARN_PCT:   float = 85.0   # Loading % at which WARNING alarm fires
 OVERLOAD_CRIT_PCT:   float = 100.0  # Loading % at which overload timer starts
 
@@ -289,7 +313,10 @@ CONSOLIDATED_FEED_RATING_MW_WEST:   float = 3100.0  # Feed rating for WEST's sin
 # SIMULATION TIMING
 # ─────────────────────────────────────────────
 SIM_TICKS_PER_SECOND: int   = 10        # Simulation ticks per real second
-TIME_COMPRESSION:     float = 48.0      # 1 sim hour = 1.25 real minutes
+TIME_COMPRESSION:     float = 24.0      # 1 sim hour = 2.5 real minutes — halved from 48.0
+                                         # so a shift's demand ramp and frequency swings leave
+                                         # a first-time player real reaction time (was 1.25
+                                         # real min/sim hour, too fast to think->act->observe).
 
 # ─────────────────────────────────────────────
 # FREQUENCY DYNAMICS

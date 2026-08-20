@@ -131,6 +131,12 @@ SVC_Q_STEP_MVAR: float =   10.0  # per keyboard adjust command
 UNIT_MW_STEP:       float =  1.0  # MW per keyboard adjust command
 UNIT_MW_STEP_FAST_MULT: float = 5.0  # Ctrl+Up/Down multiplier (1 MW * 5 = 5 MW)
 
+# AVR voltage setpoint nudge (Q key arms, Up/Down adjusts). The usable band
+# is only 0.95-1.05 pu, so the step is deliberately fine — 0.005 pu gives 20
+# increments across the whole range.
+GEN_VOLTAGE_SETPOINT_STEP_PU:        float = 0.005
+GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT: float = 4.0  # Ctrl+Up/Down (0.005 * 4 = 0.02 pu)
+
 # ─────────────────────────────────────────────
 # FREQUENCY THRESHOLDS (Hz)
 # ─────────────────────────────────────────────

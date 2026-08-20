@@ -207,6 +207,7 @@ class Renderer:
         # Active-power nudge mode (G arms it, Up/Down steps target_mw) —
         # alternative to the digit+Enter buffer above for fast adjustments.
         self._adjust_active: bool = False
+        self._setpoint_adjust_active: bool = False
 
         # Debug state
         self._mouse_pos:       tuple[int, int] = (0, 0)
@@ -272,6 +273,7 @@ class Renderer:
         self._setpoint_active = False
         self._svc_cmd_active  = False
         self._adjust_active   = False
+        self._setpoint_adjust_active = False
 
     def _get_selected_unit(self):
         """Return the GenerationUnit for _selected_label if it is a unit, else None."""
@@ -444,12 +446,57 @@ class Renderer:
         self._setpoint_buffer = ''
         self._setpoint_active = False
 
+    def on_setpoint_adjust_toggle(self) -> None:
+        """Arm reactive-power (AVR setpoint) nudge mode for the selected unit.
+
+        Disarms active-power nudge mode so UP/DOWN always drive exactly one
+        quantity.
+        """
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        self._setpoint_adjust_active = True
+        self._adjust_active = False
+
+    def on_setpoint_adjust(self, sim, direction: int, fast: bool = False) -> None:
+        """
+        Nudge the selected unit's AVR voltage setpoint by one
+        GEN_VOLTAGE_SETPOINT_STEP_PU (direction = +1 or -1), or by
+        GEN_VOLTAGE_SETPOINT_STEP_PU * GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT
+        if fast=True (Ctrl held). Clamped to
+        [GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU] — the same
+        bounds set_generator_voltage_setpoint() enforces. Mirrors
+        on_target_adjust(); no-op unless this mode is armed.
+        """
+        if not self._setpoint_adjust_active:
+            return
+        unit = self._get_selected_unit()
+        if unit is None:
+            return
+        state = sim.get_state()
+        if state is None:
+            return
+        step = GEN_VOLTAGE_SETPOINT_STEP_PU * (
+            GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT if fast else 1.0
+        )
+        current = state.unit_v_setpoint_pu.get(
+            unit.label, GEN_VOLTAGE_SETPOINT_DEFAULT_PU
+        )
+        clamped = max(GEN_VOLTAGE_SETPOINT_MIN_PU,
+                      min(GEN_VOLTAGE_SETPOINT_MAX_PU, current + direction * step))
+        sim.set_generator_voltage_setpoint(unit.label, clamped)
+
     def on_adjust_toggle(self) -> None:
-        """Arm active-power nudge mode for the selected dispatchable unit."""
+        """Arm active-power nudge mode for the selected dispatchable unit.
+
+        Disarms reactive-power nudge mode so UP/DOWN always drive exactly one
+        quantity.
+        """
         unit = self._get_selected_unit()
         if unit is None:
             return
         self._adjust_active = True
+        self._setpoint_adjust_active = False
 
     def on_target_adjust(self, sim, direction: int, fast: bool = False) -> None:
         """
@@ -553,6 +600,7 @@ class Renderer:
         self._setpoint_active = False
         self._svc_cmd_active  = False
         self._adjust_active   = False
+        self._setpoint_adjust_active = False
 
     def on_escape(self) -> None:
         """
@@ -573,6 +621,8 @@ class Renderer:
             self._svc_cmd_active = False
         elif self._adjust_active:
             self._adjust_active = False
+        elif self._setpoint_adjust_active:
+            self._setpoint_adjust_active = False
         elif self._selected_label is not None:
             self.clear_selection()
 
@@ -995,6 +1045,7 @@ class Renderer:
                 ),
                 mode_cmd_active=self._mode_cmd_active,
                 adjust_active=self._adjust_active,
+                setpoint_adjust_active=self._setpoint_adjust_active,
             )
             native_changed = True
         elif self._selected_label is not None:

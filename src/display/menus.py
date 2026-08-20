@@ -95,6 +95,14 @@ def build_main_menu_items() -> list:
     ]
 
 
+def build_quit_confirm_items() -> list:
+    """Returns list of (label, enabled) for the abandon-shift confirmation."""
+    return [
+        ('RESUME SHIFT',  True),
+        ('ABANDON SHIFT', True),
+    ]
+
+
 def build_grid_test_select_items(grid_names: list[str]) -> list:
     """Returns list of (label, enabled) for the designer grid test selector."""
     if not grid_names:

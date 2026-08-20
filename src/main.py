@@ -49,9 +49,11 @@ from display.menus import (
     build_campaign_end_lines,
     build_menu_title_art,
     build_shift_select_items,
+    build_quit_confirm_items,
 )
 from data.layout_override import load_layout
 from data.profiles import DEMAND_PROFILE_NORMALISED
+from gameplay.scoring import count_unit_trips, grade_campaign, grade_shift
 from gameplay.shifts.loader import load_shift_config
 from simulation.grid import Grid
 from simulation.simulation import GridSimulation
@@ -77,6 +79,7 @@ class GameState(Enum):
     BRIEFING          = 'briefing'
     PLANNING          = 'planning'
     PLAYING           = 'playing'
+    QUIT_CONFIRM      = 'quit_confirm'
     DEBRIEF           = 'debrief'
     SHIFT_SELECT      = 'shift_select'
     CAMPAIGN_END      = 'campaign_end'
@@ -87,6 +90,23 @@ class GameState(Enum):
     SHIFT_BUILDER     = 'shift_builder'
     SHIFT_SELECT_JSON = 'shift_select_json'
 
+
+# Phase 2 speed control: F12 steps through the run speeds in order and wraps.
+# Pause is deliberately NOT in this cycle — it lives on P, so the player can
+# always stop the clock in one keystroke without cycling past it. The digit
+# keys are left entirely to unit target entry.
+_SPEED_CYCLE = (SPEED_SLOW, SPEED_NORMAL, SPEED_FAST, SPEED_VERY_FAST)
+
+
+def _next_speed(current: float) -> float:
+    """Return the next run speed after `current`, wrapping at the end.
+
+    Cycling while paused resumes at the slowest speed rather than jumping
+    back to whatever was running before the pause.
+    """
+    if current not in _SPEED_CYCLE:
+        return _SPEED_CYCLE[0]
+    return _SPEED_CYCLE[(_SPEED_CYCLE.index(current) + 1) % len(_SPEED_CYCLE)]
 
 _SEP = '═' * 64
 
@@ -498,6 +518,11 @@ def main() -> None:
         _raw[5],
     ]
 
+    # Abandon-shift confirmation (Escape from PLAYING with nothing selected).
+    # _quit_confirm_speed remembers the run speed so RESUME restores it.
+    _quit_confirm_items = build_quit_confirm_items()
+    _quit_confirm_speed = SPEED_NORMAL
+
     # ── Designer test state ──────────────────────────────────────────────────
     _designer_test_sim:      object    = None
     _designer_test_grid:     object    = None
@@ -890,18 +915,31 @@ def main() -> None:
                           and _const.DEBUG_DISPLAY):
                         pygame.display.toggle_fullscreen()
 
-                    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
+                    # Escape backs out one level at a time; with nothing left to
+                    # close it asks before abandoning the shift, rather than
+                    # dropping the player straight to the menu mid-run.
+                    # (Q is no longer an alias — it now sets reactive power.)
+                    elif event.key == pygame.K_ESCAPE:
                         if _const.EDITOR_MODE:
                             _const.EDITOR_MODE = False
-                        elif renderer._selected_label is not None or renderer._input_active:
+                        elif (renderer._selected_label is not None
+                              or renderer._input_active
+                              or renderer._setpoint_active
+                              or renderer._adjust_active):
                             renderer.on_escape()
                         else:
-                            game_state    = GameState.MAIN_MENU
+                            _quit_confirm_speed = speed
+                            speed         = SPEED_PAUSE
+                            sim_accum     = 0.0
                             menu_selected = 0
+                            game_state    = GameState.QUIT_CONFIRM
 
-                    elif (ctrl and shift_held and event.key == pygame.K_e
-                          or event.key == pygame.K_F12):
+                    elif ctrl and shift_held and event.key == pygame.K_e:
                         _const.EDITOR_MODE = not _const.EDITOR_MODE
+
+                    # Speed cycle: F12 steps 1x -> 3x -> 10x -> 0.25x -> ...
+                    elif event.key == pygame.K_F12 and not _const.EDITOR_MODE:
+                        speed = _next_speed(speed)
 
                     elif event.key == pygame.K_s and _const.EDITOR_MODE:
                         renderer.save_layout()
@@ -969,14 +1007,27 @@ def main() -> None:
                           and not renderer._input_active and not renderer._setpoint_active):
                         renderer.on_svc_adjust(sim, +1)
 
-                    elif (event.key == pygame.K_v and not _const.EDITOR_MODE
-                          and not renderer._input_active and not ctrl):
-                        renderer.on_setpoint_toggle()
-
-                    elif (event.key == pygame.K_g and not _const.EDITOR_MODE
+                    # W = active power (MW), Q = reactive power (AVR setpoint).
+                    # Adjacent on QWERTY, and P/Q is the standard engineering
+                    # pairing. Both arm a nudge mode driven by UP/DOWN below;
+                    # arming one disarms the other so the arrows are never
+                    # ambiguous. Typing an exact value still works via Enter.
+                    elif (event.key == pygame.K_w and not _const.EDITOR_MODE
                           and not renderer._input_active and not renderer._setpoint_active
                           and not ctrl):
                         renderer.on_adjust_toggle()
+
+                    elif (event.key == pygame.K_q and not _const.EDITOR_MODE
+                          and not renderer._input_active and not ctrl):
+                        renderer.on_setpoint_adjust_toggle()
+
+                    elif (event.key == pygame.K_UP and not _const.EDITOR_MODE
+                          and renderer._setpoint_adjust_active):
+                        renderer.on_setpoint_adjust(sim, +1, fast=ctrl)
+
+                    elif (event.key == pygame.K_DOWN and not _const.EDITOR_MODE
+                          and renderer._setpoint_adjust_active):
+                        renderer.on_setpoint_adjust(sim, -1, fast=ctrl)
 
                     elif (event.key == pygame.K_UP and not _const.EDITOR_MODE
                           and renderer._adjust_active):
@@ -1081,6 +1132,46 @@ def main() -> None:
                 )
                 game_state    = GameState.DEBRIEF
                 debrief_chars = 0.0
+
+        # ── QUIT CONFIRM ─────────────────────────────────────────────────────
+        # Guards against losing a shift to a stray Escape. The simulation is
+        # paused (not torn down) while this is up, so RESUME returns to the
+        # shift exactly where it was left.
+        elif game_state == GameState.QUIT_CONFIRM:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        menu_selected = _next_enabled(_quit_confirm_items, menu_selected, -1)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        menu_selected = _next_enabled(_quit_confirm_items, menu_selected, +1)
+                    elif event.key == pygame.K_ESCAPE:
+                        speed      = _quit_confirm_speed
+                        game_state = GameState.PLAYING
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        if menu_selected == 0:      # RESUME SHIFT
+                            speed      = _quit_confirm_speed
+                            game_state = GameState.PLAYING
+                        else:                        # ABANDON SHIFT
+                            game_state    = GameState.MAIN_MENU
+                            menu_selected = 0
+
+            renderer.tick_menu_screen(
+                dt,
+                title_lines=[
+                    (_SEP, COL_TEXT_SCREEN_HDR),
+                    (' ABANDON SHIFT?', COL_TEXT_SCREEN_HDR),
+                    (_SEP, COL_TEXT_SCREEN_HDR),
+                    ('', COL_TEXT_BODY),
+                    (' The shift is still running. Leaving now discards it —', COL_TEXT_BODY),
+                    (' there is no save, and it will not be graded.', COL_TEXT_BODY),
+                    ('', COL_TEXT_BODY),
+                ],
+                items=_quit_confirm_items,
+                selected_idx=menu_selected,
+                footer_hint='[UP / DOWN]  Navigate    [ENTER]  Select    [ESC]  Resume',
+            )
 
         # ── DEBRIEF ───────────────────────────────────────────────────────────
         elif game_state == GameState.DEBRIEF:

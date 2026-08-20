@@ -62,6 +62,7 @@ def draw_unit_context(
     dispatch_mode:  str | None = None,
     mode_cmd_active: bool = False,
     adjust_active:  bool = False,
+    setpoint_adjust_active: bool = False,
 ) -> None:
     """
     Draw the unit context panel at the top-left of the canvas surface.
@@ -89,7 +90,9 @@ def draw_unit_context(
                         the row entirely — only shown when this shift has a
                         Phase 1 hourly schedule covering the unit.
         mode_cmd_active: Whether the AUTO/MANUAL toggle button has keyboard focus.
-        adjust_active:  Whether active-power nudge mode (G + Up/Down) is armed
+        adjust_active:  Whether active-power nudge mode (W + Up/Down) is armed
+        setpoint_adjust_active: Whether reactive-power/AVR nudge mode
+                        (Q + Up/Down) is armed
                         for this unit — shown as a magenta Target field border,
                         distinct from input_active's green typed-entry border.
     """
@@ -194,25 +197,34 @@ def draw_unit_context(
             hint     = 'ADJUST ARMED — Up/Down step, Ctrl+Up/Down fast'
             hint_col = COL_SVC
         else:
-            hint     = f'[{unit.min_mw:.0f} – {unit.rated_mw:.0f} MW]  (G to adjust)'
+            hint     = f'[{unit.min_mw:.0f} – {unit.rated_mw:.0f} MW]  (W to adjust)'
             hint_col = COL_TEXT_DIM
         font.render_to(surf, (x + pad, _ry(2)), hint, hint_col, size=sz)
 
         cmd_row = 3
         if show_avr:
             avr_row_y = _ry(3)
-            avr_label_w = font.get_rect('AVR [V]: ', size=sz).width
+            # Label doubles as the keybinding cue, mirroring the MW row's
+            # "(W to adjust)" hint — there is no spare row here for a hint line.
+            avr_label = 'AVR [Q]:' if not setpoint_adjust_active else 'AVR [Q]* '
+            avr_label_w = font.get_rect(avr_label + ' ', size=sz).width
             pu_str  = ' pu'
             pu_w    = font.get_rect(pu_str, size=sz).width
             avr_field_x = x + pad + avr_label_w
             avr_field_w = w - pad - (avr_field_x - x) - pu_w - pad
             avr_field_h = rh - 2
 
-            font.render_to(surf, (x + pad, avr_row_y), 'AVR [V]:', COL_TEXT_PRIMARY, size=sz)
+            font.render_to(surf, (x + pad, avr_row_y), avr_label,
+                           COL_SVC if setpoint_adjust_active else COL_TEXT_PRIMARY, size=sz)
 
             avr_field_rect = pygame.Rect(avr_field_x, avr_row_y - 1, avr_field_w, avr_field_h)
             pygame.draw.rect(surf, COL_CONTEXT_FIELD_BG, avr_field_rect)
-            avr_border_col = COL_CONTEXT_FIELD_ACTIVE if setpoint_active else COL_PANEL_BORDER
+            if setpoint_active:
+                avr_border_col = COL_CONTEXT_FIELD_ACTIVE
+            elif setpoint_adjust_active:
+                avr_border_col = COL_SVC          # armed, same cue as the MW field
+            else:
+                avr_border_col = COL_PANEL_BORDER
             pygame.draw.rect(surf, avr_border_col, avr_field_rect, 1)
 
             avr_display = setpoint_buffer if setpoint_active else f'{v_setpoint_pu:.3f}'

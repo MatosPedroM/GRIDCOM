@@ -1036,21 +1036,105 @@ Shift 3 N-1 lesson regression flagged in Known Issues.
 
 ## What Is NOT Yet Built
 
-**Gameplay stages have empty placeholder files only** (except shift_01-03 and shift_10, which
-are complete and tuned for the current topology; shift_04-09 exist as placeholder files but
-their content is STALE against the redesigned grid — see Known Issues).
-**Stage 7 (events.py) is deliberately deferred until after rendering is complete.**
+**Corrected Session 78** — this section had drifted badly out of date and is now accurate:
+
+Shift scenario files:
+- **shift_01, shift_04, shift_05 are complete and current.** shift_04/05 each have their own
+  hand-authored Designer grid (`shift4.json` / `shift5.json`).
+- **shift_10.py is a 9-line stub with no constants at all** — NOT "complete and tuned" as
+  this section previously claimed. It declares no `GRID_SOURCE`, so `load_shift_config(10)`
+  falls back to an empty schedule, AGC off and zero demand. (This is also why
+  `test_shift10_n1_cross_check()` fails with "peak-hour load ~8001 MW, got 0".) An earlier
+  Alpha-grid wiring is long gone. Rebuilding it is the current objective.
+- **shift_02, shift_03, shift_06-shift_09 are stubs.** shift_02 is an intentional stub (its
+  content merged into shift_01, Session 71); 06-09 need full rewrites against the redesigned
+  grid — see Known Issues.
+
+Gameplay modules — **`src/gameplay/` is no longer empty**:
+- `phase1.py` — Phase 1 planning model (Session 32 onward).
+- `scoring.py` — `grade_shift()` / `grade_campaign()` (Session 78). Single source of truth
+  for end-of-shift grading; replaced two duplicated inline rubrics in `main.py` and the
+  hardcoded campaign grade `'A'`.
+- `shifts/loader.py` — per-shift config reader.
+- Still empty: `campaign.py`, `debrief.py`, `phase2.py`, `autopilot.py`. Their logic lives
+  inline in `main.py` (the state machine is an if/elif chain over a 17-member enum).
+
+**`src/simulation/events.py` is still 0 bytes and is NOT the event system.** Scripted events
+are implemented inline in `simulation.py` (`_process_scripted_events`, `_eval_condition`,
+`_execute_action`) and are fully working — 8 condition metrics and 8 action types.
 
 Do not reference any display or gameplay module as if it
 contains working code unless listed above as complete.
 
-Specifically — these classes and functions DO NOT EXIST YET:
-- `EventSystem` / `ScriptedEvent` (src/simulation/events.py) — deferred
-- Any gameplay classes (src/gameplay/*)
-
 ---
 
 ## Next Session Objective
+
+**Shift 10 "The Bad Night" — Movement 2 (author the shift)**
+
+Movement 1 (the foundation, F1-F7) landed in Session 78 — see the Stage 35 validation row.
+Difficulty is now *expressible*: a shift can be won, lost, and graded on more than frequency.
+Remaining work, per `SHIFT10_BAD_NIGHT_PLAN.md`:
+
+1. **Rebuild `src/assets/designer_grids/shift10.json` at ~28-32 buses**, seeded by copying
+   `shift5.json` (25 buses / 41 lines / 13 units / 1540 MW) and growing it. The existing
+   60-bus file is auto-generated and semantically incoherent — labels contradict unit types
+   (KELM/KELD "Kelmore Hydro" are WIND, WNCN "Cairn Wind" is HYDRO_ROR, BARR "Barrow Hydro"
+   is CCGT, SLST "Stanton Solar" is HYDRO) and `can_pump` is empty. Keep it as the solver
+   performance-ceiling fixture only. Target ~10-12 units, each with a distinct personality.
+2. **Write `shift_10.py`** (~350-400 lines) on the `shift_04.py`/`shift_05.py` pattern, in
+   four acts: Quiet (dread; `MAINTENANCE_LINES`, one latent risk that deliberately never
+   fires) → the front arrives (`UNIT_DERATE` on wind + `DEMAND_OVERRIDE`) → **AGC fails**
+   (`AGC_SET` — the spine of the shift, zero new code) → cascade (now fightable via F5/F6
+   and genuinely losable via F3's `FAIL_CONDITIONS`).
+   - `DIFFICULTY_LABEL = 'Severe'` (not 'Tutorial'), `GRID_SOURCE = 'shift10'`,
+     `AGC_ENABLED = True` so Act 3 has something to take away.
+   - **`SUBSTATION_TYPES` is mandatory** — every bus in the grid file has
+     `substation_type: null`, so without it the shift gets no reactive devices at all.
+   - `AGC_SET` mutates a module global, so restore it at shift start or a later shift
+     inherits AGC-off.
+   - **Hand-edit the file.** The Shift Builder EVENTS tab cannot express `VOLTAGE_PU`
+     conditions or `DEMAND_OVERRIDE`/`AGC_SET` actions, and an AST round-trip of
+     `SCRIPTED_EVENTS` flattens named condition dicts and prose `detail` strings.
+3. **Re-point `test_shift10_n1_cross_check()`** (`tests/test_designer_analysis.py:440`) at the
+   rebuilt grid — it currently fails against the stale one.
+4. Then **play it twice**: once to complete it, once deliberately trying to lose, to answer
+   the question the slice exists for — *does hand-flying frequency through the Act 3 AGC
+   failure carry the shift?*
+
+### Queued immediately after Shift 10: direct-Q control, AVR removed (decided 2026-08-19)
+
+**Developer decision, not yet started.** Replace the generator AVR voltage setpoint with
+**direct reactive-power control** — two knobs per unit (`W` = MW, `Q` = MVAr), with voltage
+becoming a consequence of dispatch instead of something the player targets. Full
+implementation notes, consequences and verification plan are in the session plan file under
+**F9**; summary:
+
+- Two hooks already exist for this and are currently **dead code with zero callers**:
+  `UnitModel.set_q_injection()` (`units.py:381`, already clamps to q_min/q_max) and
+  `FleetModel.q_injections()` (`units.py:785`). **The voltage solver needs no changes** — a
+  bus absent from `pv_buses` is already solved as PQ using its supplied Q injection.
+- Main work: wire fleet Q into `_build_q_injections()` (`simulation.py:969`, which today sums
+  only demand + reactive devices + line charging), make `pv_bus_constraints()` return empty,
+  retarget F8's `Q`-key nudge from pu to MVAr, and allow **negative** typed entry (no minus
+  key is bound today — `renderer.py:415` and `main.py:1055-1065` are digits-and-dot only).
+- **Shift 4 needs re-authoring, not just retuning** — its core lesson is literally "raise
+  Batherton's AVR setpoint"; that becomes "raise Batherton's MVAr output". Shift 1's
+  `HOLT-1: 0.95` is a one-liner. `INITIAL_VOLTAGE_SETPOINTS` → `INITIAL_Q_MVAR`.
+- Expect real retuning: **voltage will no longer self-correct** as load moves, so every shift
+  gets harder and alarm pacing (`V_WATCH_LOW`/`V_WARNING_LOW`) will need review.
+- **4 of the 13 tests in `test_voltage_reactive.py` assert PV-bus behaviour** that will cease
+  to exist (`:240`, `:673`, `:789`, `:847`) and must be rewritten; the other nine should pass
+  unchanged, which is the evidence the change is contained.
+
+**This supersedes the previously queued P-Q coupling item** (three read sites in `units.py`) —
+both touch the same reactive path, so do not attempt them independently. Sequenced after
+Shift 10 for the same reason P-Q coupling was: it changes voltage behaviour under every
+existing shift, and Shift 10 is easier to tune against a stable baseline.
+
+---
+
+### Deferred (previous objective): playtest Sessions 70+71's changes
 
 **Playtest Sessions 70+71's changes in the real game, then re-evaluate**
 
@@ -1199,6 +1283,8 @@ own hydraulic-pair data, which doesn't exist today.
 | 32 | Shift 5 Phase 1 planning + AUTO/MANUAL dispatch mode; BRIEFING->PLANNING->PLAYING campaign wiring; DEMAND_OVERRIDE scripted action; developer fixed a pre-existing shift5.json voltage collapse (L41 second CLOV-SUTT circuit, wind moved MARC-1->SUTT-1) found during verification; headless full-shift runs (balanced vs auto_schedule()-only plan) confirm no collapse + intended good-plan/bad-plan contrast; PlanningScreen F10 confirm + Mode row render checks; 28/28 pass | PASS | 2026-07-25 |
 | 33 | Gameplay Analysis Improvement #1 (1a-1f): frequency/clock decoupling, universal droop reinstated, AGC PI retune + saturation flag, overload countdown + rescaled trip timer, softened voltage collapse, hour-boundary AGC-offset fix; new scripts/verify_reaction_window.py harness confirms TRIP_DELAY_S/V_COLLAPSE derivations empirically and retuned FREQ_DYNAMICS_SCALE; full real-Shift-3 48-sim-hour run + real L01/L09 scripted-event run, no exceptions; 8/9 pass (1 pre-existing unrelated failure) | PASS | 2026-07-26 |
 | 33 | New DROOP_ENABLED per-shift flag (fixes universal droop silently breaking Shift 1/2's manual-dispatch lesson) wired through constants/simulation/loader/main/Shift-Builder round-trip; merged Shift 1+2 into one tutorial (Shift 2 now a stub); scripted-event timings empirically corrected against real demand-curve math; headless droop-gating + playability checks, both shifts' loader config confirmed; 8/9 pass (1 pre-existing unrelated failure), 28/28 pytest | PASS | 2026-07-26 |
+| 35 | Shift 10 "Bad Night" Movement 1 — foundation (F1-F7). F1 seeded RNG (SHIFT_RNG_SEED_BASE; only simulation.py's live RenewablesModel actually draws noise — the other two sites are deterministic); F2 speed keys 0-4 in PLAYING, resolving the digit-entry precedence conflict (SPEED_VERY_FAST reachable for the first time); F3 WIN_CONDITIONS/FAIL_CONDITIONS reusing the scripted-event condition evaluator, with per-condition sustained_s that decays on release, evaluated after the tick snapshot; F4 gameplay/scoring.py replacing two duplicated inline rubrics and the hardcoded campaign grade 'A', now scoring voltage/loading/trips as well as frequency; F5 load shedding made reachable at all (clear_shed wrapper, renderer handlers, H / Shift+H, LOAD_SHED + LOAD_RESTORE actions) — load_shed_events can be non-zero for the first time; F6 inverse-time overload accumulation with decay instead of hard reset (100%:725s -> 180%:174s; a line flapping around its rating now trips, previously never did); F7 real engineering units in the UI (bus V in kV, derived S in MVA on the unit panel), display-only. Verified per item headlessly + offscreen panel renders; tick 0.72 ms (target <5 ms); new test_shift_scoring() plus rewritten cascade overload/decay tests. 26/29 vs a 25/28 clean-tree baseline — the 3 remaining failures are byte-identical to baseline (verified by diffing against a git-archive copy of HEAD), so zero regressions | PASS | 2026-08-19 |
+| 35 | Phase 2 setpoint-control rework (F8, developer request, supersedes F2's digit-speed keys): W arms active-power (MW) adjust, Q arms reactive-power (AVR setpoint) adjust, Up/Down step the armed quantity with Ctrl for a coarse step, F12 cycles run speed 0.25->1->3->10->wrap, P keeps pause off the cycle, and 0-9 revert to unit target entry only. The MW nudge already existed (rebound G->W); the AVR nudge is new (GEN_VOLTAGE_SETPOINT_STEP_PU 0.005, x4 coarse, clamped to the 0.95-1.05 pu band) since that side was typing-only. Arming one mode disarms the other. Collisions resolved: Q was a quit alias and F12 toggled EDITOR_MODE (now Ctrl+Shift+E only); Escape backs out one level at a time and with nothing left to close opens a new QUIT_CONFIRM screen (RESUME/ABANDON) that pauses rather than tears down the sim, so RESUME restores the prior speed. Context panel shows "(W to adjust)" and an AVR [Q] label that turns amber when armed. CLAUDE.md's Phase 2 input spec rewritten (was stale — documented neither the shed keys nor S/X/T/C). Verified against the real _make_sim_and_renderer() bootstrap: correct step sizes, clamping, disarmed no-ops, Escape disarm, and confirm-screen renders. 26/29, unchanged | PASS | 2026-08-19 |
 
 ---
 

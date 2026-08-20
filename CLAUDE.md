@@ -301,21 +301,35 @@ Type aliases:   PascalCase          (BusLabel = str, LoadingPct = float)
 
 **Keyboard shortcuts (Phase 2):**
 ```
-0 / Space   Pause
-1           Slow speed (0.25x)
-2           Normal speed (1.0x)
-3           Fast speed (3.0x)
-4           Very fast speed (10.0x)
+P           Pause / resume
+F12         Cycle run speed (0.25x -> 1x -> 3x -> 10x -> wrap)
+
+W           Arm ACTIVE power (MW) adjust on the selected unit
+Q           Arm REACTIVE power (AVR setpoint) adjust on the selected unit
+Up/Down     Step the armed quantity        (Ctrl+Up/Down = coarse step)
+Enter       Type an exact value for the selected unit / open context panel
+
 Tab         Cycle element selection
-Enter       Open context panel for selected element
-Escape      Deselect / close panel / cancel
+Escape      Cancel input -> disarm adjust -> deselect -> confirm abandon shift
 A           Acknowledge top alarm
 Shift+A     Acknowledge all alarms
-F           Focus frequency panel
+S / X       Start / stop selected unit
+T / C       Trip / close selected line
+H           Shed one load block at selected substation (cumulative)
+Shift+H     Restore all shed load at selected substation
+, / .       Adjust selected bus's manual SVC setpoint
 L           Toggle voltage-tier colour view (lines/substations)
 M           Return selected unit to AUTO dispatch mode (Phase 1 shifts only)
-?           Show keyboard shortcut reference
+D           Toggle display debug overlay
+Ctrl+A      Toggle AGC
+Ctrl+Shift+E  Toggle layout editor mode
 ```
+
+**Design notes on the Phase 2 bindings.** W/Q are deliberately adjacent on QWERTY and
+match the standard P/Q (active/reactive) engineering pairing; arming one disarms the
+other, so Up/Down are never ambiguous. Digit keys are reserved exclusively for typing
+unit targets — speed is on F12 alone so nothing competes with numeric entry. Pause is
+kept off the F12 cycle so the clock can always be stopped in one keystroke.
 
 ---
 

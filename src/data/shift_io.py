@@ -239,6 +239,12 @@ def shift_def_to_config(shift_def: ShiftDefinition) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Constants Shift Builder is allowed to write back via save_campaign_shift_fields.
+#
+# WIN_CONDITIONS / FAIL_CONDITIONS are deliberately NOT here. The Shift Builder
+# has no UI for editing objectives, so listing them would let a save emit empty
+# lists over hand-authored ones. Because the AST writer only splices the
+# constants named in edited_fields and leaves every other byte of the file
+# alone, omitting them is what keeps them safe across a Builder round-trip.
 CAMPAIGN_EDITABLE_FIELDS = (
     'initial_schedule', 'maintenance_units', 'maintenance_lines',
     'substation_load_mw', 'agc_enabled', 'droop_enabled',

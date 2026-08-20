@@ -80,6 +80,19 @@ def load_shift_config(shift_number: int) -> dict:
                                                           (assets/designer_grids/<grid_source>.json)
                                                           to use instead of topology.py/fleet.py,
                                                           or None for the normal campaign topology
+        win_conditions      list[dict]                — optional WIN_CONDITIONS from the shift
+                                                          file: declarative conditions (same schema
+                                                          as a scripted-event condition, plus an
+                                                          optional sustained_s) that must ALL hold at
+                                                          shift end for the shift to be won. Empty
+                                                          (the default) means the shift cannot be
+                                                          lost on objectives — today's behaviour for
+                                                          every existing shift
+        fail_conditions     list[dict]                — optional FAIL_CONDITIONS from the shift file:
+                                                          ANY one holding (for its sustained_s, if
+                                                          given) ends the shift immediately as failed.
+                                                          Evaluated every tick, unlike scripted-event
+                                                          conditions which sample once
         uses_planning        bool                      — whether this shift routes through the
                                                           Phase 1 planning screen (GameState.PLANNING)
                                                           before Phase 2, from the shift file's
@@ -122,6 +135,8 @@ def load_shift_config(shift_number: int) -> dict:
         'initial_voltage_setpoints': dict(getattr(mod, 'INITIAL_VOLTAGE_SETPOINTS', {})),
         'grid_source':             grid_source,
         'uses_planning':           getattr(mod, 'USES_PLANNING', False),
+        'win_conditions':          list(getattr(mod, 'WIN_CONDITIONS',  [])),
+        'fail_conditions':         list(getattr(mod, 'FAIL_CONDITIONS', [])),
     }
 
 

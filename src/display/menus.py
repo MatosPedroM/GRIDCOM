@@ -376,7 +376,11 @@ def build_campaign_end_lines(shifts_completed: int, watch_time_s: float, grade: 
     """
     Final screen shown after Shift 10 debrief.
     watch_time_s is total real seconds played across the campaign.
-    grade is a letter grade string: 'S', 'A', 'B', 'C', or 'D'.
+    grade is a campaign rating word from gameplay/scoring.py — 'EXCELLENT',
+    'SATISFACTORY', 'MARGINAL' or 'UNSATISFACTORY' — rolled up from the ten
+    shift grades by grade_campaign(). (This previously documented an
+    'S'/'A'/'B'/'C'/'D' letter scale that nothing in the codebase produced,
+    alongside a hardcoded 'A' at the only call site.)
     """
     h = int(watch_time_s // 3600)
     m = int((watch_time_s % 3600) // 60)

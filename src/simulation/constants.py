@@ -214,6 +214,21 @@ BLACKOUT_TRIP_S:     float = 360.0  # Seconds (SIM-time) frequency must stay pin
 OVERLOAD_WARN_PCT:   float = 85.0   # Loading % at which WARNING alarm fires
 OVERLOAD_CRIT_PCT:   float = 100.0  # Loading % at which overload timer starts
 
+# Severity-scaled overload accumulation. Real protection relays are
+# inverse-time: the harder a line is overloaded, the sooner it trips. The
+# timer accrues dt * (1 + (excess_pct / OVERLOAD_SEVERITY_REF_PCT)), so a
+# line at 100% accrues at 1x and one at 150% accrues at 3x with the
+# reference below — letting the player triage a bad line from a doomed one.
+# Capped so an extreme transient cannot skip the countdown entirely.
+OVERLOAD_SEVERITY_REF_PCT:  float = 25.0  # % over rating that doubles the accrual rate
+OVERLOAD_SEVERITY_MAX_MULT: float = 6.0   # hard ceiling on the accrual multiplier
+
+# Below 100% the timer DECAYS rather than hard-resetting to zero: a line
+# that has been cooking for ten minutes is not instantly healthy the moment
+# it dips to 99%. Decay is this multiple of real elapsed time, so recovery
+# is faster than accumulation but not free.
+OVERLOAD_DECAY_RATE: float = 2.0
+
 # ─────────────────────────────────────────────
 # RAMP RATES (% of rated MW per simulated minute)
 # ─────────────────────────────────────────────
@@ -415,6 +430,12 @@ SPEED_VERY_FAST: float = 10.00
 # ─────────────────────────────────────────────
 # RENEWABLES NOISE
 # ─────────────────────────────────────────────
+# Base seed for per-shift renewables RNG. A shift's generator is seeded with
+# SHIFT_RNG_SEED_BASE + shift_number, so every run of the same shift replays the
+# same wind/solar noise trace and a hard shift can be tuned and replayed fairly.
+# Set to None for non-reproducible (freshly entropy-seeded) runs.
+SHIFT_RNG_SEED_BASE: int | None = 19941107   # in-fiction campaign date, arbitrary
+
 WIND_NOISE_STD_FRACTION:   float = 0.03     # Wind forecast noise (target std, before rate limiting)
 SOLAR_NOISE_STD_FRACTION:  float = 0.01     # Solar forecast noise (target std, before rate limiting)
 WIND_NOISE_RAMP_PCT_MIN:   float = 20.0     # Max noise-driven output change, %-of-rated per sim-minute
@@ -567,3 +588,40 @@ PLANNING_PREV_DAY_FRAC_CCGT:        float = 1.0
 PLANNING_PREV_DAY_FRAC_HYDRO:       float = 1.0
 PLANNING_PREV_DAY_FRAC_HYDRO_ROR:   float = 1.0
 PLANNING_PREV_DAY_FRAC_HYDRO_PUMP:  float = 1.0
+
+# ─────────────────────────────────────────────
+# SHIFT SCORING (gameplay/scoring.py)
+# ─────────────────────────────────────────────
+# Grade bands are evaluated worst-first: a shift is only EXCELLENT if it
+# clears every EXCELLENT gate, and so on down. Frequency is the headline
+# metric but no longer the only one — voltage, line loading and unit trips
+# are all already measured by SimulationState and were previously discarded.
+SCORE_FREQ_PCT_EXCELLENT:    float = 95.0   # min frequency-in-bounds % for EXCELLENT
+SCORE_FREQ_PCT_SATISFACTORY: float = 80.0   # min for SATISFACTORY
+SCORE_FREQ_PCT_MARGINAL:     float = 60.0   # min for MARGINAL (below this: UNSATISFACTORY)
+
+SCORE_LOADING_PCT_EXCELLENT:    float = 100.0  # no line may exceed its rating
+SCORE_LOADING_PCT_SATISFACTORY: float = 120.0  # brief overload tolerated
+
+SCORE_VOLTAGE_PU_EXCELLENT:    float = 0.90    # min bus voltage seen, per-unit
+SCORE_VOLTAGE_PU_SATISFACTORY: float = 0.85    # V_WARNING_LOW — collapse onset
+
+SCORE_UNIT_TRIPS_EXCELLENT:    int = 0
+SCORE_UNIT_TRIPS_SATISFACTORY: int = 1
+
+SCORE_SHED_EVENTS_EXCELLENT:    int = 0
+SCORE_SHED_EVENTS_SATISFACTORY: int = 1
+
+# Campaign rating is the modal/worst-weighted roll-up of the ten shift
+# grades — a campaign is only as good as its weakest shifts. A campaign
+# grade is awarded if at least this fraction of shifts reach it.
+SCORE_CAMPAIGN_FRACTION: float = 0.7
+
+# ─────────────────────────────────────────────
+# LOAD SHEDDING (operator emergency tool)
+# ─────────────────────────────────────────────
+# Fraction of a substation's load dropped per shed command. Shedding is
+# cumulative at a bus (see DemandModel.shed_load) and reversible via
+# GridSimulation.clear_shed(), but every shed still counts against the
+# shift's security score.
+LOAD_SHED_STEP_FRACTION: float = 0.25

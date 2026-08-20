@@ -61,7 +61,11 @@ from simulation.constants import (
     PERF_DEBUG_LOG, PERF_LOG_INTERVAL_S,
     TARGET_FPS, FREQ_HISTORY_WINDOW_S,
     SVC_Q_STEP_MVAR,
+    LOAD_SHED_STEP_FRACTION,
     UNIT_MW_STEP, UNIT_MW_STEP_FAST_MULT,
+    GEN_VOLTAGE_SETPOINT_STEP_PU, GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT,
+    GEN_VOLTAGE_SETPOINT_DEFAULT_PU,
+    GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU,
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
@@ -482,6 +486,25 @@ class Renderer:
         self._svc_cmd_active = True
         current = state.bus_svc_mvar.get(bus.label, 0.0)
         sim.set_svc_setpoint(bus.label, current + direction * SVC_Q_STEP_MVAR)
+
+    def on_shed_load(self, sim) -> None:
+        """
+        Shed one LOAD_SHED_STEP_FRACTION block of load at the selected bus.
+
+        Cumulative — repeat presses shed progressively more, up to 100%.
+        No-op unless a load substation is selected.
+        """
+        bus = self._get_selected_bus()
+        if bus is None:
+            return
+        sim.shed_load(bus.label, LOAD_SHED_STEP_FRACTION)
+
+    def on_clear_shed(self, sim) -> None:
+        """Restore all shed load at the selected bus. No-op if none is shed."""
+        bus = self._get_selected_bus()
+        if bus is None:
+            return
+        sim.clear_shed(bus.label)
 
     def on_ack_alarm(self, sim) -> None:
         """Acknowledge the first unacknowledged alarm."""

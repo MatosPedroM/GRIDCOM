@@ -136,12 +136,21 @@ def build_briefing_lines(shift_number: int) -> list:
     return lines
 
 
-def build_debrief_lines(shift_number: int, state, failed: bool = False) -> list:
+def build_debrief_lines(shift_number: int, state, failed: bool = False,
+                        failed_objective: dict | None = None) -> list:
     """Return list of (text, colour) pairs for the end-of-shift report screen.
 
     failed: True if the shift ended early via GridSimulation.is_shift_failed()
-    (frequency pinned at the F_MIN/F_MAX hard clamp for BLACKOUT_TRIP_S) —
-    overrides the usual metric-based assessment with a hard FAILED verdict.
+    — either frequency pinned at the F_MIN/F_MAX hard clamp for BLACKOUT_TRIP_S,
+    or a FAIL_CONDITION being met — overrides the usual metric-based assessment
+    with a hard FAILED verdict.
+
+    failed_objective: the FAIL_CONDITION that ended the shift, if any
+    (GridSimulation.get_failed_objective()). None for a blackout or a clean
+    run. Distinguishes "you broke a stated rule" from "the grid collapsed".
+
+    Grading itself lives in gameplay/scoring.grade_shift() — this function
+    only formats it.
     """
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
@@ -150,19 +159,12 @@ def build_debrief_lines(shift_number: int, state, failed: bool = False) -> list:
     date_str = cfg.get('shift_date', 'MON 07 NOV 1994')
     dur_h = int(cfg['duration_hours'])
     dur_m = int((cfg['duration_hours'] % 1) * 60)
-    trips  = sum(1 for s in state.unit_states.values() if s == 'TRIPPED')
+    trips  = count_unit_trips(state)
     alarms = len(state.active_alarms)
     freq_pct = state.frequency_in_bounds_pct
-    if failed:
-        assessment = 'FAILED — SYSTEM BLACKOUT'
-    elif freq_pct >= 95.0 and state.load_shed_events == 0 and state.cascade_events == 0:
-        assessment = 'EXCELLENT'
-    elif freq_pct >= 80.0 and state.load_shed_events <= 1:
-        assessment = 'SATISFACTORY'
-    elif freq_pct >= 60.0:
-        assessment = 'MARGINAL'
-    else:
-        assessment = 'UNSATISFACTORY'
+    result = grade_shift(state, failed=failed, failed_objective=failed_objective)
+    assessment = ('FAILED — SYSTEM BLACKOUT' if failed and failed_objective is None
+                  else result['grade'])
     lines = [
         (_SEP, H),
         (' NATIONAL ENERGY CONTROL CENTRE — ASHFORD', H),
@@ -927,6 +929,15 @@ def main() -> None:
                           and not renderer._input_active):
                         renderer.on_close_line(sim)
 
+                    # Emergency load shedding on the selected substation:
+                    # H sheds one block (cumulative), Shift+H restores all.
+                    elif (event.key == pygame.K_h and not _const.EDITOR_MODE
+                          and not renderer._input_active):
+                        if shift_held:
+                            renderer.on_clear_shed(sim)
+                        else:
+                            renderer.on_shed_load(sim)
+
                     elif ctrl and not shift_held and event.key == pygame.K_a:
                         _const.AGC_ENABLED = not _const.AGC_ENABLED
 
@@ -1063,8 +1074,11 @@ def main() -> None:
             renderer.tick(dt, state=state, speed_mult=speed)
 
             if sim.is_shift_complete():
-                debrief_lines = build_debrief_lines(shift, sim.get_state(),
-                                                     failed=sim.is_shift_failed())
+                debrief_lines = build_debrief_lines(
+                    shift, sim.get_state(),
+                    failed=sim.is_shift_failed(),
+                    failed_objective=sim.get_failed_objective(),
+                )
                 game_state    = GameState.DEBRIEF
                 debrief_chars = 0.0
 
@@ -1078,18 +1092,14 @@ def main() -> None:
                     if int(debrief_chars) < total:
                         debrief_chars = float(total)
                     else:
-                        # Capture grade from current sim state
-                        _s = sim.get_state()
-                        _fp = _s.frequency_in_bounds_pct
-                        if _fp >= 95.0 and _s.load_shed_events == 0 and _s.cascade_events == 0:
-                            _grade = 'EXCELLENT'
-                        elif _fp >= 80.0 and _s.load_shed_events <= 1:
-                            _grade = 'SATISFACTORY'
-                        elif _fp >= 60.0:
-                            _grade = 'MARGINAL'
-                        else:
-                            _grade = 'UNSATISFACTORY'
-                        shift_grades[shift] = _grade
+                        # Capture grade from current sim state. Same rubric the
+                        # debrief screen just displayed — one implementation,
+                        # in gameplay/scoring.py.
+                        shift_grades[shift] = grade_shift(
+                            sim.get_state(),
+                            failed=sim.is_shift_failed(),
+                            failed_objective=sim.get_failed_objective(),
+                        )['grade']
 
                         if shift < 10:
                             shift_select_items = build_shift_select_items(shift_grades)
@@ -1100,7 +1110,7 @@ def main() -> None:
                             campaign_end_lines = build_campaign_end_lines(
                                 shifts_completed=10,
                                 watch_time_s=watch_s,
-                                grade='A',
+                                grade=grade_campaign(shift_grades),
                             )
                             campaign_end_chars = 0.0
                             game_state         = GameState.CAMPAIGN_END

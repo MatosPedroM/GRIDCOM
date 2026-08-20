@@ -11,6 +11,8 @@ a read-only panel when a bus is selected. Pure drawing functions — all state
 
 from __future__ import annotations
 
+import math
+
 import pygame
 import pygame.freetype
 
@@ -111,7 +113,8 @@ def draw_unit_context(
     show_mode       = is_dispatchable and not is_renewable and dispatch_mode is not None
 
     if is_dispatchable:
-        n_rows = 4 + (3 if show_avr else 0) + (1 if show_mode else 0)
+        # AVR block is 4 rows: setpoint, voltage-control mode, Q, S (MVA).
+        n_rows = 4 + (4 if show_avr else 0) + (1 if show_mode else 0)
     elif show_start or show_transition or show_maintenance:
         n_rows = 3
     else:
@@ -230,11 +233,23 @@ def draw_unit_context(
 
             q_row_y = _ry(5)
             font.render_to(surf, (x + pad, q_row_y), 'Q:', COL_TEXT_PRIMARY, size=sz)
-            q_str = f'{(q_mvar or 0.0):+.0f} / {(q_reserve_mvar or 0.0):.0f} rsv'
+            q_str = f'{(q_mvar or 0.0):+.0f} / {(q_reserve_mvar or 0.0):.0f} rsv MVAr'
             q_rect = font.get_rect(q_str, size=sz)
             font.render_to(surf, (x + w - pad - q_rect.width, q_row_y), q_str, COL_TEXT_VALUE, size=sz)
 
-            cmd_row = 6
+            # Apparent power S = sqrt(P^2 + Q^2), in real MVA. Shown so the
+            # machine's active and reactive output read as two components of
+            # one quantity rather than two unrelated numbers. Derived for
+            # display only — P and Q limits are independent in this model,
+            # so there is no MVA capability circle constraining them.
+            s_row_y = _ry(6)
+            s_mva = math.hypot(output_mw, q_mvar or 0.0)
+            font.render_to(surf, (x + pad, s_row_y), 'S:', COL_TEXT_PRIMARY, size=sz)
+            s_str = f'{s_mva:.0f} MVA'
+            s_rect = font.get_rect(s_str, size=sz)
+            font.render_to(surf, (x + w - pad - s_rect.width, s_row_y), s_str, COL_TEXT_VALUE, size=sz)
+
+            cmd_row = 7
 
         _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(cmd_row),
                       show_start, show_stop, show_transition,
@@ -323,10 +338,14 @@ def draw_bus_context(
     kv_rect = font.get_rect(kv_str, size=sz)
     font.render_to(surf, (x + w - pad - kv_rect.width, _ry(0)), kv_str, COL_TEXT_DIM, size=sz)
 
+    # Actual bus voltage in real kV (v_pu x this bus's nominal kV), with the
+    # per-unit figure kept as a secondary reading. Operators read kV; per-unit
+    # is the solver's internal representation.
     font.render_to(surf, (x + pad, _ry(1)), 'V:', COL_TEXT_PRIMARY, size=sz)
     if state is not None:
         v_pu = state.bus_voltages.get(bus.label)
-        v_str = f'{v_pu:.3f} pu' if v_pu is not None else '--'
+        v_str = (f'{v_pu * bus.voltage_kv:.1f} kV  ({v_pu:.3f} pu)'
+                 if v_pu is not None else '--')
     else:
         v_str = '--'
     v_rect = font.get_rect(v_str, size=sz)

@@ -48,6 +48,7 @@ from simulation.constants import (
     LINE_CHARGING_MVAR_PER_KM_150KV,
     LINE_CHARGING_MVAR_PER_KM_220KV,
     LINE_CHARGING_MVAR_PER_KM_400KV,
+    LOAD_SHED_STEP_FRACTION,
 )
 import simulation.constants as _sim_const
 from simulation.grid import Grid
@@ -91,6 +92,29 @@ def _load_scripted_events(shift_number: int) -> list[dict]:
         mod = importlib.import_module(f'gameplay.shifts.shift_{shift_number:02d}')
         raw = getattr(mod, 'SCRIPTED_EVENTS', [])
         return [dict(e, fired=False) for e in raw]
+    except ImportError:
+        return []
+
+
+def _load_objectives(shift_number: int, name: str) -> list[dict]:
+    """
+    Load WIN_CONDITIONS or FAIL_CONDITIONS from gameplay/shifts/shift_NN.py.
+
+    Each entry uses the same declarative schema as a scripted-event condition
+    ({'metric', 'target', 'op', 'value'} — see _eval_condition), plus two
+    optional keys:
+        sustained_s: float  — the condition must hold continuously for this
+                              many simulated seconds before it counts. Absent
+                              or 0.0 means it counts the instant it is true.
+        message:     str    — operator-facing text for the debrief.
+
+    Returns a list of mutable dicts with a 'held_s' accumulator added.
+    Returns [] if the shift module is absent or defines no such list.
+    """
+    try:
+        mod = importlib.import_module(f'gameplay.shifts.shift_{shift_number:02d}')
+        raw = getattr(mod, name, [])
+        return [dict(c, held_s=0.0) for c in raw]
     except ImportError:
         return []
 
@@ -248,10 +272,19 @@ class GridSimulation:
         start_hour: float | None = None,
         duration_hours: float | None = None,
         hourly_schedule: dict[str, dict[float, float]] | None = None,
+        rng_seed: int | None = None,
     ) -> None:
         self._grid         = grid
         self._shift_number = shift_number
         self._difficulty   = difficulty
+
+        # Reproducibility: seed this shift's renewables noise. An explicit
+        # rng_seed wins; otherwise derive one from SHIFT_RNG_SEED_BASE so the
+        # same shift replays the same wind/solar trace every run. A None base
+        # (or None resolved seed) means entropy-seeded, non-reproducible runs.
+        if rng_seed is None and _sim_const.SHIFT_RNG_SEED_BASE is not None:
+            rng_seed = _sim_const.SHIFT_RNG_SEED_BASE + shift_number
+        self._rng_seed = rng_seed
 
         # Full 24h per-unit schedule from the Phase 1 planning screen
         # ({unit_label: {hour: mw}}), if the shift went through planning.
@@ -286,7 +319,10 @@ class GridSimulation:
                 if self._fleet.has_unit(_label):
                     self._fleet.set_unit_auto_mode(_label)
         self._demand     = DemandModel(cfg['peak_demand_mw'], substation_specs)
-        self._renewables = RenewablesModel(grid)
+        self._renewables = RenewablesModel(
+            grid,
+            rng=np.random.default_rng(self._rng_seed) if self._rng_seed is not None else None,
+        )
         self._cascade    = CascadeModel()
         self._reactive   = ReactiveDevices()
 
@@ -400,6 +436,14 @@ class GridSimulation:
             self._scripted_events: list[dict] = [dict(e, fired=False) for e in scripted_events]
         else:
             self._scripted_events = _load_scripted_events(shift_number)
+
+        # Objectives — optional WIN_CONDITIONS / FAIL_CONDITIONS in shift_NN.py.
+        # A FAIL condition ends the shift the moment it holds for its
+        # sustained_s; WIN conditions are all evaluated once at shift end.
+        # Both reuse the scripted-event condition schema and evaluator.
+        self._win_conditions:  list[dict] = _load_objectives(shift_number, 'WIN_CONDITIONS')
+        self._fail_conditions: list[dict] = _load_objectives(shift_number, 'FAIL_CONDITIONS')
+        self._failed_objective: dict | None = None
 
         # Build initial state snapshot
         self._solve_and_snapshot()
@@ -570,6 +614,10 @@ class GridSimulation:
             sim_hour, lf_result, vr_result, islands, blackout_zones, v_eff,
         )
 
+        # 16. Objective evaluation — after the snapshot, so _eval_condition()
+        # reads this tick's state rather than the previous one.
+        self._update_fail_conditions(dt_sim_seconds)
+
         if DEBUG_SIMULATION:
             self._print_debug(lf_result, vr_result)
 
@@ -600,9 +648,11 @@ class GridSimulation:
         return self._shift_failed or self._sim_time_min >= self._duration_minutes
 
     def is_shift_failed(self) -> bool:
-        """True if the shift ended early because frequency stayed pinned at
-        the F_MIN/F_MAX hard clamp for BLACKOUT_TRIP_S — a real blackout,
-        distinct from reaching the shift's scheduled end time."""
+        """True if the shift ended early, either because frequency stayed
+        pinned at the F_MIN/F_MAX hard clamp for BLACKOUT_TRIP_S (a real
+        blackout) or because a FAIL_CONDITION was met. Distinct from reaching
+        the shift's scheduled end time. See get_failed_objective() to tell
+        the two apart."""
         return self._shift_failed
 
     def set_unit_target(self, unit_label: str, target_mw: float) -> bool:
@@ -739,6 +789,31 @@ class GridSimulation:
                         f'substation {bus_label}.'),
             )
         return result
+
+    def clear_shed(self, bus_label: str) -> bool:
+        """
+        Restore all shed load at a bus.
+
+        The counterpart to shed_load() — shedding is a reversible emergency
+        tool, not a one-way door. Deliberately does NOT decrement
+        _load_shed_events: the shed still happened and still counts against
+        the shift's security score.
+        """
+        if self._demand.get_shed_fraction(bus_label) <= 0.0:
+            return False
+        result = self._demand.clear_shed(bus_label)
+        if result:
+            self._raise_alarm(
+                priority='INFO',
+                message=f'Load restored at {bus_label}',
+                element_label=bus_label,
+                detail=f'Operator restored shed load at substation {bus_label}.',
+            )
+        return result
+
+    def get_shed_fraction(self, bus_label: str) -> float:
+        """Current shed fraction (0.0-1.0) at a bus — 0.0 if not a load bus."""
+        return self._demand.get_shed_fraction(bus_label)
 
     def acknowledge_alarm(self, alarm_id: int) -> bool:
         for alarm in self._alarms:
@@ -1304,6 +1379,14 @@ class GridSimulation:
             schedule = {float(h): mw for h, mw in action['schedule'].items()}
             sim_hour = self._start_hour + self._sim_time_min / 60.0
             self._demand.set_demand_override(schedule, sim_hour)
+        elif action_type == 'LOAD_SHED':
+            # fraction defaults to LOAD_SHED_STEP_FRACTION so an event can just
+            # name a bus. Omit 'fraction' for a standard block, or give one
+            # explicitly for a deeper cut.
+            self.shed_load(action['bus'],
+                           float(action.get('fraction', LOAD_SHED_STEP_FRACTION)))
+        elif action_type == 'LOAD_RESTORE':
+            self.clear_shed(action['bus'])
         elif action_type == 'AGC_SET':
             # Mirrors main.py's Ctrl+A debug toggle — AGC_ENABLED is a
             # runtime-mutable module global, not per-instance state.
@@ -1330,6 +1413,53 @@ class GridSimulation:
             if action is not None:
                 self._execute_action(action)
             evt['fired'] = True
+
+    def _update_fail_conditions(self, dt_sim_seconds: float) -> None:
+        """
+        Evaluate FAIL_CONDITIONS against this tick's state.
+
+        Unlike scripted-event conditions (which sample once at trigger_min and
+        never re-arm), these are re-evaluated every tick. A condition with a
+        sustained_s must hold continuously for that many simulated seconds —
+        its accumulator decays back to 0.0 as soon as it stops holding, so a
+        momentary excursion does not end the shift.
+
+        Sets _shift_failed and records the offending condition in
+        _failed_objective, which is_shift_complete() then reports.
+        """
+        if self._shift_failed or not self._fail_conditions:
+            return
+
+        for cond in self._fail_conditions:
+            if not self._eval_condition(cond):
+                cond['held_s'] = 0.0
+                continue
+            cond['held_s'] += dt_sim_seconds
+            if cond['held_s'] >= cond.get('sustained_s', 0.0):
+                self._shift_failed     = True
+                self._failed_objective = cond
+                self._raise_alarm(
+                    priority='CRITICAL',
+                    message=cond.get('message', 'Shift failed — operating limit breached'),
+                    element_label=cond.get('target'),
+                    detail=cond.get('detail', ''),
+                )
+                return
+
+    def evaluate_win_conditions(self) -> tuple[bool, list[dict]]:
+        """
+        Evaluate WIN_CONDITIONS once, at shift end.
+
+        Returns (all_met, unmet) — unmet is the list of condition dicts that
+        did not hold. A shift with no WIN_CONDITIONS trivially returns
+        (True, []), preserving today's behaviour for every existing shift.
+        """
+        unmet = [c for c in self._win_conditions if not self._eval_condition(c)]
+        return (not unmet), unmet
+
+    def get_failed_objective(self) -> dict | None:
+        """The FAIL_CONDITION that ended the shift, or None (blackout/clock end)."""
+        return self._failed_objective
 
     def _update_loading_alarms(self, loading: dict) -> None:
         for lbl, pct in loading.items():

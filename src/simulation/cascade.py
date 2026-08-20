@@ -20,7 +20,10 @@ See SIMULATION_API.md — SimulationState.islands / blackout_zones.
 
 from collections import deque
 
-from simulation.constants import TRIP_DELAY_S, OVERLOAD_CRIT_PCT
+from simulation.constants import (
+    TRIP_DELAY_S, OVERLOAD_CRIT_PCT,
+    OVERLOAD_SEVERITY_REF_PCT, OVERLOAD_SEVERITY_MAX_MULT, OVERLOAD_DECAY_RATE,
+)
 
 
 class CascadeModel:
@@ -121,8 +124,11 @@ class CascadeModel:
         """
         Update overload timers and return lines that have exceeded TRIP_DELAY_S.
 
-        Lines above OVERLOAD_CRIT_PCT (100%) accumulate time in their timer.
-        Lines that fall back below 100% have their timer reset to 0.
+        Lines above OVERLOAD_CRIT_PCT (100%) accumulate time in their timer at
+        a rate scaled by how far over rating they are (inverse-time
+        protection), capped at OVERLOAD_SEVERITY_MAX_MULT. Lines back below
+        100% decay their timer at OVERLOAD_DECAY_RATE rather than resetting
+        to 0, so a line oscillating around its rating still trips eventually.
         Lines whose timer exceeds TRIP_DELAY_S are returned for tripping.
 
         Args:
@@ -138,8 +144,17 @@ class CascadeModel:
         lines_to_trip: list[str] = []
 
         for line_label, loading in loading_pct.items():
+            prior = overload_timers.get(line_label, 0.0)
             if loading >= OVERLOAD_CRIT_PCT:
-                elapsed = overload_timers.get(line_label, 0.0) + dt_seconds
+                # Inverse-time accumulation: the further over rating, the
+                # faster the timer runs, so a 180% line trips well before a
+                # 101% one instead of sharing a flat countdown.
+                excess = loading - OVERLOAD_CRIT_PCT
+                severity = min(
+                    1.0 + excess / OVERLOAD_SEVERITY_REF_PCT,
+                    OVERLOAD_SEVERITY_MAX_MULT,
+                )
+                elapsed = prior + dt_seconds * severity
                 if elapsed > TRIP_DELAY_S:
                     lines_to_trip.append(line_label)
                     # Timer cleared after trip — no re-trip on same line
@@ -147,8 +162,13 @@ class CascadeModel:
                 else:
                     updated[line_label] = elapsed
             else:
-                # Below threshold — reset timer
-                updated[line_label] = 0.0
+                # Back within rating — the conductor cools, but it does not
+                # forget. Decaying (rather than hard-resetting to 0.0) means
+                # a line flapping either side of 100% still works toward a
+                # trip, while a genuine recovery clears in bounded time.
+                updated[line_label] = max(
+                    0.0, prior - dt_seconds * OVERLOAD_DECAY_RATE
+                )
 
         return lines_to_trip, updated
 

@@ -1304,40 +1304,101 @@ def test_cascade_model() -> bool:
             print(f"  Isolated buses: FAIL — {e}")
             all_passed = False
 
-        # ── Overload timer triggers trip at TRIP_DELAY_S ──────────────────
+        # ── Overload timer: inverse-time accumulation ─────────────────────
+        # Protection is severity-scaled (see OVERLOAD_SEVERITY_REF_PCT): a
+        # line just over rating takes ~TRIP_DELAY_S, a badly overloaded one
+        # trips much sooner, so the player can triage. A line at exactly
+        # OVERLOAD_CRIT_PCT accrues at 1x and defines the slowest case.
         try:
-            timers: dict = {}
-            loading = {'L01': 110.0, 'L02': 90.0}   # L01 overloaded, L02 fine
-
-            # Accumulate just under TRIP_DELAY_S total.
             dt = 5.0
-            steps = int(TRIP_DELAY_S / dt)
-            for _ in range(steps):
-                trips, timers = cm.check_overloads(loading, timers, dt)
-                assert 'L01' not in trips, \
-                    f"L01 should not trip before TRIP_DELAY_S={TRIP_DELAY_S}s"
-                assert 'L02' not in trips, \
-                    "L02 (90% loading) should never trip"
 
-            # One more step puts L01 over the threshold.
-            trips, timers = cm.check_overloads(loading, timers, dt + 0.1)
+            def _sim_to_trip(pct: float) -> float:
+                """Sim-seconds until a line held at pct% loading trips."""
+                timers: dict = {}
+                elapsed = 0.0
+                for _ in range(100000):
+                    trips, timers = cm.check_overloads({'L01': pct}, timers, dt)
+                    elapsed += dt
+                    if 'L01' in trips:
+                        return elapsed
+                raise AssertionError(f"line at {pct}% never tripped")
 
-            assert 'L01' in trips, \
-                f"L01 should trip after TRIP_DELAY_S={TRIP_DELAY_S}s of overload"
-            assert 'L02' not in trips, \
-                "L02 should not trip"
-            assert timers.get('L01', -1) == 0.0, \
-                "Timer for tripped line L01 should reset to 0"
+            at_rating = _sim_to_trip(100.0)
+            assert abs(at_rating - (TRIP_DELAY_S + dt)) <= dt, \
+                (f"A line at exactly {OVERLOAD_CRIT_PCT}% should take about "
+                 f"TRIP_DELAY_S={TRIP_DELAY_S}s, took {at_rating}s")
 
-            # L02 timer should remain 0 (never overloaded).
+            mild   = _sim_to_trip(110.0)
+            severe = _sim_to_trip(180.0)
+            assert severe < mild < at_rating, \
+                (f"Trip time must shorten as overload worsens — got "
+                 f"100%:{at_rating}s 110%:{mild}s 180%:{severe}s")
+
+            # A line inside its rating must never trip, however long we wait.
+            timers = {}
+            for _ in range(int(TRIP_DELAY_S / dt) * 3):
+                trips, timers = cm.check_overloads({'L02': 90.0}, timers, dt)
+                assert 'L02' not in trips, "L02 (90% loading) should never trip"
             assert timers.get('L02', 0.0) == 0.0, \
                 f"L02 timer should be 0, got {timers.get('L02')}"
 
-            print(f"  Overload timer: L01 trips after {TRIP_DELAY_S}s, "
-                  f"L02 unaffected — PASS")
+            # Timer clears after a trip so the same line cannot re-trip.
+            timers = {}
+            while True:
+                trips, timers = cm.check_overloads({'L01': 200.0}, timers, dt)
+                if 'L01' in trips:
+                    break
+            assert timers.get('L01', -1) == 0.0, \
+                "Timer for tripped line L01 should reset to 0"
+
+            print(f"  Overload timer: inverse-time (100%:{at_rating:.0f}s "
+                  f"110%:{mild:.0f}s 180%:{severe:.0f}s), L02 unaffected — PASS")
 
         except AssertionError as e:
             print(f"  Overload timer: FAIL — {e}")
+            all_passed = False
+
+        # ── Overload timer decays instead of hard-resetting ───────────────
+        # A conductor that has been cooking does not become instantly healthy
+        # the moment loading dips to 99%. Previously the timer reset to 0.0,
+        # which meant a line oscillating around its rating never tripped.
+        try:
+            dt = 5.0
+            timers = {}
+            for _ in range(20):
+                _, timers = cm.check_overloads({'L01': 150.0}, timers, dt)
+            accumulated = timers['L01']
+            assert accumulated > 0.0, "Timer should have accumulated at 150%"
+
+            _, timers = cm.check_overloads({'L01': 99.0}, timers, dt)
+            assert timers['L01'] > 0.0, \
+                "A brief dip below rating must not wipe accumulated time"
+            assert timers['L01'] < accumulated, \
+                "Timer should decay while the line is back within rating"
+
+            # Sustained recovery still clears the timer completely.
+            for _ in range(500):
+                _, timers = cm.check_overloads({'L01': 50.0}, timers, dt)
+            assert timers['L01'] == 0.0, \
+                f"Sustained recovery should clear the timer, got {timers['L01']}"
+
+            # A line flapping either side of its rating must still trip.
+            timers = {}
+            tripped = False
+            for i in range(20000):
+                pct = 130.0 if (i // 3) % 2 == 0 else 95.0
+                trips, timers = cm.check_overloads({'L01': pct}, timers, dt)
+                if 'L01' in trips:
+                    tripped = True
+                    break
+            assert tripped, \
+                "A line oscillating around its rating should eventually trip"
+
+            print("  Overload decay: dip retains time, recovery clears, "
+                  "flapping line still trips — PASS")
+
+        except AssertionError as e:
+            print(f"  Overload decay: FAIL — {e}")
             all_passed = False
 
     except Exception as e:
@@ -1539,6 +1600,106 @@ def test_simulation_model() -> bool:
     return all_passed
 
 
+def test_shift_scoring() -> bool:
+    """
+    Verify gameplay/scoring.grade_shift() scores every axis, not just frequency.
+
+    Checks:
+      - A clean run grades EXCELLENT
+      - A voltage-collapse run and a line-overload run BOTH grade below a clean
+        run. This is the regression that motivated the module: under the old
+        frequency-only rubric all three graded identically (EXCELLENT), so
+        Shift 4 — an entirely voltage-driven shift — could not be scored at all.
+      - Unit trips and load shedding pull the grade down
+      - A failed shift reports FAILED, and a FAIL_CONDITION explains why
+      - grade_campaign() rolls shift grades up and is capped by any FAILED shift
+    """
+    print("test_shift_scoring...")
+    all_passed = True
+
+    try:
+        from types import SimpleNamespace
+        from gameplay.scoring import (
+            grade_shift, grade_campaign, count_unit_trips, GRADE_ORDER,
+            GRADE_EXCELLENT, GRADE_FAILED, GRADE_MARGINAL,
+        )
+
+        def mk(freq=100.0, load=50.0, volt=1.0, trips=0, shed=0, casc=0):
+            return SimpleNamespace(
+                frequency_in_bounds_pct=freq,
+                max_line_loading_seen=load,
+                min_voltage_seen=volt,
+                load_shed_events=shed,
+                cascade_events=casc,
+                unit_states={f'U{i}': 'TRIPPED' for i in range(trips)},
+            )
+
+        # ── A clean run is EXCELLENT ──────────────────────────────────────────
+        try:
+            clean = grade_shift(mk())
+            assert clean['grade'] == GRADE_EXCELLENT,                 f"Clean run graded {clean['grade']}, expected {GRADE_EXCELLENT}"
+            print("  clean run -> EXCELLENT — PASS")
+        except AssertionError as e:
+            print(f"  FAIL — {e}")
+            all_passed = False
+
+        # ── The regression: voltage and loading must affect the grade ─────────
+        try:
+            clean_i    = GRADE_ORDER.index(grade_shift(mk())['grade'])
+            collapse   = grade_shift(mk(volt=0.62))
+            overloaded = grade_shift(mk(load=175.0))
+            assert GRADE_ORDER.index(collapse['grade']) < clean_i,                 f"Voltage collapse graded {collapse['grade']} — not below a clean run"
+            assert GRADE_ORDER.index(overloaded['grade']) < clean_i,                 f"Line overload graded {overloaded['grade']} — not below a clean run"
+            print("  voltage collapse and line overload both grade below clean — PASS")
+        except AssertionError as e:
+            print(f"  FAIL — {e}")
+            all_passed = False
+
+        # ── Trips and shedding are scored ─────────────────────────────────────
+        try:
+            clean_i = GRADE_ORDER.index(grade_shift(mk())['grade'])
+            assert GRADE_ORDER.index(grade_shift(mk(trips=3))['grade']) < clean_i,                 "Three unit trips did not lower the grade"
+            assert GRADE_ORDER.index(grade_shift(mk(shed=2))['grade']) < clean_i,                 "Load shedding did not lower the grade"
+            assert count_unit_trips(mk(trips=4)) == 4, "count_unit_trips() miscounted"
+            print("  unit trips and load shedding lower the grade — PASS")
+        except AssertionError as e:
+            print(f"  FAIL — {e}")
+            all_passed = False
+
+        # ── Failed shifts ─────────────────────────────────────────────────────
+        try:
+            blackout = grade_shift(mk(), failed=True)
+            assert blackout['grade'] == GRADE_FAILED,                 f"Blackout graded {blackout['grade']}, expected {GRADE_FAILED}"
+            objective = grade_shift(mk(), failed=True,
+                                    failed_objective={'message': 'Limit breached at CLOV'})
+            assert objective['grade'] == GRADE_FAILED
+            assert 'CLOV' in objective['reason'],                 "FAIL_CONDITION message not surfaced in the grade reason"
+            print("  blackout and objective failures both report FAILED — PASS")
+        except AssertionError as e:
+            print(f"  FAIL — {e}")
+            all_passed = False
+
+        # ── Campaign roll-up ──────────────────────────────────────────────────
+        try:
+            all_exc = {i: GRADE_EXCELLENT for i in range(1, 11)}
+            assert grade_campaign(all_exc) == GRADE_EXCELLENT,                 "Ten excellent shifts did not roll up to EXCELLENT"
+            with_fail = dict(all_exc); with_fail[10] = GRADE_FAILED
+            assert grade_campaign(with_fail) == GRADE_MARGINAL,                 "A FAILED shift did not cap the campaign rating at MARGINAL"
+            assert grade_campaign({}) is not None, "Empty campaign should still grade"
+            print("  campaign roll-up, incl. FAILED cap — PASS")
+        except AssertionError as e:
+            print(f"  FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TEST RUNNER
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1554,6 +1715,7 @@ if __name__ == "__main__":
         test_voltage_model(),
         test_cascade_model(),
         test_simulation_model(),
+        test_shift_scoring(),
     ]
     passed = sum(results)
     total = len(results)

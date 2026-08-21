@@ -53,8 +53,7 @@ def draw_unit_context(
     cmd_active:     bool  = False,
     font_scale:     float = 1.0,
     is_maintenance: bool  = False,
-    v_setpoint_pu:  float | None = None,
-    bus_type:       str | None   = None,
+    q_target_mvar:  float | None = None,
     q_mvar:         float | None = None,
     q_reserve_mvar: float | None = None,
     setpoint_buffer: str  = '',
@@ -79,19 +78,19 @@ def draw_unit_context(
         blink_on:     Current 1Hz blink phase (for cursor).
         cmd_active:   Whether the START/STOP button has keyboard focus.
         font_scale:   Display scale factor.
-        v_setpoint_pu:  AVR voltage setpoint (unit_v_setpoint_pu), None to hide the row.
-        bus_type:       'PV' or 'PQ' (unit_bus_types) — voltage-control status.
+        q_target_mvar:  Reactive-power target in MVAr (unit_q_target_mvar),
+                        None to hide the row.
         q_mvar:         Current reactive injection (unit_q_injections_mvar).
         q_reserve_mvar: Headroom to q_max_mvar (unit_q_reserve_mvar).
-        setpoint_buffer: Digits typed so far for the AVR setpoint field.
-        setpoint_active: Whether the AVR setpoint field has keyboard focus
+        setpoint_buffer: Digits typed so far for the Q target field.
+        setpoint_active: Whether the Q target field has keyboard focus
                         (mirrors input_active/input_buffer for the MW target).
         dispatch_mode:  'AUTO'/'MANUAL' (unit_dispatch_modes), None to hide
                         the row entirely — only shown when this shift has a
                         Phase 1 hourly schedule covering the unit.
         mode_cmd_active: Whether the AUTO/MANUAL toggle button has keyboard focus.
         adjust_active:  Whether active-power nudge mode (W + Up/Down) is armed
-        setpoint_adjust_active: Whether reactive-power/AVR nudge mode
+        setpoint_adjust_active: Whether reactive-power nudge mode
                         (Q + Up/Down) is armed
                         for this unit — shown as a magenta Target field border,
                         distinct from input_active's green typed-entry border.
@@ -107,7 +106,7 @@ def draw_unit_context(
 
     is_dispatchable = unit_state in ('ONLINE', 'STARTING', 'SHUTDOWN')
     is_renewable    = unit.unit_type in ('WIND', 'SOLAR')
-    show_avr        = is_dispatchable and not is_renewable and v_setpoint_pu is not None
+    show_q_target        = is_dispatchable and not is_renewable and q_target_mvar is not None
 
     show_start      = unit_state == 'OFFLINE' and not is_renewable and not is_maintenance
     show_stop       = unit_state == 'ONLINE'  and not is_renewable
@@ -116,8 +115,8 @@ def draw_unit_context(
     show_mode       = is_dispatchable and not is_renewable and dispatch_mode is not None
 
     if is_dispatchable:
-        # AVR block is 4 rows: setpoint, voltage-control mode, Q, S (MVA).
-        n_rows = 4 + (4 if show_avr else 0) + (1 if show_mode else 0)
+        # Reactive-power block is 3 rows: Q target, Q actual/reserve, S (MVA).
+        n_rows = 4 + (3 if show_q_target else 0) + (1 if show_mode else 0)
     elif show_start or show_transition or show_maintenance:
         n_rows = 3
     else:
@@ -202,48 +201,41 @@ def draw_unit_context(
         font.render_to(surf, (x + pad, _ry(2)), hint, hint_col, size=sz)
 
         cmd_row = 3
-        if show_avr:
-            avr_row_y = _ry(3)
+        if show_q_target:
+            q_target_row_y = _ry(3)
             # Label doubles as the keybinding cue, mirroring the MW row's
             # "(W to adjust)" hint — there is no spare row here for a hint line.
-            avr_label = 'AVR [Q]:' if not setpoint_adjust_active else 'AVR [Q]* '
-            avr_label_w = font.get_rect(avr_label + ' ', size=sz).width
-            pu_str  = ' pu'
-            pu_w    = font.get_rect(pu_str, size=sz).width
-            avr_field_x = x + pad + avr_label_w
-            avr_field_w = w - pad - (avr_field_x - x) - pu_w - pad
-            avr_field_h = rh - 2
+            q_label = 'Q Target [Q]:' if not setpoint_adjust_active else 'Q Target [Q]* '
+            q_label_w = font.get_rect(q_label + ' ', size=sz).width
+            mvar_str  = ' MVAr'
+            mvar_w    = font.get_rect(mvar_str, size=sz).width
+            q_field_x = x + pad + q_label_w
+            q_field_w = w - pad - (q_field_x - x) - mvar_w - pad
+            q_field_h = rh - 2
 
-            font.render_to(surf, (x + pad, avr_row_y), avr_label,
+            font.render_to(surf, (x + pad, q_target_row_y), q_label,
                            COL_SVC if setpoint_adjust_active else COL_TEXT_PRIMARY, size=sz)
 
-            avr_field_rect = pygame.Rect(avr_field_x, avr_row_y - 1, avr_field_w, avr_field_h)
-            pygame.draw.rect(surf, COL_CONTEXT_FIELD_BG, avr_field_rect)
+            q_field_rect = pygame.Rect(q_field_x, q_target_row_y - 1, q_field_w, q_field_h)
+            pygame.draw.rect(surf, COL_CONTEXT_FIELD_BG, q_field_rect)
             if setpoint_active:
-                avr_border_col = COL_CONTEXT_FIELD_ACTIVE
+                q_border_col = COL_CONTEXT_FIELD_ACTIVE
             elif setpoint_adjust_active:
-                avr_border_col = COL_SVC          # armed, same cue as the MW field
+                q_border_col = COL_SVC          # armed, same cue as the MW field
             else:
-                avr_border_col = COL_PANEL_BORDER
-            pygame.draw.rect(surf, avr_border_col, avr_field_rect, 1)
+                q_border_col = COL_PANEL_BORDER
+            pygame.draw.rect(surf, q_border_col, q_field_rect, 1)
 
-            avr_display = setpoint_buffer if setpoint_active else f'{v_setpoint_pu:.3f}'
-            if avr_display:
-                font.render_to(surf, (avr_field_x + 2, avr_row_y), avr_display, COL_TEXT_VALUE, size=sz)
+            q_target_display = setpoint_buffer if setpoint_active else f'{q_target_mvar:+.0f}'
+            if q_target_display:
+                font.render_to(surf, (q_field_x + 2, q_target_row_y), q_target_display, COL_TEXT_VALUE, size=sz)
             if setpoint_active and blink_on:
-                avr_text_w = font.get_rect(avr_display, size=sz).width if avr_display else 0
-                avr_cur_rect = pygame.Rect(avr_field_x + 2 + avr_text_w, avr_row_y, 1, avr_field_h - 2)
-                pygame.draw.rect(surf, COL_CONTEXT_CURSOR, avr_cur_rect)
-            font.render_to(surf, (avr_field_x + avr_field_w + 2, avr_row_y), pu_str, COL_TEXT_DIM, size=sz)
+                q_text_w = font.get_rect(q_target_display, size=sz).width if q_target_display else 0
+                q_cur_rect = pygame.Rect(q_field_x + 2 + q_text_w, q_target_row_y, 1, q_field_h - 2)
+                pygame.draw.rect(surf, COL_CONTEXT_CURSOR, q_cur_rect)
+            font.render_to(surf, (q_field_x + q_field_w + 2, q_target_row_y), mvar_str, COL_TEXT_DIM, size=sz)
 
-            pv_pq_row_y = _ry(4)
-            font.render_to(surf, (x + pad, pv_pq_row_y), 'Voltage ctrl:', COL_TEXT_PRIMARY, size=sz)
-            bt = bus_type or 'PV'
-            bt_col = COL_UNIT_ONLINE if bt == 'PV' else COL_ALARM_WARN
-            bt_rect = font.get_rect(bt, size=sz)
-            font.render_to(surf, (x + w - pad - bt_rect.width, pv_pq_row_y), bt, bt_col, size=sz)
-
-            q_row_y = _ry(5)
+            q_row_y = _ry(4)
             font.render_to(surf, (x + pad, q_row_y), 'Q:', COL_TEXT_PRIMARY, size=sz)
             q_str = f'{(q_mvar or 0.0):+.0f} / {(q_reserve_mvar or 0.0):.0f} rsv MVAr'
             q_rect = font.get_rect(q_str, size=sz)
@@ -254,14 +246,14 @@ def draw_unit_context(
             # one quantity rather than two unrelated numbers. Derived for
             # display only — P and Q limits are independent in this model,
             # so there is no MVA capability circle constraining them.
-            s_row_y = _ry(6)
+            s_row_y = _ry(5)
             s_mva = math.hypot(output_mw, q_mvar or 0.0)
             font.render_to(surf, (x + pad, s_row_y), 'S:', COL_TEXT_PRIMARY, size=sz)
             s_str = f'{s_mva:.0f} MVA'
             s_rect = font.get_rect(s_str, size=sz)
             font.render_to(surf, (x + w - pad - s_rect.width, s_row_y), s_str, COL_TEXT_VALUE, size=sz)
 
-            cmd_row = 7
+            cmd_row = 6
 
         _draw_cmd_row(surf, font, x, w, pad, rh, sz, _ry(cmd_row),
                       show_start, show_stop, show_transition,

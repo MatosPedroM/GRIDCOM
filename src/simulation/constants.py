@@ -83,10 +83,9 @@ SUBSTATION_TYPE_PF: dict = {
     'MIXED': PF_MIXED,
 }
 
-# Generator AVR voltage setpoint (per-unit) — player-editable range.
-GEN_VOLTAGE_SETPOINT_DEFAULT_PU: float = 1.02
-GEN_VOLTAGE_SETPOINT_MIN_PU:     float = 0.95
-GEN_VOLTAGE_SETPOINT_MAX_PU:     float = 1.05
+# Generator reactive-power target (MVAr) — player-editable, clamped per unit
+# to [q_min_mvar, q_max_mvar] (data/fleet.py), not a single global range —
+# every unit's Q capability differs, unlike the AVR pu setpoint this replaced.
 
 # ─────────────────────────────────────────────
 # REACTIVE DEVICES — automatic shunt banks, manual SVC
@@ -131,11 +130,11 @@ SVC_Q_STEP_MVAR: float =   10.0  # per keyboard adjust command
 UNIT_MW_STEP:       float =  1.0  # MW per keyboard adjust command
 UNIT_MW_STEP_FAST_MULT: float = 5.0  # Ctrl+Up/Down multiplier (1 MW * 5 = 5 MW)
 
-# AVR voltage setpoint nudge (Q key arms, Up/Down adjusts). The usable band
-# is only 0.95-1.05 pu, so the step is deliberately fine — 0.005 pu gives 20
-# increments across the whole range.
-GEN_VOLTAGE_SETPOINT_STEP_PU:        float = 0.005
-GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT: float = 4.0  # Ctrl+Up/Down (0.005 * 4 = 0.02 pu)
+# Reactive-power target nudge (Q key arms, Up/Down adjusts). Clamped per unit
+# to its own [q_min_mvar, q_max_mvar] (data/fleet.py) — every unit's Q range
+# differs, so there is no single global band to size the step against.
+GEN_Q_SETPOINT_STEP_MVAR:        float = 5.0
+GEN_Q_SETPOINT_STEP_FAST_MULT:   float = 5.0  # Ctrl+Up/Down (5 * 5 = 25 MVAr)
 
 # ─────────────────────────────────────────────
 # FREQUENCY THRESHOLDS (Hz)
@@ -196,6 +195,23 @@ AGC_INTEGRAL_MAX:  float = 60.0   # Anti-windup clamp on integral accumulator (H
                                    # raised from 5.0; AGC_KI * AGC_INTEGRAL_MAX = 300 MW,
                                    # sized to fully close realistic sustained deficits.
 AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
+
+# Unit types eligible for AGC dispatch (fast-response, reservoir-backed units
+# only — run-of-river has no stored head to draw on and is never eligible,
+# on every shift). Per-shift overridable via shift_NN.py's AGC_ELIGIBLE_TYPES
+# — the campaign-wide difficulty curve widens this on early/tutorial shifts
+# (HYDRO + HYDRO_PUMP + CCGT) and narrows it on the hardest shifts (HYDRO
+# only), same mechanism FleetModel.apply_agc_signal()/agc_regulation_state()
+# read live via _sim_const.AGC_ELIGIBLE_TYPES (see units.py).
+AGC_ELIGIBLE_TYPES: frozenset[str] = frozenset({'HYDRO', 'CCGT'})
+
+AGC_SPEED_MULT: float = 1.0  # Per-shift multiplier on AGC_MAX_RATE_MW_S and AGC_KI
+                              # together (both scaled the same way, since scaling
+                              # either alone risks a sluggish-but-still-100%-authoritative
+                              # or a fast-integral-hitting-a-wall controller instead of a
+                              # genuinely slower one) — read live in _apply_agc() via
+                              # _sim_const.AGC_SPEED_MULT, set per-shift via
+                              # shift_NN.py's AGC_SPEED_MULT. 1.0 = today's baseline.
 SIM_DEBUG_LOG:     str   = 'logs/sim_debug.log'  # DEBUG_SIMULATION output destination
 PERF_DEBUG_LOG:    str   = 'logs/perf_debug.log'  # DEBUG_PERF output destination
 PERF_LOG_INTERVAL_S: float = 1.0  # seconds between perf-log summary lines

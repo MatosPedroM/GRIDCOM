@@ -39,9 +39,6 @@ import logging
 from simulation.constants import (
     MIN_OUTPUT_FRACTION,
     DEBUG_SIMULATION,
-    GEN_VOLTAGE_SETPOINT_DEFAULT_PU,
-    GEN_VOLTAGE_SETPOINT_MIN_PU,
-    GEN_VOLTAGE_SETPOINT_MAX_PU,
     DROOP_R,
     F_NOMINAL,
 )
@@ -50,11 +47,6 @@ from data.fleet import GenerationUnit
 
 # Unit types that are non-dispatchable (renewables — output set externally).
 _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
-
-# Unit types eligible for AGC dispatch (fast-response, reservoir-backed units only —
-# run-of-river has no stored head to draw on and pumped storage is excluded by design).
-AGC_UNIT_TYPES: frozenset[str] = frozenset({'HYDRO', 'CCGT'})
-_AGC_UNIT_TYPES = AGC_UNIT_TYPES
 
 # Technical minimum fraction per unit type — used by AGC lower-bound and regulation indicator.
 _TECH_MIN_FRAC: dict[str, float] = {
@@ -118,7 +110,6 @@ class UnitModel:
         self._q_injection_mvar: float = 0.0
         self._maintenance: bool = False
         self._derate_cap_mw: float | None = None   # None = not derated
-        self._v_setpoint_pu: float = GEN_VOLTAGE_SETPOINT_DEFAULT_PU
         self._dispatch_mode: str = 'MANUAL'   # 'MANUAL' or 'AUTO' — see set_target()/set_auto_mode()
         # Running total of AGC-attributable adjustment to target_mw since the
         # unit's last hourly-schedule snap. Carried across hour boundaries by
@@ -154,10 +145,6 @@ class UnitModel:
     @property
     def q_injection_mvar(self) -> float:
         return self._q_injection_mvar
-
-    @property
-    def v_setpoint_pu(self) -> float:
-        return self._v_setpoint_pu
 
     @property
     def is_renewable(self) -> bool:
@@ -367,42 +354,22 @@ class UnitModel:
 
     def set_q_target(self, q_mvar: float) -> bool:
         """
-        Set reactive injection target. Only valid when ONLINE.
+        Set reactive injection target. Valid in any state — an OFFLINE unit's
+        target is stored and takes effect once it comes ONLINE (e.g. a
+        shift's INITIAL_Q_MVAR pre-configuring a unit that starts OFFLINE
+        and is brought online later by the player). Has no electrical effect
+        until the unit is ONLINE (see FleetModel.q_injections(), which sums
+        only ONLINE units).
 
         Args:
             q_mvar: Reactive injection in MVAr. Clamped to [q_min_mvar, q_max_mvar].
 
         Returns:
-            True if accepted (unit is ONLINE).
-            False otherwise.
+            True (always accepted).
         """
-        if self._state != 'ONLINE':
-            return False
         self._q_injection_mvar = max(
             self._spec.q_min_mvar,
             min(self._spec.q_max_mvar, float(q_mvar))
-        )
-        return True
-
-    def set_voltage_setpoint(self, v_pu: float) -> bool:
-        """
-        Set AVR voltage setpoint. Valid in any state — an OFFLINE unit's
-        setpoint is stored and takes effect once it comes ONLINE (e.g. a
-        shift's INITIAL_VOLTAGE_SETPOINTS pre-configuring a unit that
-        starts OFFLINE and is brought online later by the player). Has no
-        electrical effect until the unit is ONLINE and included in
-        pv_bus_constraints().
-
-        Args:
-            v_pu: Target voltage in per-unit. Clamped to
-                  [GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU].
-
-        Returns:
-            True (always accepted).
-        """
-        self._v_setpoint_pu = max(
-            GEN_VOLTAGE_SETPOINT_MIN_PU,
-            min(GEN_VOLTAGE_SETPOINT_MAX_PU, float(v_pu))
         )
         return True
 
@@ -535,12 +502,28 @@ class FleetModel:
         maintenance_units = maintenance_units or set()
         self._units: dict[str, UnitModel] = {}
 
+        # Units named by a mid-shift AGC_EXCLUDE_UNITS scripted action —
+        # excluded from AGC eligibility regardless of unit_type, on top of
+        # the shift-wide _sim_const.AGC_ELIGIBLE_TYPES filter. Instance
+        # state (not _sim_const) since this changes during a single shift
+        # and must reset cleanly between shifts/test runs, unlike the
+        # shift-wide type filter which is set once at handover.
+        self._agc_excluded_units: frozenset[str] = frozenset()
+
         for spec in grid.get_active_units():
             initial_mw = initial_schedule.get(spec.label)
             model = UnitModel(spec, initial_mw=initial_mw)
             if spec.label in maintenance_units:
                 model.set_maintenance(True)
             self._units[spec.label] = model
+
+    def set_agc_excluded_units(self, labels) -> None:
+        """
+        Set the units excluded from AGC eligibility regardless of type —
+        the AGC_EXCLUDE_UNITS scripted action's effect. Pass an empty
+        iterable to restore all units to normal type-based eligibility.
+        """
+        self._agc_excluded_units = frozenset(labels)
 
     # ─────── TICK ─────────────────────────────────────────────────────────
 
@@ -585,18 +568,11 @@ class FleetModel:
         return model.set_target(target_mw)
 
     def set_unit_q_target(self, label: str, q_mvar: float) -> bool:
-        """Set reactive injection target. Returns False if not found or not ONLINE."""
+        """Set reactive-power target. Returns False if the unit is not found."""
         model = self._units.get(label)
         if model is None:
             return False
         return model.set_q_target(q_mvar)
-
-    def set_unit_voltage_setpoint(self, label: str, v_pu: float) -> bool:
-        """Set AVR voltage setpoint. Returns False if not found or not ONLINE."""
-        model = self._units.get(label)
-        if model is None:
-            return False
-        return model.set_voltage_setpoint(v_pu)
 
     def set_unit_auto_mode(self, label: str) -> bool:
         """Return a unit to AUTO dispatch mode. Returns False if not found or not ONLINE."""
@@ -621,9 +597,12 @@ class FleetModel:
     def apply_agc_signal(self, delta_mw: float) -> dict[str, float]:
         """
         Distribute an AGC raise/lower signal among fast-response ONLINE units
-        (HYDRO, CCGT), proportional to available headroom (raise)
-        or regulating range above min_mw (lower).
-        Calls set_target() so ramp rate limits apply on the next tick.
+        (per-shift eligible types, _sim_const.AGC_ELIGIBLE_TYPES — HYDRO/CCGT
+        by default), proportional to available headroom (raise) or
+        regulating range above min_mw (lower). Units named by a mid-shift
+        AGC_EXCLUDE_UNITS scripted action (self._agc_excluded_units) are
+        skipped regardless of type. Calls set_target() so ramp rate limits
+        apply on the next tick.
 
         Returns:
             {unit_label: new_target_mw} for every unit that received a share.
@@ -631,7 +610,9 @@ class FleetModel:
         """
         eligible = [
             u for u in self._units.values()
-            if u.state == 'ONLINE' and u._spec.unit_type in _AGC_UNIT_TYPES
+            if u.state == 'ONLINE'
+            and u._spec.unit_type in _sim_const.AGC_ELIGIBLE_TYPES
+            and u._spec.label not in self._agc_excluded_units
         ]
         if not eligible:
             return {}
@@ -705,13 +686,18 @@ class FleetModel:
         Return (current_mw, min_mw, max_mw) for all online AGC-eligible units.
 
         Used by the Regulation Availability indicator in the Power Balance panel.
-        min_mw is derived from per-type technical minimum fractions (not fleet min_mw).
+        min_mw is derived from per-type technical minimum fractions (not fleet
+        min_mw). Excludes units named by a mid-shift AGC_EXCLUDE_UNITS action
+        (self._agc_excluded_units), same as apply_agc_signal(), so the
+        indicator never reports capacity that dispatch can't actually use.
         """
         current = min_total = max_total = 0.0
         for unit in self._units.values():
             if unit.state != 'ONLINE':
                 continue
-            if unit._spec.unit_type not in _AGC_UNIT_TYPES:
+            if unit._spec.unit_type not in _sim_const.AGC_ELIGIBLE_TYPES:
+                continue
+            if unit._spec.label in self._agc_excluded_units:
                 continue
             frac = _TECH_MIN_FRAC.get(unit._spec.unit_type, MIN_OUTPUT_FRACTION)
             current   += unit.current_mw
@@ -740,10 +726,16 @@ class FleetModel:
     # ─────── QUERIES — AGGREGATE ──────────────────────────────────────────
 
     def total_generation_mw(self) -> float:
-        """Sum of current_mw for all ONLINE units."""
+        """
+        Sum of current_mw for all ONLINE or SHUTDOWN units. SHUTDOWN units
+        still physically ramp down to 0 over _tick_shutdown() rather than
+        dropping out instantly — excluding them here would create a
+        one-tick generation cliff at every stop_unit() call, not the
+        gradual ramp-down the state machine actually models.
+        """
         return sum(
             m.current_mw for m in self._units.values()
-            if m.state == 'ONLINE'
+            if m.state in ('ONLINE', 'SHUTDOWN')
         )
 
     def spinning_reserve_mw(self) -> float:
@@ -769,12 +761,13 @@ class FleetModel:
         """
         Build {bus_label: net_p_mw} injection dict for the load flow solver.
 
-        Sums all ONLINE unit outputs at each bus.
+        Sums ONLINE and SHUTDOWN unit outputs at each bus (SHUTDOWN units
+        are still ramping down, not yet at 0 — see total_generation_mw()).
         Load buses are not included — the simulation adds load injections separately.
         """
         result: dict[str, float] = {}
         for m in self._units.values():
-            if m.state == 'ONLINE' and m.current_mw > 0.0:
+            if m.state in ('ONLINE', 'SHUTDOWN') and m.current_mw > 0.0:
                 bus = m._spec.bus_label
                 result[bus] = result.get(bus, 0.0) + m.current_mw
         return result
@@ -783,41 +776,17 @@ class FleetModel:
         """
         Build {bus_label: net_q_mvar} reactive injection dict for the voltage solver.
 
-        Sums all ONLINE unit Q injections at each bus.
+        Sums ONLINE and SHUTDOWN unit Q injections at each bus — a SHUTDOWN
+        unit's q_injection_mvar is unchanged by _tick_shutdown() (only
+        current_mw ramps), so it keeps its pre-stop() reactive output until
+        it actually reaches OFFLINE, where trip()/the final transition
+        zeroes it.
         """
         result: dict[str, float] = {}
         for m in self._units.values():
-            if m.state == 'ONLINE':
+            if m.state in ('ONLINE', 'SHUTDOWN'):
                 bus = m._spec.bus_label
                 result[bus] = result.get(bus, 0.0) + m.q_injection_mvar
-        return result
-
-    def pv_bus_constraints(self) -> dict[str, tuple[float, float, float]]:
-        """
-        Build PV bus constraint dict for the voltage solver.
-
-        Returns {bus_label: (v_target_pu, q_max_mvar, q_min_mvar)} for each
-        bus that has at least one ONLINE non-renewable unit.
-
-        When multiple units share a bus, Q limits are summed and v_target
-        is the average of all units at that bus (they should agree).
-        """
-        bus_data: dict[str, list] = {}  # bus_label -> [v_targets, q_maxes, q_mins]
-
-        for m in self._units.values():
-            if m.state != 'ONLINE' or m.is_renewable:
-                continue
-            bus = m._spec.bus_label
-            if bus not in bus_data:
-                bus_data[bus] = [[], 0.0, 0.0]
-            bus_data[bus][0].append(m.v_setpoint_pu)
-            bus_data[bus][1] += m._spec.q_max_mvar
-            bus_data[bus][2] += m._spec.q_min_mvar
-
-        result: dict[str, tuple[float, float, float]] = {}
-        for bus, (v_targets, q_max, q_min) in bus_data.items():
-            v_target = sum(v_targets) / len(v_targets)
-            result[bus] = (v_target, q_max, q_min)
         return result
 
     # ─────── STATE SNAPSHOT ───────────────────────────────────────────────
@@ -833,8 +802,7 @@ class FleetModel:
                 'target_mw': float,
                 'q_mvar': float,
                 'start_progress': float,
-                'bus_type': 'PV' or 'PQ',
-                'v_setpoint_pu': float,
+                'q_target_mvar': float,  # player-commanded reactive target
                 'q_reserve_mvar': float,  # headroom to q_max_mvar; 0.0 if not ONLINE
             }}
         """
@@ -846,8 +814,7 @@ class FleetModel:
                 'target_mw': m.target_mw,
                 'q_mvar': m.q_injection_mvar,
                 'start_progress': m.start_progress,
-                'bus_type': 'PV',  # PQ conversion is set by voltage model
-                'v_setpoint_pu': m.v_setpoint_pu,
+                'q_target_mvar': m.q_injection_mvar,
                 'q_reserve_mvar': (
                     max(0.0, m._spec.q_max_mvar - m.q_injection_mvar)
                     if m.state == 'ONLINE' else 0.0

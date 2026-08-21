@@ -63,6 +63,7 @@ from simulation.constants import (
     TIME_COMPRESSION,
     SPEED_PAUSE, SPEED_SLOW, SPEED_NORMAL, SPEED_FAST, SPEED_VERY_FAST,
     TYPEWRITER_CHARS_PER_SEC,
+    AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT,
 )
 import simulation.constants as _const
 from debug_scenario import make_debug_sim, DEBUG_SCENARIO
@@ -301,11 +302,11 @@ def _make_sim_and_renderer(
                                   mvar_per_step=_overrides.get('mvar_per_step'),
                                   initial_step=_overrides.get('initial_step'))
 
-    # Optional per-unit AVR setpoint at handover, overriding the default
-    # GEN_VOLTAGE_SETPOINT_DEFAULT_PU (1.02) — opt-in via the shift file's
-    # INITIAL_VOLTAGE_SETPOINTS, empty for every shift that declares none.
-    for _unit, _v_pu in cfg.get('initial_voltage_setpoints', {}).items():
-        sim.set_generator_voltage_setpoint(_unit, _v_pu)
+    # Optional per-unit reactive-power target at handover, overriding the
+    # default 0.0 MVAr — opt-in via the shift file's INITIAL_Q_MVAR, empty
+    # for every shift that declares none.
+    for _unit, _q_mvar in cfg.get('initial_q_mvar', {}).items():
+        sim.set_unit_q_target(_unit, _q_mvar)
 
     renderer = Renderer(display_surf, shift=shift,
                         display_size=display_surf.get_size())
@@ -316,6 +317,12 @@ def _make_sim_and_renderer(
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.DROOP_ENABLED = cfg['droop_enabled']
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
+    # Reset to the true default (not _const.AGC_ELIGIBLE_TYPES, which may
+    # still hold a PREVIOUS shift's override otherwise) so a shift that
+    # declares nothing gets the real baseline, not whatever the last shift
+    # left behind — same reasoning AGC_SET's docstring already calls out.
+    _const.AGC_ELIGIBLE_TYPES = cfg.get('agc_eligible_types', _AGC_ELIGIBLE_TYPES_DEFAULT)
+    _const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
     return sim, grid, renderer
 
 
@@ -374,6 +381,8 @@ def _make_designer_test(
     _const.AGC_ENABLED = True
     _const.DROOP_ENABLED = True
     _const.FREQ_TOLERANCE_MULT = 1.0
+    _const.AGC_ELIGIBLE_TYPES = _AGC_ELIGIBLE_TYPES_DEFAULT
+    _const.AGC_SPEED_MULT = 1.0
     return sim, designer_grid, renderer
 
 
@@ -430,6 +439,8 @@ def _make_shift_test(
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.DROOP_ENABLED = cfg.get('droop_enabled', False)
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
+    _const.AGC_ELIGIBLE_TYPES = cfg.get('agc_eligible_types', _AGC_ELIGIBLE_TYPES_DEFAULT)
+    _const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
     return sim, designer_grid, renderer
 
 
@@ -740,9 +751,12 @@ def main() -> None:
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         difficulty_map = {0: 'trainee', 1: 'standard', 2: 'dispatcher'}
                         difficulty     = difficulty_map.get(menu_selected, 'standard')
-                        shift = 1
+                        # TESTING: campaign entry temporarily wired to Shift 10
+                        # ("The Bad Night") instead of Shift 1 for playtest.
+                        # Revert to shift = 1 once Shift 10 testing is done.
+                        shift = 10
                         sim, grid, renderer = _make_sim_and_renderer(
-                            display_surf, shift=1, difficulty=difficulty,
+                            display_surf, shift=shift, difficulty=difficulty,
                         )
                         state = sim.get_state()
                         campaign_start_time = pygame.time.get_ticks()
@@ -1058,11 +1072,14 @@ def main() -> None:
                           and event.key in (
                               pygame.K_0, pygame.K_1, pygame.K_2, pygame.K_3,
                               pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7,
-                              pygame.K_8, pygame.K_9, pygame.K_PERIOD,
+                              pygame.K_8, pygame.K_9,
                           )
                           and renderer._setpoint_active):
-                        ch = '.' if event.key == pygame.K_PERIOD else pygame.key.name(event.key)
-                        renderer.on_setpoint_digit(ch)
+                        renderer.on_setpoint_digit(pygame.key.name(event.key))
+
+                    elif (event.key == pygame.K_MINUS and not _const.EDITOR_MODE
+                          and not ctrl and not shift_held and renderer._setpoint_active):
+                        renderer.on_setpoint_minus()
 
                     elif (not _const.EDITOR_MODE and not ctrl and not shift_held
                           and event.key in (

@@ -42,7 +42,6 @@ from simulation.constants import (
     ALARM_MESSAGE_MAX_LEN,
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION, SIM_DEBUG_LOG,
-    AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ, AGC_INTEGRAL_MAX,
     TRIP_DELAY_S, TIME_COMPRESSION,
     BLACKOUT_TRIP_S,
     LINE_CHARGING_MVAR_PER_KM_150KV,
@@ -55,7 +54,7 @@ from simulation.grid import Grid
 from simulation.loadflow import DCLoadFlow
 from simulation.voltage import VoltageModel
 from simulation.frequency import FrequencyModel
-from simulation.units import FleetModel, AGC_UNIT_TYPES
+from simulation.units import FleetModel
 from simulation.demand import DemandModel
 from simulation.renewables import RenewablesModel
 from simulation.cascade import CascadeModel
@@ -190,9 +189,8 @@ class SimulationState:
     unit_targets_mw:         dict
     unit_q_injections_mvar:  dict
     unit_start_progress:     dict
-    unit_bus_types:          dict
     unit_maintenance:        frozenset   # labels of units on planned maintenance
-    unit_v_setpoint_pu:      dict   # {unit_label: float} AVR voltage setpoint
+    unit_q_target_mvar:      dict   # {unit_label: float} player-commanded reactive target
     unit_q_reserve_mvar:     dict   # {unit_label: float} headroom to q_max (0 if not ONLINE)
     unit_dispatch_modes:     dict   # {unit_label: 'AUTO'|'MANUAL'}
     unit_has_schedule:       frozenset   # labels covered by this shift's Phase 1 hourly schedule
@@ -529,14 +527,14 @@ class GridSimulation:
         _active_gen_buses = self._get_active_generation_buses()
         _islands_pre      = self._cascade.find_islands(self._grid.get_active_buses(), in_service)
         _blackout_pre     = self._cascade.get_blackout_zones(_islands_pre, _active_gen_buses)
-        p_injections         = self._build_p_injections(_blackout_pre)
-        q_injections, pv_buses = self._build_q_injections(_blackout_pre)
+        p_injections = self._build_p_injections(_blackout_pre)
+        q_injections = self._build_q_injections(_blackout_pre)
 
         # 7. DC load flow
         lf_result  = self._loadflow.solve(p_injections)
 
         # 8. Voltage
-        vr_result = self._voltage.solve(q_injections, pv_buses=pv_buses)
+        vr_result = self._voltage.solve(q_injections)
 
         # 9. Check overloads
         trips, self._overload_timers = self._cascade.check_overloads(
@@ -676,12 +674,17 @@ class GridSimulation:
     def stop_unit(self, unit_label: str) -> bool:
         return self._fleet.stop_unit(unit_label)
 
-    def set_unit_q_target(self, unit_label: str, q_target_mvar: float) -> bool:
-        return self._fleet.set_unit_q_target(unit_label, q_target_mvar)
+    def set_agc_excluded_units(self, labels) -> None:
+        """
+        Exclude the named units from AGC eligibility regardless of type —
+        the AGC_EXCLUDE_UNITS scripted action's effect. Pass an empty
+        iterable to restore all units to normal type-based eligibility.
+        """
+        self._fleet.set_agc_excluded_units(labels)
 
-    def set_generator_voltage_setpoint(self, unit_label: str, v_pu: float) -> bool:
-        """Set a generator's AVR voltage setpoint (per-unit). Manual lever #1."""
-        return self._fleet.set_unit_voltage_setpoint(unit_label, v_pu)
+    def set_unit_q_target(self, unit_label: str, q_target_mvar: float) -> bool:
+        """Set a generator's reactive-power target (MVAr). Manual lever #1."""
+        return self._fleet.set_unit_q_target(unit_label, q_target_mvar)
 
     def set_svc_setpoint(self, bus_label: str, q_mvar: float) -> bool:
         """Set a bus's manual SVC MVAr setpoint. Manual lever #2. False if no SVC there."""
@@ -900,13 +903,12 @@ class GridSimulation:
             for bus_label, mw in demand_fc.p_load_injections().items():
                 p_inj[bus_label] = p_inj.get(bus_label, 0.0) + mw
 
-            pv = fleet_fc.pv_bus_constraints()
             q_inj = {b.label: 0.0 for b in self._grid.get_active_buses()}
             for bus_label, mvar in demand_fc.q_load_injections().items():
                 q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
 
             lf_r = lf_fc.solve(p_inj)
-            vt_r = vt_fc.solve(q_inj, pv_buses=pv)
+            vt_r = vt_fc.solve(q_inj)
 
             h_key = round(hour, 2)
             if h_key not in gen_stack:
@@ -966,13 +968,17 @@ class GridSimulation:
             p['MDBY'] = p.get('MDBY', 0.0) + mw
         return p
 
-    def _build_q_injections(self, blackout_zones: frozenset = frozenset()) -> tuple:
+    def _build_q_injections(self, blackout_zones: frozenset = frozenset()) -> dict:
         q_inj  = {b.label: 0.0 for b in self._grid.get_active_buses()}
         for bus_label, mvar in self._demand.q_load_injections().items():
             if bus_label not in blackout_zones:
                 q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
 
         for bus_label, mvar in self._reactive.q_injections().items():
+            if bus_label not in blackout_zones:
+                q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
+
+        for bus_label, mvar in self._fleet.q_injections().items():
             if bus_label not in blackout_zones:
                 q_inj[bus_label] = q_inj.get(bus_label, 0.0) + mvar
 
@@ -984,33 +990,49 @@ class GridSimulation:
                 if bus_label not in blackout_zones and bus_label in q_inj:
                     q_inj[bus_label] += mvar
 
-        pv_buses = self._fleet.pv_bus_constraints()
-        return q_inj, pv_buses
+        return q_inj
 
     # ─────── AGC ──────────────────────────────────────────────────────────
 
     def _apply_agc(self, dt_sim_seconds: float) -> None:
-        """Distribute a PID AGC correction to fast-response units."""
+        """
+        Distribute a PID AGC correction to fast-response units.
+
+        Reads its six gain/rate/deadband constants live via _sim_const (not
+        bare module-level names) so a shift's AGC_SPEED_MULT — scaled onto
+        AGC_MAX_RATE_MW_S and AGC_KI together, the pair that actually
+        determines how fast AGC can close an error rather than just how it
+        shapes the response — takes effect without a GridSimulation restart.
+        AGC_KP/AGC_KD are left unscaled (response shape, not overall speed).
+        """
+        agc_kp            = _sim_const.AGC_KP
+        agc_kd            = _sim_const.AGC_KD
+        agc_deadband_hz   = _sim_const.AGC_DEADBAND_HZ
+        agc_integral_max  = _sim_const.AGC_INTEGRAL_MAX
+        speed_mult        = _sim_const.AGC_SPEED_MULT
+        agc_ki            = _sim_const.AGC_KI * speed_mult
+        agc_max_rate_mw_s = _sim_const.AGC_MAX_RATE_MW_S * speed_mult
+
         delta_f = self._frequency.frequency_hz - F_NOMINAL
-        if abs(delta_f) <= AGC_DEADBAND_HZ:
+        if abs(delta_f) <= agc_deadband_hz:
             self._agc_integral = 0.0
             self._agc_prev_delta_f = 0.0
             self._agc_saturated = False
             return
 
         self._agc_integral += delta_f * dt_sim_seconds
-        self._agc_integral = float(np.clip(self._agc_integral, -AGC_INTEGRAL_MAX, AGC_INTEGRAL_MAX))
+        self._agc_integral = float(np.clip(self._agc_integral, -agc_integral_max, agc_integral_max))
         d_delta_f = (
             (delta_f - self._agc_prev_delta_f) / dt_sim_seconds
             if dt_sim_seconds > 0.0 else 0.0
         )
         self._agc_prev_delta_f = delta_f
 
-        p_term = AGC_KP * delta_f
-        i_term = AGC_KI * self._agc_integral
-        d_term = AGC_KD * d_delta_f
+        p_term = agc_kp * delta_f
+        i_term = agc_ki * self._agc_integral
+        d_term = agc_kd * d_delta_f
         raw_delta_mw = -(p_term + i_term + d_term)
-        max_delta = AGC_MAX_RATE_MW_S * dt_sim_seconds
+        max_delta = agc_max_rate_mw_s * dt_sim_seconds
         agc_delta_mw = float(np.clip(raw_delta_mw, -max_delta, max_delta))
 
         unit_targets = self._fleet.apply_agc_signal(agc_delta_mw)
@@ -1018,18 +1040,20 @@ class GridSimulation:
         was_saturated = self._agc_saturated
         self._agc_saturated = not unit_targets and abs(agc_delta_mw) > 0.0
         if self._agc_saturated and not was_saturated:
+            eligible_str = '/'.join(sorted(_sim_const.AGC_ELIGIBLE_TYPES))
             self._raise_alarm(
                 priority='WARNING',
                 message='AGC regulation exhausted — no headroom available',
                 element_label=None,
                 detail=(f'AGC requested {agc_delta_mw:+.1f} MW but no eligible unit '
-                        f'(HYDRO/CCGT) has headroom. Manual dispatch required.'),
+                        f'({eligible_str}) has headroom. Manual dispatch required.'),
             )
 
         if _sim_const.AGC_LOG:
             self._write_agc_log(
                 delta_f, p_term, i_term, d_term,
                 raw_delta_mw, agc_delta_mw, unit_targets,
+                agc_kp, agc_ki, agc_kd, agc_max_rate_mw_s, agc_deadband_hz,
             )
 
     def _reset_log_files(self) -> None:
@@ -1044,7 +1068,7 @@ class GridSimulation:
         """
         agc_eligible = sorted(
             u.label for u in self._grid.get_active_units()
-            if u.unit_type in AGC_UNIT_TYPES
+            if u.unit_type in _sim_const.AGC_ELIGIBLE_TYPES
         )
         self._open_agc_log(agc_eligible)
         self._open_sim_state_log()   # called after _solve_and_snapshot(), self._state is set
@@ -1076,6 +1100,11 @@ class GridSimulation:
         raw_delta_mw: float,
         agc_delta_mw: float,
         unit_targets: dict,
+        agc_kp: float,
+        agc_ki: float,
+        agc_kd: float,
+        agc_max_rate_mw_s: float,
+        agc_deadband_hz: float,
     ) -> None:
         if self._agc_log_file is None:
             self._open_agc_log(unit_targets.keys())
@@ -1098,7 +1127,7 @@ class GridSimulation:
             f'{delta_f:.6f}',
             f'{p_term:.4f}', f'{i_term:.4f}', f'{d_term:.4f}',
             f'{raw_delta_mw:.4f}', f'{agc_delta_mw:.4f}',
-            AGC_KP, AGC_KI, AGC_KD, AGC_MAX_RATE_MW_S, AGC_DEADBAND_HZ,
+            agc_kp, agc_ki, agc_kd, agc_max_rate_mw_s, agc_deadband_hz,
             *unit_vals,
         ])
         self._agc_log_flush_counter += 1
@@ -1126,8 +1155,8 @@ class GridSimulation:
                        f'bus_{bus}_shunt_mvar', f'bus_{bus}_svc_mvar']
         for unit in self._state_log_unit_labels:
             header += [f'unit_{unit}_output_mw', f'unit_{unit}_target_mw',
-                       f'unit_{unit}_q_injection_mvar', f'unit_{unit}_v_setpoint_pu',
-                       f'unit_{unit}_bus_type', f'unit_{unit}_q_reserve_mvar']
+                       f'unit_{unit}_q_injection_mvar', f'unit_{unit}_q_target_mvar',
+                       f'unit_{unit}_q_reserve_mvar']
         self._state_log_writer.writerow(header)
         self._state_log_file.flush()
 
@@ -1163,8 +1192,7 @@ class GridSimulation:
                 f'{state.unit_outputs_mw.get(unit, 0.0):.2f}',
                 f'{state.unit_targets_mw.get(unit, 0.0):.2f}',
                 f'{state.unit_q_injections_mvar.get(unit, 0.0):.2f}',
-                f'{state.unit_v_setpoint_pu.get(unit, 0.0):.4f}' if unit in state.unit_v_setpoint_pu else '',
-                state.unit_bus_types.get(unit, ''),
+                f'{state.unit_q_target_mvar.get(unit, 0.0):.2f}' if unit in state.unit_q_target_mvar else '',
                 f'{state.unit_q_reserve_mvar.get(unit, 0.0):.2f}' if unit in state.unit_q_reserve_mvar else '',
             ]
         self._state_log_writer.writerow(row)
@@ -1391,6 +1419,13 @@ class GridSimulation:
             # Mirrors main.py's Ctrl+A debug toggle — AGC_ENABLED is a
             # runtime-mutable module global, not per-instance state.
             _sim_const.AGC_ENABLED = bool(action['enabled'])
+        elif action_type == 'AGC_EXCLUDE_UNITS':
+            # Excludes specific named units from AGC eligibility regardless
+            # of type, on top of the shift-wide AGC_ELIGIBLE_TYPES filter —
+            # instance state (self._fleet), not a _sim_const global, since
+            # this is scoped to one shift run and must reset cleanly between
+            # runs. An empty 'units' list restores full eligibility.
+            self.set_agc_excluded_units(action.get('units', []))
 
     def _process_scripted_events(self) -> None:
         """Fire any scripted events whose trigger time has been reached."""
@@ -1669,10 +1704,10 @@ class GridSimulation:
         for lbl, mw in self._renewables.update(sim_hour, 0.0, deterministic=True).items():
             self._fleet.set_renewable_output(lbl, mw)
 
-        p_inj          = self._build_p_injections()
-        q_inj, pv_buses = self._build_q_injections()
+        p_inj = self._build_p_injections()
+        q_inj = self._build_q_injections()
         lf_r = self._loadflow.solve(p_inj)  # no blackout zones known yet at t=0
-        vr_r = self._voltage.solve(q_inj, pv_buses=pv_buses)
+        vr_r = self._voltage.solve(q_inj)
 
         islands = self._cascade.find_islands(
             self._grid.get_active_buses(),
@@ -1706,30 +1741,6 @@ class GridSimulation:
         )
         raw_snap = self._fleet.get_state_snapshot()
 
-        # Mark buses that hit Q limit as PQ (from voltage solver result), and
-        # reflect the solver's actual per-bus Q (q_injections_used — includes
-        # the PV correction pass, which UnitModel.q_injection_mvar never sees)
-        # back onto each co-located unit, split evenly like pv_bus_constraints()
-        # sums their limits. q_reserve_mvar is recomputed against this real Q.
-        for bus_label in vr_result.pq_buses:
-            for unit in self._grid.get_units_at_bus(bus_label):
-                if unit.label in raw_snap:
-                    raw_snap[unit.label]['bus_type'] = 'PQ'
-        for bus_label, q_used_mvar in vr_result.q_injections_used.items():
-            bus_units = [
-                u for u in self._grid.get_units_at_bus(bus_label)
-                if u.label in raw_snap and raw_snap[u.label]['state'] == 'ONLINE'
-                and not self._fleet.get_unit(u.label).is_renewable
-            ]
-            if not bus_units:
-                continue
-            q_share = q_used_mvar / len(bus_units)
-            for unit in bus_units:
-                raw_snap[unit.label]['q_mvar'] = q_share
-                raw_snap[unit.label]['q_reserve_mvar'] = max(
-                    0.0, unit.q_max_mvar - q_share
-                )
-
         # Transpose per-unit dict into per-field dicts for SimulationState
         snap = {
             'states':           {lbl: d['state']          for lbl, d in raw_snap.items()},
@@ -1737,8 +1748,7 @@ class GridSimulation:
             'targets_mw':       {lbl: d['target_mw']      for lbl, d in raw_snap.items()},
             'q_injections_mvar':{lbl: d['q_mvar']         for lbl, d in raw_snap.items()},
             'start_progress':   {lbl: d['start_progress'] for lbl, d in raw_snap.items()},
-            'bus_types':        {lbl: d['bus_type']        for lbl, d in raw_snap.items()},
-            'v_setpoint_pu':    {lbl: d['v_setpoint_pu']   for lbl, d in raw_snap.items()},
+            'q_target_mvar':    {lbl: d['q_target_mvar']   for lbl, d in raw_snap.items()},
             'q_reserve_mvar':   {lbl: d['q_reserve_mvar']  for lbl, d in raw_snap.items()},
             'dispatch_mode':    {lbl: d['dispatch_mode']   for lbl, d in raw_snap.items()},
         }
@@ -1834,9 +1844,8 @@ class GridSimulation:
             unit_targets_mw=snap['targets_mw'],
             unit_q_injections_mvar=snap['q_injections_mvar'],
             unit_start_progress=snap['start_progress'],
-            unit_bus_types=snap['bus_types'],
             unit_maintenance=self._fleet.get_maintenance_units(),
-            unit_v_setpoint_pu=snap['v_setpoint_pu'],
+            unit_q_target_mvar=snap['q_target_mvar'],
             unit_q_reserve_mvar=snap['q_reserve_mvar'],
             unit_dispatch_modes=snap['dispatch_mode'],
             unit_has_schedule=frozenset(self._hourly_schedule) if self._hourly_schedule else frozenset(),

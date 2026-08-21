@@ -63,9 +63,7 @@ from simulation.constants import (
     SVC_Q_STEP_MVAR,
     LOAD_SHED_STEP_FRACTION,
     UNIT_MW_STEP, UNIT_MW_STEP_FAST_MULT,
-    GEN_VOLTAGE_SETPOINT_STEP_PU, GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT,
-    GEN_VOLTAGE_SETPOINT_DEFAULT_PU,
-    GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU,
+    GEN_Q_SETPOINT_STEP_MVAR, GEN_Q_SETPOINT_STEP_FAST_MULT,
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
@@ -406,19 +404,33 @@ class Renderer:
         return self._canvas._bus_map.get(self._selected_label)
 
     def on_setpoint_toggle(self) -> None:
-        """Enter AVR setpoint edit mode for the selected dispatchable unit."""
+        """Enter reactive-power (Q target) edit mode for the selected unit."""
         unit = self._get_selected_unit()
         if unit is None:
             return
         self._setpoint_active = True
 
     def on_setpoint_digit(self, ch: str) -> None:
-        """Feed one character (digit or '.') to the AVR setpoint input buffer."""
+        """Feed one character (digit) to the Q target input buffer."""
         if self._get_selected_unit() is None:
             return
         self._setpoint_active = True
         if len(self._setpoint_buffer) < 5:
             self._setpoint_buffer += ch
+
+    def on_setpoint_minus(self) -> None:
+        """
+        Toggle a leading '-' on the Q target input buffer. MVAr targets are
+        routinely negative (absorbing) — unlike the MW target buffer, which
+        never needs a sign. Pressing again removes it.
+        """
+        if self._get_selected_unit() is None:
+            return
+        self._setpoint_active = True
+        if self._setpoint_buffer.startswith('-'):
+            self._setpoint_buffer = self._setpoint_buffer[1:]
+        else:
+            self._setpoint_buffer = '-' + self._setpoint_buffer
 
     def on_setpoint_backspace(self) -> None:
         if self._setpoint_active and self._setpoint_buffer:
@@ -426,10 +438,13 @@ class Renderer:
 
     def on_setpoint_enter(self, sim) -> None:
         """
-        Commit the AVR setpoint buffer as a generator voltage setpoint.
-        Activates edit mode if Enter is pressed with no buffer — mirrors
-        on_enter()'s MW-target behaviour, kept as a separate flag/buffer
-        pair so the two input modes never collide.
+        Commit the setpoint buffer as the selected unit's reactive-power
+        target (MVAr). Activates edit mode if Enter is pressed with no
+        buffer — mirrors on_enter()'s MW-target behaviour, kept as a
+        separate flag/buffer pair so the two input modes never collide.
+        Clamped to [unit.q_min_mvar, unit.q_max_mvar] before dispatching —
+        every unit has its own reactive range, unlike the old AVR pu
+        setpoint's single global band.
         """
         unit = self._get_selected_unit()
         if unit is None:
@@ -438,16 +453,17 @@ class Renderer:
             self._setpoint_active = True
             return
         try:
-            v_pu = float(self._setpoint_buffer)
+            raw = int(self._setpoint_buffer)
         except ValueError:
             self._setpoint_buffer = ''
             return
-        sim.set_generator_voltage_setpoint(unit.label, v_pu)
+        clamped = max(unit.q_min_mvar, min(unit.q_max_mvar, float(raw)))
+        sim.set_unit_q_target(unit.label, clamped)
         self._setpoint_buffer = ''
         self._setpoint_active = False
 
     def on_setpoint_adjust_toggle(self) -> None:
-        """Arm reactive-power (AVR setpoint) nudge mode for the selected unit.
+        """Arm reactive-power (Q target) nudge mode for the selected unit.
 
         Disarms active-power nudge mode so UP/DOWN always drive exactly one
         quantity.
@@ -460,13 +476,12 @@ class Renderer:
 
     def on_setpoint_adjust(self, sim, direction: int, fast: bool = False) -> None:
         """
-        Nudge the selected unit's AVR voltage setpoint by one
-        GEN_VOLTAGE_SETPOINT_STEP_PU (direction = +1 or -1), or by
-        GEN_VOLTAGE_SETPOINT_STEP_PU * GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT
-        if fast=True (Ctrl held). Clamped to
-        [GEN_VOLTAGE_SETPOINT_MIN_PU, GEN_VOLTAGE_SETPOINT_MAX_PU] — the same
-        bounds set_generator_voltage_setpoint() enforces. Mirrors
-        on_target_adjust(); no-op unless this mode is armed.
+        Nudge the selected unit's reactive-power target by one
+        GEN_Q_SETPOINT_STEP_MVAR (direction = +1 or -1), or by
+        GEN_Q_SETPOINT_STEP_MVAR * GEN_Q_SETPOINT_STEP_FAST_MULT if
+        fast=True (Ctrl held). Clamped to [unit.q_min_mvar, unit.q_max_mvar],
+        same bounds on_setpoint_enter() applies. Mirrors on_target_adjust();
+        no-op unless this mode is armed.
         """
         if not self._setpoint_adjust_active:
             return
@@ -476,15 +491,13 @@ class Renderer:
         state = sim.get_state()
         if state is None:
             return
-        step = GEN_VOLTAGE_SETPOINT_STEP_PU * (
-            GEN_VOLTAGE_SETPOINT_STEP_FAST_MULT if fast else 1.0
+        step = GEN_Q_SETPOINT_STEP_MVAR * (
+            GEN_Q_SETPOINT_STEP_FAST_MULT if fast else 1.0
         )
-        current = state.unit_v_setpoint_pu.get(
-            unit.label, GEN_VOLTAGE_SETPOINT_DEFAULT_PU
-        )
-        clamped = max(GEN_VOLTAGE_SETPOINT_MIN_PU,
-                      min(GEN_VOLTAGE_SETPOINT_MAX_PU, current + direction * step))
-        sim.set_generator_voltage_setpoint(unit.label, clamped)
+        current = state.unit_q_target_mvar.get(unit.label, 0.0)
+        clamped = max(unit.q_min_mvar,
+                      min(unit.q_max_mvar, current + direction * step))
+        sim.set_unit_q_target(unit.label, clamped)
 
     def on_adjust_toggle(self) -> None:
         """Arm active-power nudge mode for the selected dispatchable unit.
@@ -1033,8 +1046,7 @@ class Renderer:
                 cmd_active=self._cmd_active,
                 font_scale=_fs,
                 is_maintenance=selected_unit.label in state.unit_maintenance,
-                v_setpoint_pu=state.unit_v_setpoint_pu.get(selected_unit.label),
-                bus_type=state.unit_bus_types.get(selected_unit.label),
+                q_target_mvar=state.unit_q_target_mvar.get(selected_unit.label),
                 q_mvar=state.unit_q_injections_mvar.get(selected_unit.label),
                 q_reserve_mvar=state.unit_q_reserve_mvar.get(selected_unit.label),
                 setpoint_buffer=self._setpoint_buffer,

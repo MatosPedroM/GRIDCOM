@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib
 
 from data.profiles import DEMAND_PROFILE_NORMALISED
+from simulation.constants import AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT
 
 
 def load_shift_config(shift_number: int) -> dict:
@@ -53,6 +54,20 @@ def load_shift_config(shift_number: int) -> dict:
                                                           in a shift_NN.py to widen the alarm/crisis
                                                           band for a tutorial shift. F_MIN/F_MAX, the
                                                           hard clamp, are never scaled)
+        agc_eligible_types  frozenset[str]             — unit types AGC may dispatch (default
+                                                          constants.py AGC_ELIGIBLE_TYPES, {HYDRO,
+                                                          CCGT}); set AGC_ELIGIBLE_TYPES in a
+                                                          shift_NN.py to widen (tutorial shifts —
+                                                          add HYDRO_PUMP) or narrow (hard shifts —
+                                                          HYDRO only) the campaign-wide AGC
+                                                          difficulty curve. HYDRO_ROR is never
+                                                          eligible on any shift — it has no
+                                                          controllable reservoir to respond with
+        agc_speed_mult      float                      — multiplier on AGC_MAX_RATE_MW_S and
+                                                          AGC_KI together (default 1.0 — see
+                                                          constants.py AGC_SPEED_MULT); < 1.0 makes
+                                                          AGC noticeably slower to close a given
+                                                          error, without changing eligibility
         substation_load_mw  dict[str, dict[float, float]] — per-bus hourly load table (MW), built by
                                                           scaling each LOAD bus's peak_load_mw by the
                                                           shared DEMAND_PROFILE_NORMALISED curve; empty
@@ -71,11 +86,10 @@ def load_shift_config(shift_number: int) -> dict:
                                                           compensate a sag alone) and optionally
                                                           pre-engage it at handover; empty if the
                                                           shift declares none
-        initial_voltage_setpoints dict[str, float]    — optional {unit_label: v_pu} from the shift
-                                                          file's INITIAL_VOLTAGE_SETPOINTS, applied
-                                                          at handover instead of every unit's default
-                                                          GEN_VOLTAGE_SETPOINT_DEFAULT_PU (1.02); empty
-                                                          if the shift declares none
+        initial_q_mvar       dict[str, float]          — optional {unit_label: q_mvar} from the shift
+                                                          file's INITIAL_Q_MVAR, applied at handover
+                                                          instead of every unit's default 0.0 MVAr;
+                                                          empty if the shift declares none
         grid_source         str | None                — saved Grid Designer grid name
                                                           (assets/designer_grids/<grid_source>.json)
                                                           to use instead of topology.py/fleet.py,
@@ -129,10 +143,12 @@ def load_shift_config(shift_number: int) -> dict:
         'agc_enabled':             getattr(mod, 'AGC_ENABLED',             False),
         'droop_enabled':           getattr(mod, 'DROOP_ENABLED',           False),
         'freq_tolerance_mult':     getattr(mod, 'FREQ_TOLERANCE_MULT',     1.0),
+        'agc_eligible_types':      frozenset(getattr(mod, 'AGC_ELIGIBLE_TYPES', _AGC_ELIGIBLE_TYPES_DEFAULT)),
+        'agc_speed_mult':          getattr(mod, 'AGC_SPEED_MULT',          1.0),
         'substation_load_mw':      substation_load_mw,
         'substation_types':        dict(getattr(mod, 'SUBSTATION_TYPES', {})),
         'shunt_bank_overrides':    dict(getattr(mod, 'SHUNT_BANK_OVERRIDES', {})),
-        'initial_voltage_setpoints': dict(getattr(mod, 'INITIAL_VOLTAGE_SETPOINTS', {})),
+        'initial_q_mvar':          dict(getattr(mod, 'INITIAL_Q_MVAR', {})),
         'grid_source':             grid_source,
         'uses_planning':           getattr(mod, 'USES_PLANNING', False),
         'win_conditions':          list(getattr(mod, 'WIN_CONDITIONS',  [])),

@@ -6,11 +6,27 @@
 
 ## Current Stage
 
-**STAGE 34 — Tutorial Arc: single merged shift, AGC-first, droop off by default**
+**STAGE 37 — Campaign-wide AGC difficulty curve: per-shift eligible types + response speed**
 
 ## Current Status
 
-**COMPLETE (playtest pending)** — Session 77 merged Session 76's 3-shift tutorial arc back into a single shift (Shift 1 only; Shifts 2-3 are stubs again) after playtesting found the 3-shift split unnecessary and, more importantly, that starting Shift 1 with AGC off was confusing and that governor droop made manual RIVE-1 control feel broken. Headline changes:
+**COMPLETE (playtest pending)** — Session 80 built a per-shift AGC capability curve (which unit
+types AGC may dispatch, and how fast it responds), replacing the single global `{HYDRO, CCGT}`
+eligible set and fixed PID gains that applied identically to every shift. Shift 10 "The Bad
+Night" now runs AGC as HYDRO-only and sluggish (`AGC_SPEED_MULT = 0.35`) for its entire duration
+— both CCGT units are the player's job all night, not AGC's — and Act 3's old full on/off
+`AGC_SET` fault was replaced with `AGC_EXCLUDE_UNITS`, the same eligibility mechanism applied a
+second time mid-shift to knock two specific named hydro units off the AGC bus permanently. See
+Session 80 details below.
+
+Session 79 pulled the previously-queued F9 (direct reactive-power control, replacing the AVR
+voltage setpoint) forward ahead of Shift 10 per developer decision, then completed Movement 2 of
+`SHIFT10_BAD_NIGHT_PLAN.md`: rebuilt `shift10.json` as a coherent ~28-bus grid and authored the
+original `shift_10.py`, "The Bad Night," as a real four-act shift with working win/fail
+conditions. Shifts 1/4/5 are reverted to docstring-only stubs (their AVR-based content no longer
+applies under direct-Q) and queued for full re-authoring later.
+
+Session 77 merged Session 76's 3-shift tutorial arc back into a single shift (Shift 1 only; Shifts 2-3 are stubs again) after playtesting found the 3-shift split unnecessary and, more importantly, that starting Shift 1 with AGC off was confusing and that governor droop made manual RIVE-1 control feel broken. Headline changes:
 
 - **`DROOP_ENABLED` defaults to `False`** (was `True`) — `constants.py` plus every hardcoded fallback default across `loader.py`, `main.py`, and `shift_io.py` (5 call sites total) flipped to match. Root cause: droop applies to every synchronous unit including slow-ramping COAL, non-ramp-limited, re-anchoring `target_mw` every tick — with AGC already handling fast correction on HYDRO/CCGT, droop's realism wasn't earning its confusion cost. Per-shift `DROOP_ENABLED = True` opt-in plumbing is untouched; any shift can still turn it on.
 - **`UnitModel.set_voltage_setpoint()` bug fix**: previously gated on `state == 'ONLINE'`, silently no-op'ing (returning `False`) when called on an OFFLINE unit — broke `INITIAL_VOLTAGE_SETPOINTS` for any unit that starts a shift offline and is brought online later by the player. Now stores the setpoint unconditionally; it has no electrical effect until the unit is actually ONLINE and included in `pv_bus_constraints()` (unchanged). Found while building Shift 1's new "start Holt Hydro mid-shift" lesson — Holt's pre-configured low AVR setpoint was silently being dropped.
@@ -55,6 +71,347 @@ Session 65 re-tuned Shift 4 against the now-stable solver (Session 64) and lande
 - **Not done this session (deferred, matches the approved plan)**: the per-hour dispatch executor that would make hours after 06:00 actually drive Phase 2 (currently only the 06:00 seed matters); wiring Phase 1 into any shift other than 10; a merit-order auto-fill button; a real (non-headless) visual playtest of the planner in a live fullscreen window.
 - Edited: `src/gameplay/phase1.py` (filled from empty stub), `src/main.py` (`GameState.PLANNING`, `DIFFICULTY_SELECT` debug redirect to Shift 10, new PLANNING state branch + `on_plan_complete` callback, `_make_sim_and_renderer` gained `planning_model` param), `src/simulation/simulation.py` (`GridSimulation.__init__` gained inert `hourly_schedule`/`_hourly_schedule`), `src/simulation/constants.py` (new `PLANNING_*` block), `src/display/palette.py` (new `COL_PLAN_*` colours), `src/display/panels.py` (public `FUEL_ORDER`/`FUEL_LABELS`/`FUEL_COLOURS` aliases), `src/simulation/units.py` (public `AGC_UNIT_TYPES` alias for the existing `_AGC_UNIT_TYPES`).
 - Created: `src/display/planning.py` (`PlanningScreen`), `src/display/planning_panels.py` (`draw_planning` + plot/table/summary/edit-overlay drawing).
+
+## Session Log
+
+### Session 80 (Campaign-wide AGC difficulty curve — per-shift eligible types + response speed, Shift 10 Act 3 rewritten)
+
+- **Context**: developer feedback on Shift 10's Act 3 ("AGC fails") — per `FUN_FACTOR_BRAINSTORM.md`'s
+  Engine 2 argument that AGC quietly removes the game's core difficulty by doing the player's
+  frequency-control job for them, a single scripted on/off fault on the campaign's hardest shift
+  reads as a smaller idea than it should: AGC had been full-strength for the whole rest of the
+  night, and the player's first-ever encounter with hand-flying frequency (since no earlier shift
+  has ever turned it off) was happening during the storm's worst stretch. Developer's proposal,
+  refined in conversation: make AGC's capability a campaign-wide curve, not a per-shift binary —
+  fast, broad AGC on early/tutorial shifts (HYDRO + HYDRO_PUMP + CCGT), narrowing to slow,
+  HYDRO-only AGC by Shift 10, so the player is doing real manual correction increasingly through
+  the whole campaign rather than being handed a full safety net until one scripted crisis. Act 3
+  becomes a further partial degradation of an already-thin system (specific hydro units dropping
+  off AGC) rather than a full fault-and-recovery event.
+- **Two developer decisions confirmed before implementation**: (1) widen eligibility to
+  `HYDRO + HYDRO_PUMP` but **not** `HYDRO_ROR` — RoR's exclusion is physical (`units.py`'s own
+  comment: "run-of-river has no stored head to draw on," it cannot ramp on command regardless of
+  automation level), unlike `HYDRO_PUMP`'s "excluded by design" (a policy choice, reopened here).
+  (2) Act 3's full `AGC_SET` on/off fault is replaced by naming ~40-50% of the eligible hydro
+  fleet to exclude mid-shift, via the same eligibility mechanism used a second time — not a new
+  concept.
+- **Found and fixed a real bug before it could silently break the feature**: `AGC_ENABLED`/
+  `DROOP_ENABLED`/`FREQ_TOLERANCE_MULT`'s existing per-shift-override pattern (declared in
+  `constants.py`, written onto the shared `simulation.constants` module from `main.py`'s three
+  build sites, read live via `_sim_const.X` at point of use) does **not** transfer cleanly to the
+  six AGC PID/rate constants (`AGC_KP/KI/KD`, `AGC_MAX_RATE_MW_S`, `AGC_DEADBAND_HZ`,
+  `AGC_INTEGRAL_MAX`) or to `units.py`'s old `AGC_UNIT_TYPES` — both were **imported by value**
+  at module load (`from simulation.constants import AGC_KP, ...` in `simulation.py`; a true
+  module-local frozenset in `units.py`), so writing `_const.X = Y` from `main.py` would have had
+  zero effect on `_apply_agc()`/`apply_agc_signal()`, which read the names bound once at import
+  time. Confirmed via a dedicated Explore agent pass over the codebase before writing any code,
+  not discovered by trial and error.
+- **AGC eligibility made per-shift-live**: `AGC_UNIT_TYPES`/`_AGC_UNIT_TYPES` (`units.py`) removed
+  entirely; the default now lives in `constants.py` as `AGC_ELIGIBLE_TYPES: frozenset[str] =
+  frozenset({'HYDRO', 'CCGT'})` (unchanged value, just relocated per Rule 1). `FleetModel.
+  apply_agc_signal()` and `agc_regulation_state()` (the dispatch logic and the Power Balance
+  panel's Regulation Availability indicator, respectively) both switched from the old bare-name
+  read to `_sim_const.AGC_ELIGIBLE_TYPES`, live every call — same pattern `_freq_bounds()`
+  already used for `FREQ_TOLERANCE_MULT`. `loader.py`/`main.py` (all three build sites:
+  `_make_sim_and_renderer` — the real campaign path, `_make_designer_test`, `_make_shift_test`)
+  gained the matching `agc_eligible_types`/`_const.AGC_ELIGIBLE_TYPES = cfg.get(...)` plumbing.
+  **One subtlety caught during implementation**: the fallback default must be a stable, separately-
+  imported constant (`_AGC_ELIGIBLE_TYPES_DEFAULT`), not `_const.AGC_ELIGIBLE_TYPES` itself —
+  the latter is mutable and could still hold a *previous* shift's override if the new shift
+  declares nothing, silently leaking state across shift builds (the same class of bug `AGC_SET`'s
+  own docstring already warns about for `AGC_ENABLED`).
+- **AGC response speed made per-shift-live**: `_apply_agc()` (`simulation.py`) rewritten to read
+  all six PID/rate constants via `_sim_const.X` instead of bare imported names (the six-constant
+  import block removed from the top of the file). New `AGC_SPEED_MULT: float = 1.0` constant
+  scales `AGC_MAX_RATE_MW_S` and `AGC_KI` **together** at point of use — deliberately not just
+  one of the two: scaling only the integral gain would still let AGC eventually snap to full
+  correction, just slower to start; scaling only the rate cap risks the controller "wanting" to
+  move faster than it's allowed, a bounded-oscillation risk. `AGC_KP`/`AGC_KD` stay unscaled
+  (response shape, not overall speed). `_write_agc_log()`'s CSV output (a third, previously-missed
+  consumer of the bare-name constants, caught only when a headless verification script crashed
+  with `NameError: name 'AGC_KP' is not defined`) now logs the *effective* post-multiplier gains,
+  not the raw constants — more useful for tuning, and the actual bug that proved the frozen-import
+  problem was real, not theoretical.
+- **Mid-shift partial exclusion**: new `AGC_EXCLUDE_UNITS` scripted action (`{'type':
+  'AGC_EXCLUDE_UNITS', 'units': [...]}`, documented in `shift_io.py` alongside the other action
+  types) sets `GridSimulation`/`FleetModel`'s new `_agc_excluded_units: frozenset[str]` instance
+  field (deliberately **not** `_sim_const` — this is scoped to one shift run and must reset
+  cleanly between runs, unlike the shift-wide constants above) via a new `set_agc_excluded_units()`
+  method on both classes. `apply_agc_signal()`/`agc_regulation_state()` both check it as an
+  additional filter alongside the type check. An empty `'units'` list restores full eligibility
+  (verified working, though Shift 10 doesn't currently use the restore path — see below).
+- **Phase 1 planning updated to match**: `PlanningModel` (`phase1.py`) gained an
+  `agc_eligible_types` field, populated from `load_shift_config()`'s new `agc_eligible_types` key
+  at `build_planning_model()` construction time (a snapshot at plan-build time, not a live
+  per-tick read — Phase 1 planning happens once, before the real-time shift, and was never meant
+  to reflect mid-shift `AGC_EXCLUDE_UNITS` changes anyway). `reg_band()` now reads
+  `self.agc_eligible_types` instead of the old module-level `AGC_UNIT_TYPES` import. Verified
+  directly: `build_planning_model_for_shift10()` correctly reports `frozenset({'HYDRO'})` and a
+  correspondingly smaller regulation band than before.
+- **Shift 10's baseline set and headlessly tuned**: `AGC_ELIGIBLE_TYPES = frozenset({'HYDRO'})`,
+  `AGC_SPEED_MULT = 0.35`, both declared for the shift's entire 9-hour duration (not just during
+  Act 3) — both `ASHG-1`/`ASHG-2` (800 MW of CCGT) are never AGC-eligible this shift at all, so
+  the player is hand-flying them continuously from handover, not just during a bounded crisis
+  window. Verified via headless trace with a scripted responsive player (closes the Act 1 spare
+  circuit, manages hydro unit commitment through the night, and now also nudges `ASHG-1`'s target
+  by hand roughly every 4 sim-minutes reacting to frequency) that the full 9-hour shift still
+  completes cleanly (`is_shift_failed() == False`, `evaluate_win_conditions()` satisfied) under
+  the new baseline, both with and without the additional `AGC_SPEED_MULT = 0.35` slowdown layered
+  on. A do-nothing player now fails much earlier than before — hour 22.4 (T+144.6min, an
+  over-frequency `FAIL_CONDITION`, well before Act 2 even completes) rather than the old
+  mechanism's ~hour 25.8 — because CCGT no longer auto-tracks the falling overnight demand at all,
+  a materially harder and more honest difficulty signal than a fault confined to one act.
+- **Act 3 rewritten**: the two `AGC_SET` actions (full off at T+300, full on at T+415) replaced
+  with a single `AGC_EXCLUDE_UNITS` action at T+300 naming `MERE-2`/`CLUN-1` (≈53% of the eligible
+  hydro fleet's rated capacity — chosen against the developer's stated "40-50%" target, verified
+  all four hydro units are still online and near their technical minimums at T+300 in an
+  unscripted trace before picking which two to name). The exclusion is **permanent** for the rest
+  of the shift (no restore action) — "nothing fixes itself on the hardest night," matching the
+  new baseline's framing that this isn't a fault being repaired. Condition-gated WARNING/CRITICAL
+  beats in between (frequency high/still-high/sagging) kept their triggers and rewrote their
+  copy away from "AGC off"/"AGC back on" language toward "regulation thinner"/"this is on you"
+  framing. Module docstring's Narrative (all four acts), Teaching goal, and `HANDOVER_NOTES`
+  rewritten to match — the player is now told at handover that AGC is hydro-only and slow, not
+  led to believe it's fully on until Act 3's twist. `_AGC_STILL_ON` condition (used by an Act 1
+  tutor beat, actually checks `ASHG-2`'s online state, not AGC's flag) renamed
+  `_ASHG2_STILL_ONLINE` — always slightly mis-named, now doubly so with CCGT never AGC-tracked.
+- **Verified**: `python -m pytest tests/` — 29 passed (pytest's default count, unchanged from
+  before this session — pytest treats a print-based test's `return False` as a pass, so this
+  number alone doesn't move regardless). Each test file's own direct print-based harness (this
+  project's real source of truth) run separately: `test_designer_analysis.py` 6/6,
+  `test_simulation.py` 9/10, `test_voltage_reactive.py` 12/13 — identical to the pre-session
+  baseline, confirming no regressions (the 2 failures are the same pre-existing,
+  session-79-confirmed-unrelated ones: `test_grid_loads`'s demand-profile check and
+  `test_warning_to_critical_alarms_and_crisis`). Direct headless checks (not part of the
+  automated suite, run ad hoc): `AGC_SPEED_MULT` demonstrably changes correction speed (built a
+  synthetic fast-ramping-unit fixture after an initial attempt using the existing
+  `test_voltage_reactive._build_sim()` fixture showed no measurable effect — traced to that
+  fixture's unit ramp rate, not AGC's own rate cap, being the actual bottleneck, so the test
+  fixture itself needed fixing before the mechanism could be verified); `AGC_EXCLUDE_UNITS`
+  demonstrably removes a named unit from both dispatch and the regulation-state indicator, and
+  the empty-list restore path demonstrably un-excludes it. All 10 shifts (1-10) build, tick 200+
+  times, and render one frame with no exception through the real
+  `main.py::_make_sim_and_renderer()` path. Full do-nothing and fully-responsive headless traces
+  of the rewritten Shift 10 confirmed above.
+- **Not done this session**: no in-game manual playtest (matches this project's established
+  headless/synthetic-surface verification pattern) — whether the new Act 3 (a further narrowing
+  of an already-thin AGC, rather than a full fault) reads as more coherent than the old on/off
+  flip, and whether hand-flying CCGT continuously from handover (not just during one crisis
+  window) feels like earned difficulty or just relentless micromanagement, are both open
+  questions for a real playtest — this was already the standing open item from Session 79 and
+  remains so. Early-shift `AGC_ELIGIBLE_TYPES`/`AGC_SPEED_MULT` values (the "fast, broad" end of
+  the curve) are not declared anywhere yet — Shifts 1/4/5 are still stubs (queued from Session 79)
+  and Shifts 6-9 are untouched; the mechanism supports a smooth per-shift curve whenever they're
+  authored, but no numeric values exist for them yet. `online_unit_types()` (system inertia
+  weighting) and `spinning_reserve_mw()` deliberately left reading a unit's actual state without
+  any AGC-eligibility filter change — inertia/reserve are physical properties independent of
+  whether AGC can currently reach a unit, unaffected by this session's changes.
+- Edited: `src/simulation/constants.py` (`AGC_ELIGIBLE_TYPES` new — relocated from `units.py`,
+  `AGC_SPEED_MULT` new), `src/simulation/units.py` (removed `AGC_UNIT_TYPES`/`_AGC_UNIT_TYPES`,
+  `apply_agc_signal()`/`agc_regulation_state()` read `_sim_const.AGC_ELIGIBLE_TYPES` live +
+  `_agc_excluded_units` filter, new `set_agc_excluded_units()`), `src/simulation/simulation.py`
+  (`_apply_agc()` reads all six PID/rate constants live + `AGC_SPEED_MULT` scaling,
+  `_write_agc_log()` signature takes effective gains as params, new `AGC_EXCLUDE_UNITS` action
+  in `_execute_action()`, new `set_agc_excluded_units()` delegation method, `_reset_log_files()`'s
+  log-header builder switched off the old frozen import), `src/gameplay/shifts/loader.py`
+  (`agc_eligible_types`/`agc_speed_mult` schema entries), `src/main.py` (three build sites gained
+  the matching `_const.AGC_ELIGIBLE_TYPES`/`_const.AGC_SPEED_MULT` overrides, new
+  `_AGC_ELIGIBLE_TYPES_DEFAULT` stable import), `src/gameplay/phase1.py` (`PlanningModel` gained
+  `agc_eligible_types` field, `reg_band()` reads it instead of the old module import),
+  `src/data/shift_io.py` (`AGC_EXCLUDE_UNITS` documented in the action-schema docstring),
+  `src/gameplay/shifts/shift_10.py` (baseline `AGC_ELIGIBLE_TYPES`/`AGC_SPEED_MULT` declared,
+  Act 3 rewritten around `AGC_EXCLUDE_UNITS`, docstring/`HANDOVER_NOTES` updated throughout,
+  `_AGC_STILL_ON` renamed `_ASHG2_STILL_ONLINE`).
+
+### Session 79 (F9: direct reactive-power control, replacing AVR — then Shift 10 "The Bad Night" Movement 2: grid + shift authored)
+
+- **Context**: this session's original task was Movement 2 of `SHIFT10_BAD_NIGHT_PLAN.md` —
+  rebuild `shift10.json` and author `shift_10.py` against the Movement 1 foundation (F1-F8)
+  landed in Session 78. Mid-planning, the developer decided to pull F9 (direct-Q control,
+  previously queued for *after* Shift 10 specifically so Shift 10 could be tuned against a
+  stable AVR baseline — see STAGE_STATUS.md's prior "Queued immediately after Shift 10" note)
+  forward instead: Shift 10 should be authored against direct-Q from the start, not AVR.
+  Explicit instruction: don't re-tune Shifts 1/4/5's existing AVR content for the new
+  mechanic — revert them to docstring-only stubs (matching the existing `shift_06.py`-
+  `shift_09.py` pattern) and re-author them against direct-Q in a future session.
+- **F9 — AVR removed, direct reactive-power dispatch wired end-to-end.** Two hooks
+  (`UnitModel.set_q_target()`, `FleetModel.q_injections()`) already existed with zero
+  callers; the ONLINE gate on `set_q_target()` was removed (mirroring Session 77's
+  `set_voltage_setpoint()` fix — a shift can now pre-configure `INITIAL_Q_MVAR` on a unit
+  that starts OFFLINE). `FleetModel.pv_bus_constraints()` was deleted outright (not
+  stubbed) along with `UnitModel.set_voltage_setpoint()`/`v_setpoint_pu`,
+  `FleetModel.set_unit_voltage_setpoint()`, and `GridSimulation.set_generator_voltage_setpoint()`
+  — every bus is now solved PQ (`voltage.py`'s solver needed no changes; `pv_buses` was
+  already optional). `simulation.py::_build_q_injections()` now sums `self._fleet.q_injections()`
+  into the same accumulation as reactive devices/line-charging, and returns a plain dict
+  instead of a `(dict, pv_buses)` tuple — both call sites (`_build_state()`'s tick path and
+  the t=0 init snapshot) updated. A now-obsolete PV→PQ back-attribution block in
+  `_build_state()` (previously re-split the solver's post-correction Q evenly across
+  co-located units — meaningless once nothing is solved as PV) was deleted outright.
+  `SimulationState.unit_bus_types`/`unit_v_setpoint_pu` renamed to `unit_q_target_mvar`
+  (drops `bus_types` entirely — no more PV/PQ distinction to show). `INITIAL_VOLTAGE_SETPOINTS`
+  renamed `INITIAL_Q_MVAR` in `loader.py`'s schema and `main.py`'s handover-apply loop
+  (now calls `sim.set_unit_q_target()`). New `constants.py` block: `GEN_Q_SETPOINT_STEP_MVAR=5.0`/
+  `GEN_Q_SETPOINT_STEP_FAST_MULT=5.0` (Ctrl+ = 25 MVAr) replace the old
+  `GEN_VOLTAGE_SETPOINT_*` pu constants — per-unit clamping to `[q_min_mvar, q_max_mvar]`
+  now, not a single global pu band, since every unit's Q range differs.
+  - **Renderer/UI**: the whole `on_setpoint_*` family in `renderer.py` retargeted from AVR
+    pu to MVAr — `on_setpoint_enter()` now parses an integer MVAr (was `float` pu) and
+    calls `sim.set_unit_q_target()`; `on_setpoint_adjust()` nudges by `GEN_Q_SETPOINT_STEP_MVAR`
+    clamped to the *selected unit's own* `q_min_mvar`/`q_max_mvar`. **New `on_setpoint_minus()`**
+    toggles a leading `-` on the input buffer (bound to a new `K_MINUS` handler in `main.py`,
+    gated on `setpoint_active` like the digit keys) — MVAr targets are routinely negative
+    (absorbing), unlike the old AVR buffer which never needed a sign; the digit set also
+    dropped `K_PERIOD` (MVAr entry is a whole number, no decimal). `context.py`'s
+    `draw_unit_context()` AVR block (setpoint row + separate "Voltage ctrl: PV/PQ" row,
+    5 rows total) became a 4-row "Q Target [Q]: nnn MVAr" block — the PV/PQ row is gone
+    entirely (nothing to show), `n_rows`/`cmd_row` offsets adjusted accordingly. Parameter
+    renamed `v_setpoint_pu`→`q_target_mvar`, `bus_type` parameter dropped.
+  - **Shifts 1/4/5 reverted to docstring-only stubs** (9-14 line files, matching
+    `shift_06.py`-`shift_09.py`'s exact placeholder pattern), each noting why (AVR content
+    no longer applies) and that they're queued for direct-Q re-authoring.
+  - **4 of 13 `test_voltage_reactive.py` tests rewritten** for direct-Q (not deleted — the
+    other 9 including 2 that exercise `VoltageModel.solve(pv_buses=...)` directly were
+    correctly left untouched, since that low-level solver primitive still supports
+    `pv_buses` as an optional parameter; only `GridSimulation`/`FleetModel` no longer
+    populate it). `test_generator_q_target_feeds_injections` (was
+    `test_generator_setpoint_feeds_pv_constraints`) and
+    `test_generator_q_target_raises_region_and_clamps` (was
+    `test_generator_setpoint_raises_region_and_converts_pq`, dropped its now-meaningless
+    PV→PQ-conversion assertion, kept the monotonic-rise/clamp/reserve assertions against
+    the new mechanism).
+  - **Found and fixed a second, pre-existing engine bug while verifying F9's responsive-player
+    path**: `FleetModel.total_generation_mw()`/`p_injections()`/`q_injections()`
+    (`units.py`) filtered strictly to `state == 'ONLINE'` — the instant `stop_unit()`
+    transitions a unit to `SHUTDOWN`, its still-ramping-down `current_mw` (correctly
+    computed by `_tick_shutdown()` for *display*) was excluded from the actual power
+    balance and load-flow injection, creating an artificial one-tick generation cliff on
+    every unit stop in the entire game, not just Shift 10. Confirmed via headless trace:
+    stopping a 380 MW CCGT produced an instant ~300 MW deficit and a sub-minute frequency
+    crash before the fix; after widening the three aggregation functions to
+    `state in ('ONLINE', 'SHUTDOWN')`, the same stop ramps smoothly over ~9 real minutes
+    (CCGT's 8%/min) with frequency holding within ±0.02 Hz throughout. `spinning_reserve_mw()`/
+    `online_unit_types()` deliberately left excluding SHUTDOWN (reserve headroom and
+    inertia-weighting judgment calls, out of scope for this fix). 28/28 (pre-existing
+    baseline; see below) unaffected.
+- **Movement 2 — grid rebuilt.** `src/assets/designer_grids/shift10.json`: 28 buses / 30
+  lines / 11 units, ~1795 MW peak load, hand-authored via a throwaway generator script
+  (buses/lines/units built programmatically then dumped to JSON — not through the
+  interactive Grid Designer, matching Session 76's `tutorial.json` precedent). Fleet:
+  HART-1 (nuclear, 700 MW, min 300 — "the wall"), BRCK-1/2 (coal, 300 MW each, start
+  OFFLINE all shift — cold start exceeds the shift length), ASHG-1/2 (CCGT, 400 MW each),
+  MERE-1/2 (hydro, 200 MW each), CLUN-1/2 (hydro, 100/65 MW), GALE-1 (wind, 200 MW — sized
+  down from an initial 350 MW, see tuning note below), SAND-1 (solar, 250 MW — dormant,
+  night storm). Topology: MDFD (slack) backbone to HART/BRCK/ASHG/MERE, a spare parallel
+  circuit MDFD↔TARN (L07/L08, L08 starts open), TARN→HOWE→{CLUN→WYLD (single-radial dread
+  bus), GALE→SAND→PORT (storm corridor, PORT single-fed)}. Two real bugs found and fixed
+  during headless verification (both would otherwise have made Act 1 look like an
+  immediate crisis instead of "quiet"): `L19` (MERE→ODEN) rated 175 MW was undersized for
+  MERE's 400 MW of attached hydro and overloaded to 102% at handover before any player
+  action — raised to 300 MW; `test_shift10_n1_cross_check()`
+  (`tests/test_designer_analysis.py`) **fully rewritten**, since the old version tested
+  the unrelated, now fully superseded legacy `topology.py`/`fleet.py` `Grid(10)` tier (41
+  buses/62 lines/47 units) via a coincidental `load_shift_config(10)` read path, not the
+  Designer grid `shift_10.py` actually points at — new version sweeps N-1 on the real
+  `shift10.json`, confirms WYLD's single-radial exposure (only via its direct feed L12;
+  the one-hop-further-back L11 is *not* exposed, because CLUN carries its own hydro and
+  islands successfully) and the L07/L08 spare-circuit redundancy.
+- **Movement 2 — shift authored.** `src/gameplay/shifts/shift_10.py` (~350 lines):
+  `DIFFICULTY_LABEL='Severe'`, `START_HOUR=20.0`, `DURATION_HOURS=9.0` (20:00-05:00
+  overnight — developer decision: prioritise the "one bad night" narrative fitting inside
+  a single overnight window over hitting the original ~15-20 real-minute target exactly;
+  it now runs ~22.5 real min at 1x / ~7.5 min at 3x). Four acts, all authored with the
+  existing action/condition vocabulary (zero new engine code beyond F9):
+  - **Act 1 (Dread)**: `MAINTENANCE_LINES={'L08'}` (the spare circuit bet); WYLD named as
+    at-risk in `HANDOVER_NOTES` and never actually threatened (the deliberate non-firing
+    risk). A second, non-storm pressure runs the whole act: every dispatchable unit's
+    technical minimum plus GALE-1's non-curtailable wind exceeds the ~565-650 MW overnight
+    demand trough, so a do-nothing player overshoots generation and pins frequency high
+    near the bottom of the night — the fix is ordinary unit commitment (stop hydro/CCGT
+    units fully offline in turn, not just down), which took substantial headless tuning to
+    get right (see below).
+  - **Act 2 (Tempo)**: two staggered `UNIT_DERATE` actions on GALE-1 (surge then collapse)
+    plus a `DEMAND_OVERRIDE` schedule holding demand up against its natural decline as the
+    cold front passes.
+  - **Act 3 (Agency, the spine)**: `AGC_SET(enabled=False)` mid-storm as an in-fiction
+    CRITICAL "control room" message, restored ~115 min later. Headless-traced do-nothing
+    drift: ~30 real minutes from AGC-off to the 55 Hz hard clamp at 1x, confirmed as a
+    fair, legible window.
+  - **Act 4**: scripted `LINE_OPEN` on L15 (SAND→PORT) — PORT has no second feed, so this
+    is pure triage (shed load / accept the loss), not an N-1 puzzle; L08's Act-1 state
+    determines how exposed the rest of the corridor is.
+  - `WIN_CONDITIONS`: frequency within [49.0, 51.0] Hz at shift end.
+    `FAIL_CONDITIONS` (developer decision — both failure axes, any one triggers): sustained
+    <47 Hz *or* >53 Hz for 10s (symmetric — covers both Act 1's oversupply risk and Act 3's
+    AGC-off risk, which are the same failure mode in opposite directions), or PORT voltage
+    <0.5 pu for 20s (Act 4's cascade).
+- **Extensive headless dispatch tuning for Act 1's overnight floor problem** — this was
+  the session's largest single time sink. Initial dispatch attempts (both CCGT + hydro
+  near ceiling, nuclear at various floors) all left generation pinned ~150-750 MW above
+  the trough with every AGC-eligible unit already at technical minimum — traced to GALE-1
+  wind (~110-220 MW depending on rated capacity, non-curtailable, not AGC-eligible) being
+  the component nothing could shed. Fixed via three changes together, each verified
+  insufficient alone: GALE-1 rated 350→200 MW (developer decision, in place of a
+  load-shed-based fix or shortening the shift — see below), HART-1 `min_mw` 400→300,
+  and — the actual unlock — confirming `stop_unit()` (fully offline, not just down to
+  technical minimum) is a real, distinct lever once the SHUTDOWN-state generation-cliff
+  bug above was fixed. A fully responsive player stopping ASHG-2/CLUN-2/MERE-2/CLUN-1 in
+  turn from T+100min through T+360min holds the entire night including the deepest trough
+  (confirmed to `is_shift_failed() == False` for the full 9-hour headless run); a
+  do-nothing player fails at T+312-350min (hour ~25.2-25.8, mid-Act-3) via the
+  over-frequency `FAIL_CONDITION`, matching the intended difficulty signal. **Also found
+  and fixed**: `DEMAND_OVERRIDE`'s schedule keys must use the shift's own continuously-
+  incrementing hour axis (`GridSimulation.tick()`'s `sim_hour = start_hour + elapsed`,
+  never wrapped to 0-24) — an early draft used `1.0-5.0` for 01:00-05:00 and silently held
+  demand flat at the schedule's last chronologically-sorted key (`24.0`) for the entire
+  back half of the shift (`_interpolate_override()` sorts keys numerically, so `1.0 < 24.0`
+  put the "1am" entry *before* midnight in interpolation order) — corrected to `25.0-29.0`.
+- **Verified**: `python -m pytest tests/` — 29 passed (unchanged pass count from before
+  this session; pytest's default `PytestReturnNotNoneWarning` behaviour treats every
+  print-based test's `return False` as a pass, which is why the count doesn't move —
+  see below). Each test file's own direct print-based harness (the actual source of
+  truth for this project's test convention) run separately and diffed against a
+  `git stash`ed pre-session baseline to isolate real regressions from pre-existing
+  failures: `test_designer_analysis.py` 6/6, `test_voltage_reactive.py` 12/13 (1
+  pre-existing failure, `test_warning_to_critical_alarms_and_crisis`, confirmed identical
+  on the unmodified baseline — unrelated to this session), `test_simulation.py` 9/10 (1
+  pre-existing failure, `test_grid_loads`'s demand-profile check, also confirmed
+  pre-existing). **Two real regressions found and fixed during this diff-against-baseline
+  process** (both in test code, not product code): `test_blackout_zones_exclude_reactive_load`
+  called `sim._build_q_injections()` expecting the old `(dict, pv_buses)` tuple return;
+  `test_demand_model`/`test_simulation_model` both built their fixtures from
+  `load_shift_config(1)`, which returned real demand data before this session (Shift 1 had
+  content) and empty data after (Shift 1 is now a stub) — decoupled both from any real
+  shift file, matching the self-contained-fixture pattern every other well-isolated test
+  in this file already uses. All 10 shifts (1-10) build, tick 200+ times, and render one
+  frame with no exception through the real `main.py::_make_sim_and_renderer()` path.
+  Full do-nothing and fully-responsive headless traces of Shift 10 confirmed above.
+- **Not done this session**: no in-game manual playtest (matches this project's
+  established headless/synthetic-surface verification pattern) — whether Act 3's
+  hand-flown MW+Q stretch is what carries the shift (the Agency-vs-Dread question the
+  whole `SHIFT10_BAD_NIGHT_PLAN.md` slice exists to answer) is **explicitly unresolved**,
+  same as every prior shift's "needs a human playtest" flag. Shifts 1/4/5's real
+  re-authoring against direct-Q is deferred, as decided. `online_unit_types()`/
+  `spinning_reserve_mw()`'s SHUTDOWN-state exclusion (noted above) is an unreviewed,
+  smaller judgment call, not fixed this session. Act 3's reactive-correction responsive
+  trace shows real WARNING/CRITICAL alarm hunting (never crossing `FAIL_CONDITIONS`, but
+  not smooth) — AGC-off manual control at this fleet's scale may be tuned tight; worth
+  watching in a real playtest.
+- Edited: `src/simulation/units.py` (F9 removal/rewiring, SHUTDOWN-state fix),
+  `src/simulation/simulation.py` (F9 `_build_q_injections`/`_build_state`/`SimulationState`
+  rewiring, `set_generator_q`→already-existing `set_unit_q_target` exposed),
+  `src/simulation/constants.py` (`GEN_Q_SETPOINT_*` replacing `GEN_VOLTAGE_SETPOINT_*`),
+  `src/display/renderer.py` (`on_setpoint_*` family retargeted to MVAr, new
+  `on_setpoint_minus()`), `src/display/context.py` (`draw_unit_context()` Q Target block),
+  `src/main.py` (`K_MINUS` handler, `INITIAL_Q_MVAR` handover-apply loop),
+  `src/gameplay/shifts/loader.py` (`initial_q_mvar` schema), `src/gameplay/shifts/shift_01.py`/
+  `shift_04.py`/`shift_05.py` (reverted to stubs), `tests/test_voltage_reactive.py` (4
+  tests rewritten + 1 tuple-unpack fix), `tests/test_designer_analysis.py`
+  (`test_shift10_n1_cross_check()` fully rewritten), `tests/test_simulation.py` (2 tests
+  decoupled from live shift-file content).
+- Created: `src/gameplay/shifts/shift_10.py` (full four-act shift, was a 9-line stub),
+  `src/assets/designer_grids/shift10.json` (full rebuild, was the old incoherent 60-bus
+  auto-generated file).
 
 ## Session Log
 
@@ -1036,19 +1393,24 @@ Shift 3 N-1 lesson regression flagged in Known Issues.
 
 ## What Is NOT Yet Built
 
-**Corrected Session 78** — this section had drifted badly out of date and is now accurate:
+**Corrected Session 79** — this section had drifted out of date again (Session 78's
+correction said shift_01/04/05 were "complete and current" — no longer true) and is now
+accurate:
 
 Shift scenario files:
-- **shift_01, shift_04, shift_05 are complete and current.** shift_04/05 each have their own
-  hand-authored Designer grid (`shift4.json` / `shift5.json`).
-- **shift_10.py is a 9-line stub with no constants at all** — NOT "complete and tuned" as
-  this section previously claimed. It declares no `GRID_SOURCE`, so `load_shift_config(10)`
-  falls back to an empty schedule, AGC off and zero demand. (This is also why
-  `test_shift10_n1_cross_check()` fails with "peak-hour load ~8001 MW, got 0".) An earlier
-  Alpha-grid wiring is long gone. Rebuilding it is the current objective.
+- **shift_10.py is complete and current** — "The Bad Night," a real four-act shift with
+  its own hand-authored Designer grid (`shift10.json`, 28 buses/30 lines/11 units) and
+  working `WIN_CONDITIONS`/`FAIL_CONDITIONS`. See Session 79 details. Not yet
+  human-playtested.
+- **shift_01, shift_04, shift_05 are docstring-only stubs (9-14 lines), NOT complete** —
+  reverted in Session 79 when F9 (direct reactive-power control) replaced the AVR voltage
+  setpoint their content depended on (Shift 4's whole lesson was literally "raise
+  Batherton's AVR setpoint"; Shift 1's Holt Hydro beat and Shift 5's FENN/YEWB voltage
+  tuning are in the same position). `shift4.json`/`shift5.json` (the Designer grids) still
+  exist on disk but are now orphaned until these shifts are re-authored against direct-Q.
 - **shift_02, shift_03, shift_06-shift_09 are stubs.** shift_02 is an intentional stub (its
-  content merged into shift_01, Session 71); 06-09 need full rewrites against the redesigned
-  grid — see Known Issues.
+  content merged into shift_01, Session 71); 03/06-09 need full rewrites against the
+  redesigned grid and, now, against direct-Q — see Known Issues.
 
 Gameplay modules — **`src/gameplay/` is no longer empty**:
 - `phase1.py` — Phase 1 planning model (Session 32 onward).
@@ -1070,67 +1432,49 @@ contains working code unless listed above as complete.
 
 ## Next Session Objective
 
-**Shift 10 "The Bad Night" — Movement 2 (author the shift)**
+**Human playtest Shift 10 "The Bad Night," then re-author Shifts 1/4/5 against direct-Q
+and the early end of the AGC curve**
 
-Movement 1 (the foundation, F1-F7) landed in Session 78 — see the Stage 35 validation row.
-Difficulty is now *expressible*: a shift can be won, lost, and graded on more than frequency.
-Remaining work, per `SHIFT10_BAD_NIGHT_PLAN.md`:
+Session 79 completed F9 (direct reactive-power control) and Movement 2 of
+`SHIFT10_BAD_NIGHT_PLAN.md`; Session 80 built the campaign-wide AGC difficulty curve
+(per-shift eligible types + response speed) and rewrote Shift 10's Act 3 around it — see
+both session log entries for full detail. Shift 10 is a real, playable four-act shift with
+a verified (headless) do-nothing-fails / responsive-player-wins split, now under the new
+AGC baseline. Two things remain:
 
-1. **Rebuild `src/assets/designer_grids/shift10.json` at ~28-32 buses**, seeded by copying
-   `shift5.json` (25 buses / 41 lines / 13 units / 1540 MW) and growing it. The existing
-   60-bus file is auto-generated and semantically incoherent — labels contradict unit types
-   (KELM/KELD "Kelmore Hydro" are WIND, WNCN "Cairn Wind" is HYDRO_ROR, BARR "Barrow Hydro"
-   is CCGT, SLST "Stanton Solar" is HYDRO) and `can_pump` is empty. Keep it as the solver
-   performance-ceiling fixture only. Target ~10-12 units, each with a distinct personality.
-2. **Write `shift_10.py`** (~350-400 lines) on the `shift_04.py`/`shift_05.py` pattern, in
-   four acts: Quiet (dread; `MAINTENANCE_LINES`, one latent risk that deliberately never
-   fires) → the front arrives (`UNIT_DERATE` on wind + `DEMAND_OVERRIDE`) → **AGC fails**
-   (`AGC_SET` — the spine of the shift, zero new code) → cascade (now fightable via F5/F6
-   and genuinely losable via F3's `FAIL_CONDITIONS`).
-   - `DIFFICULTY_LABEL = 'Severe'` (not 'Tutorial'), `GRID_SOURCE = 'shift10'`,
-     `AGC_ENABLED = True` so Act 3 has something to take away.
-   - **`SUBSTATION_TYPES` is mandatory** — every bus in the grid file has
-     `substation_type: null`, so without it the shift gets no reactive devices at all.
-   - `AGC_SET` mutates a module global, so restore it at shift start or a later shift
-     inherits AGC-off.
-   - **Hand-edit the file.** The Shift Builder EVENTS tab cannot express `VOLTAGE_PU`
-     conditions or `DEMAND_OVERRIDE`/`AGC_SET` actions, and an AST round-trip of
-     `SCRIPTED_EVENTS` flattens named condition dicts and prose `detail` strings.
-3. **Re-point `test_shift10_n1_cross_check()`** (`tests/test_designer_analysis.py:440`) at the
-   rebuilt grid — it currently fails against the stale one.
-4. Then **play it twice**: once to complete it, once deliberately trying to lose, to answer
-   the question the slice exists for — *does hand-flying frequency through the Act 3 AGC
-   failure carry the shift?*
-
-### Queued immediately after Shift 10: direct-Q control, AVR removed (decided 2026-08-19)
-
-**Developer decision, not yet started.** Replace the generator AVR voltage setpoint with
-**direct reactive-power control** — two knobs per unit (`W` = MW, `Q` = MVAr), with voltage
-becoming a consequence of dispatch instead of something the player targets. Full
-implementation notes, consequences and verification plan are in the session plan file under
-**F9**; summary:
-
-- Two hooks already exist for this and are currently **dead code with zero callers**:
-  `UnitModel.set_q_injection()` (`units.py:381`, already clamps to q_min/q_max) and
-  `FleetModel.q_injections()` (`units.py:785`). **The voltage solver needs no changes** — a
-  bus absent from `pv_buses` is already solved as PQ using its supplied Q injection.
-- Main work: wire fleet Q into `_build_q_injections()` (`simulation.py:969`, which today sums
-  only demand + reactive devices + line charging), make `pv_bus_constraints()` return empty,
-  retarget F8's `Q`-key nudge from pu to MVAr, and allow **negative** typed entry (no minus
-  key is bound today — `renderer.py:415` and `main.py:1055-1065` are digits-and-dot only).
-- **Shift 4 needs re-authoring, not just retuning** — its core lesson is literally "raise
-  Batherton's AVR setpoint"; that becomes "raise Batherton's MVAr output". Shift 1's
-  `HOLT-1: 0.95` is a one-liner. `INITIAL_VOLTAGE_SETPOINTS` → `INITIAL_Q_MVAR`.
-- Expect real retuning: **voltage will no longer self-correct** as load moves, so every shift
-  gets harder and alarm pacing (`V_WATCH_LOW`/`V_WARNING_LOW`) will need review.
-- **4 of the 13 tests in `test_voltage_reactive.py` assert PV-bus behaviour** that will cease
-  to exist (`:240`, `:673`, `:789`, `:847`) and must be rewritten; the other nine should pass
-  unchanged, which is the evidence the change is contained.
-
-**This supersedes the previously queued P-Q coupling item** (three read sites in `units.py`) —
-both touch the same reactive path, so do not attempt them independently. Sequenced after
-Shift 10 for the same reason P-Q coupling was: it changes voltage behaviour under every
-existing shift, and Shift 10 is easier to tune against a stable baseline.
+1. **Play Shift 10 for real** (Ctrl+T from the Shift Builder, or the real campaign path),
+   twice: once to complete it, once deliberately trying to lose. This is the first actual
+   human playtest of the shift — everything so far is headless-verified only. Specifically
+   judge the question the whole slice exists to answer: *does hand-flying frequency all
+   night (not just during one Act 3 crisis window) carry the shift, or does something else
+   (Act 1's overnight unit-commitment puzzle, Act 4's cascade) end up being what sticks?*
+   That answer should drive how Shifts 6-9 get authored, including where along the AGC
+   curve each one should sit. Also worth judging in real play (headless traces can't tell
+   you this): whether the direct-Q `W`/`Q` control scheme feels good, whether hand-flying
+   Ashgrove's CCGT continuously from handover (never AGC-tracked this shift at all) reads
+   as earned difficulty or exhausting micromanagement, whether Act 3's further narrowing
+   lands as a real "further loss" or barely registers against an already-thin baseline, and
+   whether the 20:00-05:00 overnight pacing (~22.5 real min at 1x) is too long unaccelerated.
+2. **Re-author Shifts 1, 4, 5 against direct-Q and declare their early-curve AGC values.**
+   All three are currently docstring-only stubs (reverted in Session 79) — their old content
+   depended entirely on the AVR voltage setpoint, which no longer exists. Shift 4's whole
+   lesson was "raise Batherton's AVR setpoint toward 1.05 pu"; under direct-Q that becomes
+   "raise Batherton's MVAr output," a different shape of lesson since voltage is no longer
+   something the player targets directly — it's a consequence of Q dispatch. Their Designer
+   grids (`shift4.json`, `shift5.json`) still exist and are still usable; only the shift-file
+   content needs rewriting. `INITIAL_Q_MVAR` (was `INITIAL_VOLTAGE_SETPOINTS`) is the schema
+   key. Expect real retuning, not just a find-replace — voltage no longer self-corrects as
+   load moves the way an AVR-held setpoint did, so alarm pacing (`V_WATCH_LOW`/
+   `V_WARNING_LOW`) may need review per-shift. **New this session**: these are also the
+   natural place to declare the AGC curve's "fast, broad" endpoint — `AGC_ELIGIBLE_TYPES =
+   frozenset({'HYDRO', 'HYDRO_PUMP', 'CCGT'})` and `AGC_SPEED_MULT >= 1.0` (or simply leave
+   both undeclared, since `constants.py`'s defaults are already `{HYDRO, CCGT}`/`1.0` — the
+   open question is whether the tutorial shifts specifically want the wider `HYDRO_PUMP`
+   inclusion or the plain default). No numeric values are chosen yet; nothing currently
+   verifies the middle of the curve (Shifts 6-9, still untouched stubs) either — the
+   mechanism supports a smooth per-shift interpolation whenever they're authored, but this
+   session only populated its two endpoints in the abstract (constants.py's defaults) and
+   one concrete point (Shift 10).
 
 ---
 

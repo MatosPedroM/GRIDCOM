@@ -438,35 +438,42 @@ def test_run_full_analysis_balance() -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_shift10_n1_cross_check() -> bool:
+    """
+    N-1 sweep against the real Shift 10 "The Bad Night" Designer grid
+    (assets/designer_grids/shift10.json), rebuilt Session 2026-08-21 —
+    replaces the previous version of this test, which actually exercised
+    the old, now-orphaned full-campaign topology (topology.py/fleet.py's
+    Grid(10)) rather than the Designer grid shift_10.py now points at via
+    GRID_SOURCE. That topology is superseded; this test targets the grid
+    players actually see.
+    """
     print("test_shift10_n1_cross_check...")
     all_passed = True
 
     try:
-        from simulation.grid import Grid
-        from gameplay.shifts.loader import load_shift_config
+        from data.designer_io import load_designer_grid_named
+        from simulation.designer_grid import DesignerGrid
         from simulation.designer_analysis import run_n1_sweep
 
-        g = Grid(10)
-        assert len(g.get_active_buses()) == 41, \
-            f"Expected 41 buses at Shift 10, got {len(g.get_active_buses())}"
-        assert len(g.get_active_lines()) == 62, \
-            f"Expected 62 lines at Shift 10, got {len(g.get_active_lines())}"
-        assert len(g.get_active_units()) == 47, \
-            f"Expected 47 units at Shift 10, got {len(g.get_active_units())}"
+        d_buses, d_lines, d_units = load_designer_grid_named('shift10')
+        grid = DesignerGrid(d_buses, d_lines, d_units)
 
-        cfg = load_shift_config(10)
-        sub_load = cfg['substation_load_mw']
-        hour = 16.0  # documented peak hour, 8,001 MW system peak
-        bus_load_mw = {b: table.get(hour, 0.0) for b, table in sub_load.items()}
+        assert len(d_buses) >= 25, f"Expected a ~28-32 bus grid, got {len(d_buses)} buses"
+        assert len(d_units) >= 8, f"Expected ~10-12 units, got {len(d_units)}"
+
+        load_buses = [b for b in d_buses if b.bus_type == 'LOAD' and b.peak_load_mw > 0]
+        bus_load_mw = {b.label: b.peak_load_mw for b in load_buses}
         total_load = sum(bus_load_mw.values())
-        assert abs(total_load - 8001.0) < 1.0, \
-            f"Expected Shift 10 peak-hour load ~8001 MW, got {total_load}"
+        assert total_load > 0.0, "Shift 10 grid should have non-zero peak load"
 
         # Water-filling dispatch: start every unit at min_mw, distribute the
         # remaining gap to target load proportional to headroom, iterating
         # to convergence — same non-tick-based static method Session 35/36
-        # used in place of an unreliable tick-based approach.
-        units = g.get_active_units()
+        # used in place of an unreliable tick-based approach. Renewables
+        # (WIND/SOLAR, min_mw=0/rated_mw=nameplate) participate the same as
+        # any other unit here — this is a static worst-case dispatch check,
+        # not a real-time forecast.
+        units = grid.get_active_units()
         unit_mw = {u.label: u.min_mw for u in units}
         unit_available = {u.label: True for u in units}
         for _ in range(500):
@@ -493,64 +500,56 @@ def test_shift10_n1_cross_check() -> bool:
                     if h > 0:
                         unit_mw[u.label] += gap * (h / total_headroom)
 
-        line_in_service = {l.label: True for l in g.get_active_lines()}
-        results = run_n1_sweep(g, unit_mw, unit_available, bus_load_mw, line_in_service)
-        assert len(results) == 62, f"Expected 62 contingencies swept, got {len(results)}"
+        n_lines = len(grid.get_active_lines())
+        line_in_service = {l.label: True for l in grid.get_active_lines()}
+        results = run_n1_sweep(grid, unit_mw, unit_available, bus_load_mw, line_in_service)
+        assert len(results) == n_lines, \
+            f"Expected {n_lines} contingencies swept, got {len(results)}"
 
+        # WYLD is the deliberately weak single-radial dead-end (HOWE -> CLUN
+        # -> WYLD, no redundant path) — the Act 1 "latent risk that never
+        # fires" bus. Tripping its one feed line, L12 (CLUN->WYLD), must
+        # blackout WYLD specifically (that's the point of a single-radial
+        # tail) but nothing else. Tripping L11 (HOWE->CLUN, the line one
+        # step further back) does NOT blackout WYLD or CLUN — CLUN carries
+        # its own hydro units (CLUN-1/CLUN-2), so the CLUN/WYLD pair can
+        # self-supply as an island even cut off from the backbone.
         by_line = {r.tripped_line: r for r in results}
+        r12 = by_line.get('L12')
+        assert r12 is not None, "Expected line L12 in the sweep"
+        assert r12.blackout_buses == frozenset({'WYLD'}), \
+            f"Tripping L12 should blackout only WYLD (its sole feed), " \
+            f"got {r12.blackout_buses}"
+        r11 = by_line.get('L11')
+        assert r11 is not None, "Expected line L11 in the sweep"
+        assert not r11.blackout_buses, \
+            f"Tripping L11 should not blackout anything — CLUN's own hydro " \
+            f"units keep the CLUN/WYLD island supplied, got {r11.blackout_buses}"
+        print(f"  WYLD single-radial tail confirmed exposed on L12 only "
+              f"(L11 covered by CLUN's local hydro) — PASS")
 
-        # The 10 documented substation feed lines (5 final substations x 2
-        # feeds each, per STAGE_STATUS.md Session 36's "5 substations,
-        # dual-fed" design) plus CAP's 3 spine taps: no blackouts/islanding.
-        substation_feeds = [
-            'L93', 'L130',   # LD07 (CAP), ASHF + FAIR feeds
-            'L95', 'L132',   # LD09 (WEST)
-            'L155',          # SOUTH-MESH spine tap (per Session 36 docstring)
-            'L157',          # EAST-MESH spine tap
-        ]
-        checked_any = False
-        for label in substation_feeds:
+        # The MDFD<->TARN spare parallel circuit (L07/L08) is the Act 1
+        # dread beat: with BOTH circuits in service, tripping either alone
+        # must cause no blackout at all (the other covers it).
+        for label in ('L07', 'L08'):
             r = by_line.get(label)
-            if r is None:
-                continue  # label naming may have shifted; skip rather than fail
-            checked_any = True
+            assert r is not None, f"Expected line {label} in the sweep"
             assert not r.blackout_buses, \
-                f"Tripping {label} (substation feed) should not blackout anything, " \
-                f"got {r.blackout_buses}"
-        assert checked_any, \
-            "None of the expected substation feed line labels were found in the sweep " \
-            "— topology labels may have changed, update this test's reference list"
-        print(f"  substation feed trips checked: no blackouts — PASS")
+                f"Tripping {label} with its parallel partner in service should not " \
+                f"blackout anything, got {r.blackout_buses}"
+        print(f"  MDFD<->TARN spare circuit (L07/L08) redundancy confirmed — PASS")
 
-        # L10 (CNTR->WRNT) must be the single worst contingency in the full
-        # 62-line sweep, per the documented "grid's actual worst N-1 case
-        # overall" finding — and it should land L16 in an overload band
-        # (>150%) consistent with "182.3%" in magnitude, not exact.
+        # No contingency should produce a solver error or a runaway loading
+        # figure (sanity bound, not a tuned expectation — this grid is new
+        # and not yet balance-tuned).
+        import math
+        for r in results:
+            assert math.isfinite(r.worst_loading_pct), \
+                f"Non-finite worst_loading_pct on {r.tripped_line} trip"
         worst = max(results, key=lambda r: r.worst_loading_pct)
-        assert worst.tripped_line == 'L10', \
-            f"Expected L10 trip to be the overall worst N-1 contingency, " \
-            f"got {worst.tripped_line} at {worst.worst_loading_pct:.1f}%"
-        assert worst.worst_line_label == 'L16', \
-            f"Expected L10 trip's worst-loaded line to be L16, got {worst.worst_line_label}"
-        assert worst.worst_loading_pct > 150.0, \
-            f"Expected L10 trip to push L16 well over 150% (documented 182.3%), " \
-            f"got {worst.worst_loading_pct:.1f}%"
-        print(f"  L10 trip -> L16 at {worst.worst_loading_pct:.1f}% is the overall "
-              f"worst contingency (documented: 182.3%) — PASS")
-
-        # The 10 documented substation-related trips should all stay well
-        # below the grid's overall worst case — documented ceiling 88.0%.
-        # Use a generous tolerance band (documented dispatch not
-        # byte-reproducible) rather than an exact-match assertion.
-        substation_worst = max(
-            (by_line[l].worst_loading_pct for l in substation_feeds if l in by_line),
-            default=0.0,
-        )
-        assert substation_worst < 150.0, \
-            f"Substation-feed trips should stay well clear of the L10/L16 overall " \
-            f"worst case (documented substation ceiling 88.0%), got {substation_worst:.1f}%"
-        print(f"  substation-feed trips worst case {substation_worst:.1f}% "
-              f"(documented: 88.0%) — PASS")
+        print(f"  worst overall contingency: {worst.tripped_line} trip -> "
+              f"{worst.worst_line_label} at {worst.worst_loading_pct:.1f}% — PASS "
+              f"(all {n_lines} contingencies finite, no solver errors)")
 
     except AssertionError as e:
         print(f"  FAIL — {e}")

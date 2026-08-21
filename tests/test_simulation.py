@@ -960,12 +960,17 @@ def test_demand_model() -> bool:
 
     try:
         from simulation.demand import DemandModel
-        from data.profiles import get_substation_demand_specs
-        from gameplay.shifts.loader import load_shift_config
+        from data.profiles import get_substation_demand_specs, DEMAND_PROFILE_NORMALISED
 
-        cfg = load_shift_config(1)   # shift 1 uses the GREY/OAKE load substations (shift2.json grid)
-        peak_demand_mw = cfg['peak_demand_mw']
-        substation_specs = get_substation_demand_specs(cfg['substation_load_mw'])
+        # Self-contained fixture (not sourced from a real shift file, whose
+        # content is mutable/may be a stub) — two load buses following the
+        # shared demand-shape curve, mirroring loader.py's own derivation.
+        substation_load_mw = {
+            'GREY': {h: 100.0 * DEMAND_PROFILE_NORMALISED[h] for h in DEMAND_PROFILE_NORMALISED},
+            'OAKE': {h: 200.0 * DEMAND_PROFILE_NORMALISED[h] for h in DEMAND_PROFILE_NORMALISED},
+        }
+        peak_demand_mw = 300.0
+        substation_specs = get_substation_demand_specs(substation_load_mw)
 
         # ── Deterministic forecast matches profile ─────────────────────────
         try:
@@ -1473,8 +1478,17 @@ def test_simulation_model() -> bool:
 
         # ── get_state() has all required fields ───────────────────────────
         try:
+            from data.profiles import DEMAND_PROFILE_NORMALISED
+
             g1 = Grid(1)
-            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
+            # Explicit substation_load_mw (LD01, Grid(1)'s one load bus) —
+            # not sourced from shift_01.py, whose content is mutable/may be
+            # a stub, so total_load_mw > 0 doesn't depend on shift content.
+            substation_load_mw = {
+                'LD01': {h: 200.0 * DEMAND_PROFILE_NORMALISED[h] for h in DEMAND_PROFILE_NORMALISED},
+            }
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
+                                  substation_load_mw=substation_load_mw)
             sim.tick(60.0)
             state = sim.get_state()
 

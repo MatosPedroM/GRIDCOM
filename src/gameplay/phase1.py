@@ -44,7 +44,7 @@ from simulation.constants import (
 from simulation.demand import DemandModel
 from simulation.designer_grid import DesignerGrid
 from simulation.renewables import RenewablesModel
-from simulation.units import AGC_UNIT_TYPES
+from simulation.constants import AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT
 
 # Non-dispatchable (forecast-driven, not player-scheduled) unit types.
 _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})
@@ -128,6 +128,7 @@ class PlanningModel:
     renewable_specs:     list[GenerationUnit] = field(default_factory=list)
     renewable_forecast:  dict[str, dict[float, float]] = field(default_factory=dict)
     maintenance_units: frozenset[str] = frozenset()
+    agc_eligible_types: frozenset[str] = _AGC_ELIGIBLE_TYPES_DEFAULT
 
     hours: tuple[float, ...] = _PLANNING_HOURS
 
@@ -225,7 +226,7 @@ class PlanningModel:
         sum_pmax = 0.0
         sum_pmin = 0.0
         for unit in self.unit_specs:
-            if unit.unit_type not in AGC_UNIT_TYPES:
+            if unit.unit_type not in self.agc_eligible_types:
                 continue
             if not self.is_online(unit.label, hour):
                 continue
@@ -423,6 +424,7 @@ def build_planning_model(shift_number: int) -> PlanningModel:
         renewable_specs=renewable_specs,
         renewable_forecast=renewable_forecast,
         maintenance_units=frozenset(cfg['maintenance_units']),
+        agc_eligible_types=cfg.get('agc_eligible_types', _AGC_ELIGIBLE_TYPES_DEFAULT),
     )
     _default_init_schedule(model, shift_number, cfg=cfg)
     return model

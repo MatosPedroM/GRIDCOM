@@ -2,9 +2,9 @@
 tests/test_voltage_reactive.py
 
 Tests for reactive-power forcing (Phase A of VOLTAGE_REACTIVE_PLAN.md):
-per-substation-type power factor driving real Q load, real generator AVR
-setpoints feeding pv_bus_constraints(), and blackout-zone filtering of
-reactive injections. No test framework required — run directly:
+per-substation-type power factor driving real Q load, direct generator
+reactive-power targets feeding q_injections() (F9), and blackout-zone
+filtering of reactive injections. No test framework required — run directly:
 python tests/test_voltage_reactive.py
 
 Each test function prints PASS / FAIL / ERROR and returns True/False.
@@ -234,39 +234,39 @@ def test_q_load_injections_math() -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TEST 4 — generator AVR setpoint feeds pv_bus_constraints()
+# TEST 4 — direct reactive-power target feeds q_injections() and clamps
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_generator_setpoint_feeds_pv_constraints() -> bool:
+def test_generator_q_target_feeds_injections() -> bool:
     """
-    A unit's set_voltage_setpoint() should flow through to
-    FleetModel.pv_bus_constraints()'s v_target for that unit's bus —
-    replacing the old hardcoded 1.0.
+    A unit's set_unit_q_target() should flow through to
+    FleetModel.q_injections()'s net MVAr at that unit's bus (F9 — direct
+    reactive-power control replaced the AVR voltage setpoint; generators no
+    longer target a voltage, they target a Q injection directly, clamped to
+    their own [q_min_mvar, q_max_mvar] rather than a shared pu band).
     """
-    print("test_generator_setpoint_feeds_pv_constraints...")
+    print("test_generator_q_target_feeds_injections...")
     all_passed = True
 
     try:
         sim = _build_sim()
         try:
-            accepted = sim._fleet.set_unit_voltage_setpoint('SLK-1', 1.04)
-            assert accepted, "set_unit_voltage_setpoint should accept an ONLINE unit"
+            accepted = sim._fleet.set_unit_q_target('SLK-1', 250.0)
+            assert accepted, "set_unit_q_target should accept a known unit"
 
-            pv = sim._fleet.pv_bus_constraints()
-            v_target, q_max, q_min = pv['SLK']
-            assert abs(v_target - 1.04) < 1e-9, \
-                f"pv_bus_constraints v_target should reflect the new setpoint 1.04, got {v_target}"
+            q_inj = sim._fleet.q_injections()
+            assert abs(q_inj['SLK'] - 250.0) < 1e-9, \
+                f"q_injections should reflect the new target 250.0, got {q_inj['SLK']}"
 
-            # Clamped to GEN_VOLTAGE_SETPOINT_MAX_PU
-            from simulation.constants import GEN_VOLTAGE_SETPOINT_MAX_PU
-            sim._fleet.set_unit_voltage_setpoint('SLK-1', 2.0)
-            pv2 = sim._fleet.pv_bus_constraints()
-            assert abs(pv2['SLK'][0] - GEN_VOLTAGE_SETPOINT_MAX_PU) < 1e-9, \
-                f"Setpoint should clamp to {GEN_VOLTAGE_SETPOINT_MAX_PU}, got {pv2['SLK'][0]}"
+            # Clamped to the unit's own q_max_mvar (400.0 in the test fixture).
+            sim._fleet.set_unit_q_target('SLK-1', 1000.0)
+            q_inj2 = sim._fleet.q_injections()
+            assert abs(q_inj2['SLK'] - 400.0) < 1e-9, \
+                f"Target should clamp to q_max_mvar=400.0, got {q_inj2['SLK']}"
 
-            print(f"  setpoint 1.04 -> v_target={v_target:.3f}, clamp OK — PASS")
+            print(f"  target 250.0 -> q_injections['SLK']=250.0, clamp OK — PASS")
         except AssertionError as e:
-            print(f"  generator setpoint feeds pv_bus_constraints: FAIL — {e}")
+            print(f"  generator Q target feeds injections: FAIL — {e}")
             all_passed = False
 
     except Exception as e:
@@ -295,11 +295,11 @@ def test_blackout_zones_exclude_reactive_load() -> bool:
         sim._demand.update(12.0, total_generation_mw=500.0)
 
         try:
-            q_none, _ = sim._build_q_injections(frozenset())
+            q_none = sim._build_q_injections(frozenset())
             assert q_none['IND'] != 0.0, \
                 f"With no blackout, IND should draw nonzero Q, got {q_none['IND']}"
 
-            q_blackout, _ = sim._build_q_injections(frozenset({'IND'}))
+            q_blackout = sim._build_q_injections(frozenset({'IND'}))
             assert q_blackout['IND'] == 0.0, \
                 f"Blacked-out IND should have zero Q injection, got {q_blackout['IND']}"
             assert q_blackout['RES'] == q_none['RES'], \
@@ -670,51 +670,47 @@ def _build_regional_support_sim():
     return sim
 
 
-def test_generator_setpoint_raises_region_and_converts_pq() -> bool:
+def test_generator_q_target_raises_region_and_clamps() -> bool:
     """
-    Raising GEN-1's voltage setpoint from a low starting point should raise
-    the neighbouring WEAK bus's voltage and push GEN-1's actual Q (as seen
-    by the player via unit_q_injections_mvar / unit_bus_types) up toward
-    q_max_mvar, converting PV->PQ once the limit is hit.
+    Raising GEN-1's reactive-power target from a low starting point should
+    raise the neighbouring WEAK bus's voltage, monotonically, up to
+    q_max_mvar — where q_reserve_mvar reaches exactly 0 (F9: direct
+    reactive-power control replaced the AVR PV/PQ conversion; there is no
+    more "PV" state to convert out of, every bus is solved as PQ directly
+    from whatever Q the player commands).
     """
-    print("test_generator_setpoint_raises_region_and_converts_pq...")
+    print("test_generator_q_target_raises_region_and_clamps...")
     all_passed = True
 
     try:
         sim = _build_regional_support_sim()
-        sim.set_generator_voltage_setpoint('GEN-1', 0.99)
+        sim.set_unit_q_target('GEN-1', -180.0)
         sim.tick(1.0)
         state = sim.get_state()
         v_before = state.bus_voltages['WEAK']
-        assert state.unit_bus_types['GEN-1'] == 'PV', \
-            f"GEN-1 should start PV at a low setpoint, got {state.unit_bus_types['GEN-1']}"
 
         try:
-            saw_pq = False
             q_values = []
-            for setpoint in (0.992, 0.994, 0.996, 0.998, 1.0, 1.02):
-                sim.set_generator_voltage_setpoint('GEN-1', setpoint)
+            for q_target in (-100.0, -50.0, 0.0, 100.0, 200.0, 300.0):
+                sim.set_unit_q_target('GEN-1', q_target)
                 sim.tick(0.001)
                 state = sim.get_state()
                 q_values.append(state.unit_q_injections_mvar['GEN-1'])
-                if state.unit_bus_types['GEN-1'] == 'PQ':
-                    saw_pq = True
 
             v_after = state.bus_voltages['WEAK']
             assert v_after > v_before, \
-                f"Raising GEN-1's setpoint should raise WEAK's voltage: " \
+                f"Raising GEN-1's Q target should raise WEAK's voltage: " \
                 f"before={v_before:.4f}, after={v_after:.4f}"
-            assert saw_pq, "GEN-1 should convert to PQ once Q hits q_max_mvar=200"
             assert abs(q_values[-1] - 200.0) < 1e-6, \
                 f"GEN-1's Q should be clamped at q_max_mvar=200, got {q_values[-1]}"
             assert state.unit_q_reserve_mvar['GEN-1'] == 0.0, \
                 f"GEN-1's q_reserve should be 0 once saturated, got {state.unit_q_reserve_mvar['GEN-1']}"
             assert q_values == sorted(q_values), \
-                f"Q should rise monotonically as setpoint rises: {q_values}"
+                f"Q should rise monotonically as target rises: {q_values}"
             print(f"  WEAK {v_before:.4f} -> {v_after:.4f}, "
-                  f"GEN-1 Q -> {q_values[-1]:.1f} (PV->PQ) — PASS")
+                  f"GEN-1 Q -> {q_values[-1]:.1f} (clamped) — PASS")
         except AssertionError as e:
-            print(f"  generator setpoint raises region: FAIL — {e}")
+            print(f"  generator Q target raises region: FAIL — {e}")
             all_passed = False
 
     except Exception as e:
@@ -897,14 +893,14 @@ if __name__ == "__main__":
         test_reactive_load_moves_voltage(),
         test_low_pf_sags_more(),
         test_q_load_injections_math(),
-        test_generator_setpoint_feeds_pv_constraints(),
+        test_generator_q_target_feeds_injections(),
         test_blackout_zones_exclude_reactive_load(),
         test_collapse_offset_accumulates(),
         test_warning_to_critical_alarms_and_crisis(),
         test_offset_decays_on_recovery(),
         test_auto_shunt_holds_without_hunting(),
         test_manual_svc_monotonic_and_clamped(),
-        test_generator_setpoint_raises_region_and_converts_pq(),
+        test_generator_q_target_raises_region_and_clamps(),
         test_pv_bus_satisfied_keeps_reserve(),
         test_pv_correction_bounded_on_two_path_bus(),
     ]

@@ -110,6 +110,10 @@ class UnitModel:
         self._q_injection_mvar: float = 0.0
         self._maintenance: bool = False
         self._derate_cap_mw: float | None = None   # None = not derated
+        # Setpoint drift (random deviation event) — added to target_mw in
+        # _tick_online()'s ramp loop, so current_mw converges toward the
+        # WRONG value while active. 0.0 = no drift. See drift()/clear_drift().
+        self._drift_offset_mw: float = 0.0
         self._dispatch_mode: str = 'MANUAL'   # 'MANUAL' or 'AUTO' — see set_target()/set_auto_mode()
         # Running total of AGC-attributable adjustment to target_mw since the
         # unit's last hourly-schedule snap. Carried across hour boundaries by
@@ -166,6 +170,14 @@ class UnitModel:
     @property
     def is_derated(self) -> bool:
         return self._derate_cap_mw is not None
+
+    @property
+    def is_drifting(self) -> bool:
+        return self._drift_offset_mw != 0.0
+
+    @property
+    def drift_offset_mw(self) -> float:
+        return self._drift_offset_mw
 
     @property
     def effective_max_mw(self) -> float:
@@ -256,11 +268,54 @@ class UnitModel:
         if self._target_mw > cap:
             self._target_mw = cap
 
+    def clear_derate(self) -> None:
+        """
+        Remove an active derate — effective_max_mw returns to rated_mw.
+        No-op if not currently derated. Does not touch target_mw; a unit
+        below its old cap simply gains headroom to be commanded higher
+        again, it doesn't jump up on its own.
+        """
+        self._derate_cap_mw = None
+        if DEBUG_SIMULATION:
+            logging.getLogger('sim').debug(f'[UNITS] {self.label} derate cleared')
+
+    def drift(self, offset_mw: float) -> None:
+        """
+        Start a setpoint drift (random deviation event) — current_mw will
+        converge toward target_mw + offset_mw instead of target_mw alone,
+        via _tick_online()'s normal ramp-rate-limited chase, until cleared.
+        No alarm is raised here (see simulation.py's trigger site) — the
+        player must notice the Target/Output mismatch themselves.
+        No-op if the unit is not ONLINE or already drifting (offsets don't
+        stack — see the trigger site's is_drifting guard).
+        """
+        if self._state != 'ONLINE' or self.is_drifting:
+            return
+        self._drift_offset_mw = float(offset_mw)
+        if DEBUG_SIMULATION:
+            logging.getLogger('sim').debug(f'[UNITS] {self.label} DRIFT {offset_mw:+.1f} MW '
+                                           f'off target {self._target_mw:.1f}')
+
+    def clear_drift(self) -> None:
+        """
+        Clear an active drift — current_mw resumes converging toward bare
+        target_mw. Called either when the player re-issues the currently-
+        commanded setpoint (see set_target()/_set_target_internal()) or by
+        the fleet-wide hour-boundary sweep in simulation.py. No-op if not
+        currently drifting.
+        """
+        self._drift_offset_mw = 0.0
+        if DEBUG_SIMULATION and self.is_drifting:
+            logging.getLogger('sim').debug(f'[UNITS] {self.label} drift cleared')
+
     def set_target(self, target_mw: float) -> bool:
         """
         Set dispatch target from a direct player command. Only valid when
         ONLINE. Drops the unit to MANUAL dispatch mode — see set_auto_mode()
-        to return it to AUTO.
+        to return it to AUTO. Clears an active setpoint drift if this
+        matches the already-commanded target (see
+        _maybe_clear_drift_on_recommand()) — a genuine player re-command,
+        exactly the "notice and re-confirm" fix.
 
         Args:
             target_mw: Target output in MW. Clamped to [min_mw, rated_mw].
@@ -269,8 +324,10 @@ class UnitModel:
             True if accepted (unit is ONLINE).
             False otherwise.
         """
+        prior_target_mw = self._target_mw
         if not self._set_target_internal(target_mw):
             return False
+        self._maybe_clear_drift_on_recommand(target_mw, prior_target_mw)
         self._dispatch_mode = 'MANUAL'
         self._agc_offset_mw = 0.0   # player command asserts a new baseline
         return True
@@ -280,6 +337,15 @@ class UnitModel:
         Set dispatch target without touching dispatch_mode. Used by AGC
         regulation (apply_agc_signal()) and the Phase 1 per-hour schedule
         executor, neither of which should force a unit to MANUAL.
+
+        Does NOT touch an active setpoint drift — see
+        _maybe_clear_drift_on_recommand() for that, called explicitly only
+        from the genuine "operator re-issued a command" sites (set_target()
+        and the hourly-schedule executor), never from here directly, since
+        this is also AGC's path (_apply_agc_delta()) and AGC's small
+        incremental deltas can easily land within DRIFT_CLEAR_TOLERANCE_MW
+        of the current target by pure chance during normal operation —
+        that must never be mistaken for a player noticing and re-confirming.
 
         Args:
             target_mw: Target output in MW. Clamped to [min_mw, rated_mw].
@@ -296,12 +362,29 @@ class UnitModel:
         )
         return True
 
+    def _maybe_clear_drift_on_recommand(self, requested_mw: float, prior_target_mw: float) -> None:
+        """
+        Clear an active setpoint drift if requested_mw matches the target
+        that was ALREADY commanded (prior_target_mw, captured before the
+        new value is applied) within DRIFT_CLEAR_TOLERANCE_MW — i.e. the
+        operator/schedule has re-issued the same command that was in
+        effect when the drift started, the deliberate "notice and
+        re-confirm" fix. Call ONLY from a genuine re-command site
+        (set_target(), the hourly-schedule executor) — never from AGC's
+        path, whose incremental deltas are not re-commands and could
+        collide with the tolerance by chance.
+        """
+        if self.is_drifting and abs(float(requested_mw) - prior_target_mw) <= _sim_const.DRIFT_CLEAR_TOLERANCE_MW:
+            self.clear_drift()
+
     def _apply_agc_delta(self, share_mw: float) -> bool:
         """
         Apply this unit's share of an AGC correction: sets target_mw via
         _set_target_internal() and accumulates the AGC-attributable offset
         (see _agc_offset_mw docstring in __init__) so apply_hourly_schedule()
         can carry it across the next hour boundary instead of discarding it.
+        Deliberately does not touch an active drift — see
+        _set_target_internal()'s docstring.
         """
         if not self._set_target_internal(self.target_mw + share_mw):
             return False
@@ -426,7 +509,10 @@ class UnitModel:
                                                f'(min output {self._spec.min_mw:.1f} MW)')
 
     def _tick_online(self, dt_sim_seconds: float) -> None:
-        """Ramp output toward target at the unit's ramp rate."""
+        """Ramp output toward (target + any active drift offset) at the
+        unit's ramp rate — a drifting unit chases the WRONG value, exactly
+        as if it had been commanded there, until the drift clears (see
+        drift()/clear_drift())."""
         if self._is_renewable:
             return  # renewable output is set externally
 
@@ -434,15 +520,18 @@ class UnitModel:
                           * self._spec.rated_mw / 60.0
         max_delta = ramp_mw_per_sec * dt_sim_seconds
 
-        delta = self._target_mw - self._current_mw
+        chase_mw = self._target_mw + self._drift_offset_mw
+        delta = chase_mw - self._current_mw
         if abs(delta) <= max_delta:
-            self._current_mw = self._target_mw
+            self._current_mw = chase_mw
         else:
             self._current_mw += max_delta if delta > 0.0 else -max_delta
 
         # Enforce output bounds. Upper bound is rated_mw, not effective_max_mw —
         # a fresh derate cap below current_mw must be ramped down to via
         # target_mw (set in derate()), not snapped here in the same tick.
+        # A drift offset can legitimately push current_mw above target_mw
+        # (that's the point), but never past the unit's real physical limits.
         self._current_mw = max(
             self._spec.min_mw,
             min(self._spec.rated_mw, self._current_mw)
@@ -502,12 +591,13 @@ class FleetModel:
         maintenance_units = maintenance_units or set()
         self._units: dict[str, UnitModel] = {}
 
-        # Units named by a mid-shift AGC_EXCLUDE_UNITS scripted action —
-        # excluded from AGC eligibility regardless of unit_type, on top of
-        # the shift-wide _sim_const.AGC_ELIGIBLE_TYPES filter. Instance
-        # state (not _sim_const) since this changes during a single shift
-        # and must reset cleanly between shifts/test runs, unlike the
-        # shift-wide type filter which is set once at handover.
+        # Units named by a mid-shift AGC_EXCLUDE_UNITS scripted action, or
+        # by Phase 1's per-unit AGC enrollment — excluded from AGC
+        # eligibility regardless of unit_type, on top of the fixed
+        # campaign-wide _sim_const.AGC_ELIGIBLE_TYPES filter. Instance
+        # state (not _sim_const) since this varies per shift run and must
+        # reset cleanly between shifts/test runs, unlike the type filter
+        # itself, which never varies.
         self._agc_excluded_units: frozenset[str] = frozenset()
 
         for spec in grid.get_active_units():
@@ -560,6 +650,31 @@ class FleetModel:
         if model is not None:
             model.derate(cap_mw)
 
+    def clear_unit_derate(self, label: str) -> None:
+        """Remove an active derate — effective_max_mw returns to rated_mw."""
+        model = self._units.get(label)
+        if model is not None:
+            model.clear_derate()
+
+    def drift_unit(self, label: str, offset_mw: float) -> None:
+        """Start a setpoint drift (see UnitModel.drift())."""
+        model = self._units.get(label)
+        if model is not None:
+            model.drift(offset_mw)
+
+    def clear_unit_drift(self, label: str) -> None:
+        """Clear an active setpoint drift (see UnitModel.clear_drift())."""
+        model = self._units.get(label)
+        if model is not None:
+            model.clear_drift()
+
+    def clear_all_drifts(self) -> None:
+        """Clear every active drift fleet-wide — called at each sim-hour
+        boundary crossing (see GridSimulation._apply_hourly_schedule())."""
+        for model in self._units.values():
+            if model.is_drifting:
+                model.clear_drift()
+
     def set_unit_target(self, label: str, target_mw: float) -> bool:
         """Set dispatch target. Returns False if not found or not ONLINE."""
         model = self._units.get(label)
@@ -597,8 +712,8 @@ class FleetModel:
     def apply_agc_signal(self, delta_mw: float) -> dict[str, float]:
         """
         Distribute an AGC raise/lower signal among fast-response ONLINE units
-        (per-shift eligible types, _sim_const.AGC_ELIGIBLE_TYPES — HYDRO/CCGT
-        by default), proportional to available headroom (raise) or
+        (fixed campaign-wide eligible types, _sim_const.AGC_ELIGIBLE_TYPES —
+        HYDRO/CCGT, never per-shift), proportional to available headroom (raise) or
         regulating range above min_mw (lower). Units named by a mid-shift
         AGC_EXCLUDE_UNITS scripted action (self._agc_excluded_units) are
         skipped regardless of type. Calls set_target() so ramp rate limits
@@ -722,6 +837,15 @@ class FleetModel:
     def has_unit(self, label: str) -> bool:
         """True if unit is in the active fleet."""
         return label in self._units
+
+    def online_dispatchable_labels(self) -> list[str]:
+        """Labels of every ONLINE, non-renewable unit — the population
+        eligible for random derate/drift events (see GridSimulation's
+        deviation trigger roll). WIND/SOLAR are never dispatchable."""
+        return [
+            u.label for u in self._units.values()
+            if u.state == 'ONLINE' and not u.is_renewable
+        ]
 
     # ─────── QUERIES — AGGREGATE ──────────────────────────────────────────
 

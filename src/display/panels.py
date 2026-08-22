@@ -34,6 +34,7 @@ from display.palette import (
 from simulation.constants import (
     FONT_SIZE_PANEL, FONT_SIZE_PANEL_LARGE,
     F_ALERT_LOW, F_ALERT_HIGH, F_CRITICAL_LOW, F_CRITICAL_HIGH,
+    DISPATCH_NUM_COLS, DISPATCH_STATUS_X_OFFSET, DISPATCH_VALUE_X_OFFSET,
 )
 
 
@@ -314,17 +315,19 @@ _STATE_ABBREV: dict[str, str] = {
     'SHUTDOWN': 'SDN',
 }
 
-_FALLBACK_UNITS: list[tuple[str, str, float, float, float, str | None]] = [
-    ('HART-1', 'ONLINE',   680.0, 700.0, 0.0, None),
-    ('HART-2', 'ONLINE',   300.0, 700.0, 0.0, None),
-    ('RVSD-1', 'ONLINE',   900.0, 900.0, 0.0, None),
-    ('RVSD-2', 'OFFLINE',    0.0, 900.0, 0.0, None),
-    ('RVSD-3', 'STARTING',   0.0, 900.0, 45.0, None),
-    ('THNF-1', 'TRIPPED',    0.0, 900.0, 0.0, None),
-    ('THNF-2', 'SHUTDOWN',   0.0, 900.0, 0.0, None),
-    ('ASHG-1', 'ONLINE',   280.0, 400.0, 0.0, None),
-    ('ASHG-2', 'ONLINE',   400.0, 400.0, 0.0, None),
-    ('DUND-1', 'ONLINE',    65.0,  65.0, 0.0, None),
+# (label, state, output_mw, rated_mw, start_pct, mode, target_mw,
+#  q_actual_mvar, q_target_mvar)
+_FALLBACK_UNITS: list[tuple[str, str, float, float, float, str | None, float, float, float]] = [
+    ('HART-1', 'ONLINE',   680.0, 700.0, 0.0, None,  700.0,  120.0,  120.0),
+    ('HART-2', 'ONLINE',   300.0, 700.0, 0.0, None,  300.0,   80.0,   80.0),
+    ('RVSD-1', 'ONLINE',   900.0, 900.0, 0.0, None,  900.0,  150.0,  150.0),
+    ('RVSD-2', 'OFFLINE',    0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0),
+    ('RVSD-3', 'STARTING',   0.0, 900.0, 45.0, None,   0.0,    0.0,    0.0),
+    ('THNF-1', 'TRIPPED',    0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0),
+    ('THNF-2', 'SHUTDOWN',   0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0),
+    ('ASHG-1', 'ONLINE',   280.0, 400.0, 0.0, None,  245.0,   45.0,   50.0),
+    ('ASHG-2', 'ONLINE',   400.0, 400.0, 0.0, None,  400.0,   90.0,   90.0),
+    ('DUND-1', 'ONLINE',    65.0,  65.0, 0.0, None,   65.0,   10.0,   10.0),
 ]
 
 
@@ -336,18 +339,30 @@ def draw_dispatch_panel(
     grid,
     font_scale: float = 1.0,
 ) -> None:
-    """Unit dispatch panel: full unit fleet as a multi-column grid, state/bar/MW per unit."""
+    """
+    Unit dispatch panel: full unit fleet as a multi-column grid, one row
+    per unit. Row format (ONLINE units): 'LBL  STA  238(245) 45(50) A' —
+    actual MW (target MW in parens), actual MVAr (target MVAr in parens),
+    then an A/M dispatch-mode flag. Actual and target are shown side by
+    side deliberately, not just current output, so a unit whose real
+    output has drifted or been derated away from what was commanded is
+    visible fleet-wide at a glance, not only in its own context panel —
+    see constants.py's UNIT DEVIATION section.
+    """
 
     if state is not None and grid is not None:
-        units: list[tuple[str, str, float, float, float, str | None]] = []
+        units: list[tuple[str, str, float, float, float, str | None, float, float, float]] = []
         for unit in grid.get_active_units():
-            lbl  = unit.label
-            ust  = state.unit_states.get(lbl, 'OFFLINE')
-            out  = state.unit_outputs_mw.get(lbl, 0.0)
-            spct = state.unit_start_progress.get(lbl, 0.0) * 100.0
-            mode = (state.unit_dispatch_modes.get(lbl)
-                    if lbl in state.unit_has_schedule else None)
-            units.append((lbl, ust, out, unit.rated_mw, spct, mode))
+            lbl    = unit.label
+            ust    = state.unit_states.get(lbl, 'OFFLINE')
+            out    = state.unit_outputs_mw.get(lbl, 0.0)
+            spct   = state.unit_start_progress.get(lbl, 0.0) * 100.0
+            mode   = (state.unit_dispatch_modes.get(lbl)
+                      if lbl in state.unit_has_schedule else None)
+            target = state.unit_targets_mw.get(lbl, 0.0)
+            q_act  = state.unit_q_injections_mvar.get(lbl, 0.0)
+            q_tgt  = state.unit_q_target_mvar.get(lbl, 0.0)
+            units.append((lbl, ust, out, unit.rated_mw, spct, mode, target, q_act, q_tgt))
     else:
         units = _FALLBACK_UNITS
 
@@ -359,26 +374,21 @@ def draw_dispatch_panel(
     sp   = int(FONT_SIZE_PANEL * fs)
     hh   = int(_HEADER_H * fs)
     rh   = max(1, int(_ROW_H * fs))
-    bh   = max(2, int(_BAR_H * fs))
     pad  = int(_PAD * fs)
 
     w = surf.get_width()
     h = surf.get_height()
 
-    rows_per_col = max(1, (h - hh) // rh)
     total        = len(units)
-    num_cols     = max(1, -(-total // rows_per_col))  # ceil division
+    num_cols     = DISPATCH_NUM_COLS
+    rows_per_col = max(1, -(-total // num_cols))  # ceil division
     col_w        = w // num_cols
 
     lbl_x_off  = 0
-    sta_x_off  = int(48 * fs)
-    mode_x_off = sta_x_off + int(20 * fs)
-    mode_r     = max(1, int(2 * fs))
-    bar_x_off  = mode_x_off + int(8 * fs)
-    bar_w      = max(4, int(28 * fs))
-    mw_x_off   = bar_x_off + bar_w + int(4 * fs)
+    sta_x_off  = int(DISPATCH_STATUS_X_OFFSET * fs)
+    val_x_off  = int(DISPATCH_VALUE_X_OFFSET * fs)   # start of the MW/MVAr/mode value block
 
-    for i, (lbl, ust, out, rated, spct, mode) in enumerate(units):
+    for i, (lbl, ust, out, rated, spct, mode, target, q_act, q_tgt) in enumerate(units):
         col_i = i // rows_per_col
         row_i = i % rows_per_col
         cx    = col_i * col_w
@@ -392,34 +402,34 @@ def draw_dispatch_panel(
         font.render_to(surf, (cx + pad + lbl_x_off, y), lbl, COL_TEXT_PRIMARY, size=sp)
         font.render_to(surf, (cx + pad + sta_x_off, y), abbr, col, size=sp)
 
-        if mode is not None:
-            mode_col = COL_UNIT_ONLINE if mode == 'AUTO' else COL_ALARM_WARN
-            mode_cx  = cx + pad + mode_x_off + mode_r
-            mode_cy  = y + sp // 2
-            pygame.draw.circle(surf, mode_col, (mode_cx, mode_cy), mode_r)
-
-        bar_x = cx + pad + bar_x_off
-        if ust == 'STARTING':
-            _bar(surf, bar_x, y + 1, bar_w, spct / 100.0, COL_UNIT_STARTING, bar_h=bh)
-        elif ust == 'ONLINE':
-            frac = out / rated if rated > 0 else 0.0
-            _bar(surf, bar_x, y + 1, bar_w, frac, col, bar_h=bh)
-        else:
-            _bar(surf, bar_x, y + 1, bar_w, 0.0, COL_METER_BG, bar_h=bh)
+        mode_char = '' if mode is None else ('A' if mode == 'AUTO' else 'M')
+        mode_col  = COL_UNIT_ONLINE if mode == 'AUTO' else COL_ALARM_WARN
 
         if ust == 'STARTING':
-            mw_str = f'{spct:.0f}%'
-            mw_col = COL_UNIT_STARTING
+            val_str = f'{spct:.0f}%'
+            val_col = COL_UNIT_STARTING
         elif ust == 'ONLINE':
-            mw_str = f'{out:.0f}'
-            mw_col = COL_TEXT_PRIMARY
+            # Deviation tell: actual value != commanded target (drift), or
+            # actual pinned below a lower derated ceiling — either way the
+            # parenthesised target differs from the leading actual number.
+            # Highlighted amber (matching the existing WARN alarm colour)
+            # whenever MW actual and target diverge beyond a tiny rounding
+            # tolerance, so a drifting/derated unit stands out fleet-wide
+            # without needing to open its context panel.
+            deviating = abs(out - target) > 0.5
+            mw_col    = COL_ALARM_WARN if deviating else COL_TEXT_PRIMARY
+            val_str   = f'{out:.0f}({target:.0f}) {q_act:.0f}({q_tgt:.0f})'
+            val_col   = mw_col
         else:
-            mw_str = ''
-            mw_col = COL_TEXT_DIM
+            val_str = ''
+            val_col = COL_TEXT_DIM
 
-        if mw_str:
-            rect = font.get_rect(mw_str, size=sp)
-            font.render_to(surf, (col_end - rect.width, y), mw_str, mw_col, size=sp)
+        val_x = cx + pad + val_x_off
+        if val_str:
+            font.render_to(surf, (val_x, y), val_str, val_col, size=sp)
+        if mode_char:
+            mode_rect = font.get_rect(mode_char, size=sp)
+            font.render_to(surf, (col_end - mode_rect.width, y), mode_char, mode_col, size=sp)
 
     # Column separators
     for c in range(1, num_cols):

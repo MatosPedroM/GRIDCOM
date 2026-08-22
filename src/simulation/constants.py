@@ -24,6 +24,23 @@ DEV_SKIP_INTRO:        bool = True
 VOLTAGE_COLOUR_VIEW:   bool = True  # 'L' toggle — colour lines/substations by voltage tier instead of load
 
 # ─────────────────────────────────────────────
+# DIFFICULTY
+# ─────────────────────────────────────────────
+# General-purpose scalar keyed by the menu's trainee/standard/dispatcher
+# selection (GridSimulation's difficulty: str, set at construction —
+# previously stored but never read by any mechanic). Not scoped to any one
+# feature: any mechanic that wants to scale a rate/magnitude/frequency by
+# player-chosen difficulty should read this rather than inventing its own
+# difficulty dial. A difficulty string not present in this dict resolves
+# to 1.0 (standard) via .get(). First consumer: random unit deviation
+# (derate/drift) chance-per-hour scaling — see UNIT DEVIATION below.
+DIFFICULTY_MULT: dict[str, float] = {
+    'trainee':    0.5,
+    'standard':   1.0,
+    'dispatcher': 1.6,
+}
+
+# ─────────────────────────────────────────────
 # POWER SYSTEM BASE VALUES
 # ─────────────────────────────────────────────
 S_BASE: float = 1000.0          # MVA base for per-unit calculations
@@ -196,13 +213,13 @@ AGC_INTEGRAL_MAX:  float = 60.0   # Anti-windup clamp on integral accumulator (H
                                    # sized to fully close realistic sustained deficits.
 AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
 
-# Unit types eligible for AGC dispatch (fast-response, reservoir-backed units
-# only — run-of-river has no stored head to draw on and is never eligible,
-# on every shift). Per-shift overridable via shift_NN.py's AGC_ELIGIBLE_TYPES
-# — the campaign-wide difficulty curve widens this on early/tutorial shifts
-# (HYDRO + HYDRO_PUMP + CCGT) and narrows it on the hardest shifts (HYDRO
-# only), same mechanism FleetModel.apply_agc_signal()/agc_regulation_state()
-# read live via _sim_const.AGC_ELIGIBLE_TYPES (see units.py).
+# Unit types eligible for AGC dispatch. Fixed for every shift at every
+# difficulty — CCGT and (conventional/cascade) HYDRO are always AGC-capable
+# fast-response plant; not a per-shift or per-difficulty setting. Run-of-
+# river has no stored head to draw on (HYDRO_ROR) and pumped storage is
+# excluded too (HYDRO_PUMP) — neither is ever eligible.
+# FleetModel.apply_agc_signal()/agc_regulation_state() read this live via
+# _sim_const.AGC_ELIGIBLE_TYPES (see units.py).
 AGC_ELIGIBLE_TYPES: frozenset[str] = frozenset({'HYDRO', 'CCGT'})
 
 AGC_SPEED_MULT: float = 1.0  # Per-shift multiplier on AGC_MAX_RATE_MW_S and AGC_KI
@@ -355,6 +372,46 @@ TIME_COMPRESSION:     float = 24.0      # 1 sim hour = 2.5 real minutes — halv
                                          # a first-time player real reaction time (was 1.25
                                          # real min/sim hour, too fast to think->act->observe).
 
+# Minimum time (real seconds — converted to SIM-time seconds below via
+# TIME_COMPRESSION) a line must wait after ANY switch — trip or close,
+# manual or automatic — before it can be switched again. Models real
+# switching/synchrocheck procedure: higher voltage tiers take longer to
+# safely reclose. Scales with difficulty (same trainee/standard/dispatcher
+# keys as DIFFICULTY_MULT above) rather than being a per-shift opt-in —
+# this is a procedural/physical constraint every shift has, not a shift-
+# specific difficulty lever, so every shift gets it automatically at
+# whatever level the player chose. A voltage tier absent from the active
+# difficulty's dict falls back to LINE_RECLOSE_COOLDOWN_DEFAULT_S (no
+# cooldown). See simulation.py's _start_reclose_cooldown() for the lookup
+# (keyed by both self._difficulty and the line's voltage_kv).
+LINE_RECLOSE_COOLDOWN_S_BY_DIFFICULTY: dict[str, dict[float, float]] = {
+    'trainee': {
+        150.0: 3.0  * TIME_COMPRESSION,
+        220.0: 6.0  * TIME_COMPRESSION,
+        400.0: 12.0 * TIME_COMPRESSION,
+    },
+    'standard': {
+        150.0: 5.0  * TIME_COMPRESSION,
+        220.0: 15.0 * TIME_COMPRESSION,
+        400.0: 30.0 * TIME_COMPRESSION,
+    },
+    'dispatcher': {
+        150.0: 15.0 * TIME_COMPRESSION,
+        220.0: 30.0 * TIME_COMPRESSION,
+        400.0: 60.0 * TIME_COMPRESSION,
+    },
+}
+LINE_RECLOSE_COOLDOWN_DEFAULT_S: float = 0.0  # Cooldown for a voltage tier absent from the active dict
+
+# Real seconds the sim clock holds at shift start (T+0) before demand,
+# renewables, and scripted-event timers begin advancing — frequency/AGC/
+# load-flow/voltage keep running normally throughout, so the player sees a
+# live, stable grid rather than a paused screenshot while reading the
+# handover. A UX courtesy, not a difficulty knob — kept short on hard
+# shifts. Per-shift overridable via shift_NN.py's LANDING_FREEZE_S, same
+# pattern as AGC_SPEED_MULT/FREQ_TOLERANCE_MULT.
+LANDING_FREEZE_S: float = 5.0
+
 # ─────────────────────────────────────────────
 # FREQUENCY DYNAMICS
 # ─────────────────────────────────────────────
@@ -385,9 +442,9 @@ FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or belo
 FONT_SIZE_LABEL:          int = 18      # bus/station labels on canvas
 LABEL_PAD_PX:             int = 3       # px — gap between a label and the symbol it labels
 FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
-FONT_SIZE_PANEL:          int = 13      # standard instrument strip text
+FONT_SIZE_PANEL:          int = 15      # standard instrument strip text
 FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
-FONT_SIZE_CONTEXT:        int = 13      # unit context overlay text
+FONT_SIZE_CONTEXT:        int = 15      # unit context overlay text
 
 UNIT_BORDER_W_PX:          int = 3       # px — generation unit square border, normal
 UNIT_BORDER_W_SELECTED_PX: int = 4       # px — generation unit square border, selected
@@ -427,18 +484,42 @@ UNIT_MODE_BADGE_RADIUS_PX: int = 3   # px — AUTO/MANUAL dispatch-mode dot on a
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANEL LAYOUT
 # ─────────────────────────────────────────────
+# Dispatch narrowed 20% (780->624) and Forecast widened 20% (150->180) —
+# Dispatch now always lays out DISPATCH_NUM_COLS (3) fixed columns rather
+# than an auto-computed count, so each column is narrower to match; the
+# freed dispatch width plus forecast's growth is reflected in Alarm, which
+# absorbs the remainder (440->566) to keep the strip spanning exactly
+# NATIVE_WIDTH — Alarm already had headroom to lose or gain width, since
+# its detail text word-wraps to whatever width it's given (_wrap_text()).
 PANEL_FREQ_X:     int = 0
-PANEL_FREQ_W:     int = 240
-PANEL_POWER_X:    int = 240
+PANEL_FREQ_W:     int = 200
+PANEL_POWER_X:    int = 200
 PANEL_POWER_W:    int = 240
-PANEL_DISPATCH_X:  int = 480
-PANEL_DISPATCH_W:  int = 590
-PANEL_FORECAST_X:  int = 1070
+PANEL_DISPATCH_X:  int = 440
+PANEL_DISPATCH_W:  int = 624
+PANEL_FORECAST_X:  int = 1064
 PANEL_FORECAST_W:  int = 180
-PANEL_GENMIX_X:    int = 1250
-PANEL_GENMIX_W:    int = 130
-PANEL_ALARM_X:     int = 1380
-PANEL_ALARM_W:     int = 540
+PANEL_GENMIX_X:    int = 1244
+PANEL_GENMIX_W:    int = 110
+PANEL_ALARM_X:     int = 1354
+PANEL_ALARM_W:     int = 566
+
+# Unit Dispatch panel always lays out this many columns, regardless of unit
+# count or panel height (previously auto-computed as
+# ceil(unit_count / rows_that_fit_vertically) — see draw_dispatch_panel()).
+DISPATCH_NUM_COLS: int = 3
+
+# Within-row x-offsets (px, pre-font_scale), unit label at 0. Tightened from
+# 52/38 alongside DISPATCH_NUM_COLS's move to 3 narrower columns (208px
+# each at PANEL_DISPATCH_W's default) — measured against JetBrainsMono at
+# FONT_SIZE_PANEL: longest label ~41px, status abbreviation ~21px, typical
+# value string 'NNN(NNN) NN(NN)' ~103px, mode flag ~7px. Fits every unit
+# whose MW/MVAr values stay under 4 digits with room to spare; a 4-digit
+# unit (e.g. 1000 MW nuclear) can still clip the trailing mode flag by a
+# character or two — a hard width constraint at 3 columns, not something
+# offset tuning alone can fully absorb.
+DISPATCH_STATUS_X_OFFSET: int = 45   # unit label -> ONL/OFF/STR status abbreviation
+DISPATCH_VALUE_X_OFFSET:  int = 69   # unit label -> MW/MVAr/mode value block
 
 # ─────────────────────────────────────────────
 # SIMULATION SPEED MULTIPLIERS
@@ -462,6 +543,79 @@ WIND_NOISE_STD_FRACTION:   float = 0.03     # Wind forecast noise (target std, b
 SOLAR_NOISE_STD_FRACTION:  float = 0.01     # Solar forecast noise (target std, before rate limiting)
 WIND_NOISE_RAMP_PCT_MIN:   float = 20.0     # Max noise-driven output change, %-of-rated per sim-minute
 SOLAR_NOISE_RAMP_PCT_MIN:  float = 30.0     # Max noise-driven output change, %-of-rated per sim-minute
+
+# ─────────────────────────────────────────────
+# UNIT DEVIATION — operator derate & setpoint drift
+# ─────────────────────────────────────────────
+# Dispatchable units (HYDRO/COAL/NUCLEAR/CCGT — never WIND/SOLAR, which are
+# non-dispatchable) occasionally fail to deliver exactly what's commanded,
+# whether the command came from the Phase 1 schedule (AUTO) or a player's
+# manual setpoint. Two independent event types, each an ONLINE-unit-per-
+# sim-hour probability roll scaled by DIFFICULTY_MULT (see DIFFICULTY
+# above). Rates below are tuned so "standard" difficulty across a ~12-unit
+# online fleet lands close to one combined event every 12-24 sim-hours
+# (30-60 real-minutes at TIME_COMPRESSION=24) — rare and noticeable, not
+# background noise. Per-shift overridable via shift_NN.py, same pattern as
+# AGC_SPEED_MULT.
+#
+# DERATE — a technical fault caps the unit's effective ceiling below its
+# rated/commanded max for a sustained period. The unit still obeys
+# commands, it just can't reach the top until the fault clears (handled
+# by UnitModel.derate()/clear_derate() — see units.py). Raises an INFO
+# alarm naming the unit and an in-fiction reason at the moment it starts;
+# the player must still notice the practical ceiling themselves.
+RANDOM_DERATE_CHANCE_PER_HOUR: float = 0.0025   # per ONLINE dispatchable unit, per sim-hour
+RANDOM_DERATE_PCT_MIN:         float = 10.0     # cap reduction, % of rated_mw
+RANDOM_DERATE_PCT_MAX:         float = 30.0
+RANDOM_DERATE_DURATION_H_MIN:  float = 2.0      # sim-hours the derate holds before clearing
+RANDOM_DERATE_DURATION_H_MAX:  float = 6.0
+#
+# DRIFT — an operator error makes the unit's actual output settle at a
+# different value than commanded and hold there silently (no alarm) —
+# handled entirely via UnitModel's _drift_offset_mw, see units.py. Clears
+# the instant the player re-issues the currently-commanded setpoint, or
+# automatically at the next sim-hour boundary, whichever comes first —
+# never persists across an hour crossing.
+RANDOM_DRIFT_CHANCE_PER_HOUR: float = 0.0025    # per ONLINE dispatchable unit, per sim-hour
+RANDOM_DRIFT_PCT_MIN:         float = 10.0      # offset magnitude, % of target_mw
+RANDOM_DRIFT_PCT_MAX:         float = 30.0
+DRIFT_CLEAR_TOLERANCE_MW:     float = 0.5       # how close a re-command must be to the
+                                                 # already-commanded target to count as
+                                                 # "noticed and re-confirmed" (UnitModel.
+                                                 # _set_target_internal())
+
+# Flavour reasons shown in the derate alarm's detail text (drift is silent,
+# no reason is ever surfaced to the player for it). Mixed technical and
+# wry-comedic per unit type, matching the campaign's dry control-room
+# voice. Sampled via the same seeded per-shift RNG as the trigger roll, so
+# the same shift replay shows the same reason for the same event. Not
+# type-specific beyond this split — every unit of a given type draws from
+# the same pool regardless of station.
+RANDOM_DERATE_REASONS_COAL: tuple[str, ...] = (
+    'boiler tube leak — output capped pending inspection',
+    'coal handling plant fault — bunker feed running short',
+    'induced draught fan vibration — load restricted as a precaution',
+    'condenser cooling water flow below spec',
+    'mill outage — one pulveriser down, full load unavailable',
+)
+RANDOM_DERATE_REASONS_NUCLEAR: tuple[str, ...] = (
+    'feedwater pump running on reduced capacity',
+    'routine reactivity margin check — output held below ceiling',
+    'turbine governor valve partially throttled for maintenance',
+    'condenser vacuum slightly degraded — capped as a precaution',
+)
+RANDOM_DERATE_REASONS_CCGT: tuple[str, ...] = (
+    'gas turbine inlet filter fouling — derated pending a clean',
+    'ambient temperature derate — embarrassingly, it is just too warm today',
+    'HRSG steam drum level instability — output capped',
+    'compressor wash overdue — a few percent efficiency quietly missing',
+)
+RANDOM_DERATE_REASONS_HYDRO: tuple[str, ...] = (
+    'intake trash screen partially blocked — flow restricted',
+    'penstock inspection in progress on one unit',
+    'reservoir level lower than forecast — conserving head',
+    'gate actuator sluggish — full opening not currently available',
+)
 
 # ─────────────────────────────────────────────
 # ALARM DISPLAY
@@ -546,15 +700,16 @@ PLANNING_STATUS_DISPLAY_S:      float = 3.0   # seconds to show status messages
 PLANNING_TABLE_GROUP_GAP:       int   = 4     # px — extra gap before each tech-group header row
 PLANNING_TABLE_VISIBLE_H:       int   = 480   # px — scrollable table viewport height (unit rows only)
 
-# Confirm-time adequacy gate: F10 is refused if any hour's scheduled
-# generation is below load_forecast(h) * (1 + this fraction) — i.e. the plan
-# must carry at least this much spinning-reserve margin above forecast load.
-PLANNING_MIN_RESERVE_MARGIN_FRAC: float = 0.05
-
-# Confirm-time warning (non-blocking): F10 still succeeds, but a yellow
-# warning is shown if any hour's scheduled generation exceeds
-# load_forecast(h) * (1 + this fraction) — an oversized, inefficient margin.
-PLANNING_WARN_RESERVE_MARGIN_FRAC: float = 0.20
+# Planning-grid time resolution, in hours per column (24 columns/day at the
+# default 1.0). Single source of truth for both the planning data model
+# (gameplay/phase1.py's _PLANNING_HOURS, ramp-per-column and cost-per-column
+# math) and the real-time simulation's schedule-boundary detection
+# (simulation.py's _apply_hourly_schedule(), which reads this directly
+# rather than duplicating it — the two must never drift out of sync, since
+# schedule keys are produced exclusively by phase1.py and consumed
+# exclusively there). Tried at 0.5 (half-hourly) — reverted per developer
+# feedback: added clutter without meaningfully improving gameplay.
+PLANNING_STEP_HOURS:            float = 1.0
 
 # ─────────────────────────────────────────────
 # PLANNING PHASE — KEYBOARD SHORTCUTS
@@ -568,6 +723,7 @@ PLANNING_KEY_TECH_MIN:      int   = pygame.K_n                     # fill select
 PLANNING_KEY_TECH_MAX:      int   = pygame.K_m                     # fill selected cell to tech max (+Shift: whole row)
 PLANNING_KEY_ZERO:          int   = pygame.K_BACKSPACE              # fill selected cell to 0 MW (+Shift: whole row)
 PLANNING_KEY_TOGGLE_ONLINE: int   = pygame.K_o                     # toggle selected unit ONLINE/OFFLINE
+PLANNING_KEY_TOGGLE_AGC:    int   = pygame.K_g                     # toggle selected unit's AGC enrollment
 PLANNING_KEY_RESET:         int   = pygame.K_r                     # reset schedule to shift handover dispatch
 PLANNING_KEY_AUTO:          int   = pygame.K_a                     # auto-schedule the full 24h (Ctrl+A)
 PLANNING_KEY_CONFIRM:       int   = pygame.K_F10                   # confirm plan and start the real-time shift
@@ -596,6 +752,17 @@ MIN_DOWN_HOURS_WIND:       float = 0.0
 MIN_UP_HOURS_SOLAR:        float = 0.0
 MIN_DOWN_HOURS_SOLAR:      float = 0.0
 
+# Pooled AGC regulating-reserve target the auto-scheduler tries to leave
+# available on every hour's online, AGC-enrolled CCGT/HYDRO fleet (see
+# PlanningModel.reg_band_up()/reg_band_down()). Both directions (up AND
+# down) must independently clear this value — a combined 2x band could
+# still be entirely one-sided, which would leave AGC unable to regulate
+# the other way. Load coverage (0 MW diff against forecast demand) always
+# takes priority over this reserve if the two ever genuinely conflict
+# (a capacity-scarce fleet/hour) — the auto-scheduler never leaves load
+# uncovered just to manufacture regulating headroom.
+PLANNING_AGC_RESERVE_MW: float = 50.0
+
 # Previous-day boundary state: the auto-scheduler's commitment/ramp logic
 # for hour 00:00 needs a "previous hour" to compare against. Since there
 # is no actual prior day, every non-maintenance dispatchable unit is
@@ -610,6 +777,63 @@ PLANNING_PREV_DAY_FRAC_CCGT:        float = 1.0
 PLANNING_PREV_DAY_FRAC_HYDRO:       float = 1.0
 PLANNING_PREV_DAY_FRAC_HYDRO_ROR:   float = 1.0
 PLANNING_PREV_DAY_FRAC_HYDRO_PUMP:  float = 1.0
+
+# ─────────────────────────────────────────────
+# ECONOMICS (Phase 1 — scheduler budget)
+# ─────────────────────────────────────────────
+# Dummy/placeholder values — this is scaffolding for a real economy later,
+# not a tuned constraint yet. Cost is a per-TECHNOLOGY property (looked up
+# by unit_type), not a per-fleet-unit override — every unit of a given
+# unit_type costs the same to start/run. PLANNING_INITIAL_BUDGET_EUR is
+# deliberately huge so it never blocks a plan at this stage; the per-type
+# cost tables below exist so PlanningModel has something real to sum.
+# Baseline VARIABLE_COST_EUR_PER_MWH_BY_TYPE values carried over from the
+# orphaned COST_MAP that used to live in simulation.py's unused
+# run_forecast_mode().
+STARTUP_COST_EUR_BY_TYPE: dict = {
+    'NUCLEAR':    50000.0,
+    'COAL':       8000.0,
+    'CCGT':       3000.0,
+    'HYDRO':      200.0,
+    'HYDRO_ROR':  0.0,
+    'HYDRO_PUMP': 200.0,
+    'WIND':       0.0,
+    'SOLAR':      0.0,
+}
+VARIABLE_COST_EUR_PER_MWH_BY_TYPE: dict = {
+    'COAL':       45.0,
+    'CCGT':       55.0,
+    'NUCLEAR':    12.0,
+    'HYDRO':      5.0,
+    'HYDRO_PUMP': 5.0,
+    'HYDRO_ROR':  5.0,
+    'WIND':       0.0,
+    'SOLAR':      0.0,
+}
+
+# Flat surcharge (EUR per online hour) for any unit the player has enrolled
+# in AGC (see PlanningModel.agc_enrolled) — the cost of keeping that unit's
+# headroom available for automatic regulation, independent of its fuel cost.
+AGC_AVAILABILITY_COST_EUR_PER_HOUR: float = 150.0
+
+# Difficulty cost multiplier — scales STARTUP_COST_EUR_BY_TYPE,
+# VARIABLE_COST_EUR_PER_MWH_BY_TYPE and AGC_AVAILABILITY_COST_EUR_PER_HOUR
+# uniformly, same trainee/standard/dispatcher keys as DIFFICULTY_MULT
+# (above). Only the COSTS scale — PLANNING_INITIAL_BUDGET_EUR itself does
+# not change with difficulty — so a lower multiplier on trainee stretches
+# the same EUR budget further (a bigger relative cushion), while dispatcher
+# makes every action cost more against that same fixed budget.
+DIFFICULTY_COST_MULT: dict[str, float] = {
+    'trainee':    0.5,
+    'standard':   1.0,
+    'dispatcher': 1.6,
+}
+
+# Starting Phase 1 budget. Deliberately huge for now — large enough that no
+# plan a player could plausibly build against Shift 10's fleet can exceed
+# it, so the budget gate exists (PlanningScreen._confirm_plan) but never
+# actually fires yet. Not scaled by difficulty (see DIFFICULTY_COST_MULT).
+PLANNING_INITIAL_BUDGET_EUR: float = 100_000_000.0
 
 # ─────────────────────────────────────────────
 # SHIFT SCORING (gameplay/scoring.py)

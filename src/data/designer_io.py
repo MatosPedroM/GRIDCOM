@@ -399,6 +399,8 @@ def designer_units_to_fleet(units: list[DesignerUnit]):
             can_pump=u.can_pump,
             active_from_shift=u.active_from_shift,
             description=u.description,
+            min_up_time_h=u.min_up_time_h,
+            min_down_time_h=u.min_down_time_h,
         ))
     return result
 

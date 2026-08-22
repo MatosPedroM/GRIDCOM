@@ -6,11 +6,312 @@
 
 ## Current Stage
 
-**STAGE 37 — Campaign-wide AGC difficulty curve: per-shift eligible types + response speed**
+**STAGE 37 — Campaign-wide AGC: fixed eligible types (CCGT + HYDRO, never per-shift) + per-shift response speed**
 
 ## Current Status
 
-**COMPLETE (playtest pending)** — Session 80 built a per-shift AGC capability curve (which unit
+**COMPLETE** — Session 94: reverted Session 93's half-hourly (48-column) Phase 1 planning grid back
+to hourly (24 columns, 0.0-23.0) — developer's call after trying it: "too clunky and doesn't really
+add much to the game." Because Session 93's implementation was built parametrically on one constant
+(`PLANNING_STEP_HOURS`, constants.py), the revert was a one-line flip back to `1.0` — every formula
+that reads it (`_PLANNING_HOURS` construction, ramp-per-column conversion, cost-rate scaling,
+lookbacks, `simulation.py`'s schedule-boundary detection) mathematically degenerates back to the
+original hourly behavior with no structural changes needed. `PLANNING_HOUR_COL_W` (35->70) and
+`PLANNING_FONT_SIZE` (10->12) reverted to their pre-Session-93 values; `planning_panels.py`'s column
+headers reverted from `HH:MM` back to the bare two-digit hour label, and the screen title dropped its
+"(30-MIN STEPS)" suffix. Session 93's two genuine bug fixes were kept (not step-size-specific,
+existed conceptually at any granularity, just invisible at hourly steps where ramp/shutdown always
+completed within one column): the ramp-safety bound on `auto_schedule()`'s trim-back/force-start/
+substitution passes (reallocated MW is bounded by each unit's actual previous-column MW and ramp
+budget, not just tech_min/tech_max), and the `stacked_by_tech()` fix so `total_gen()`/`difference()`
+count a decommitting unit's shutdown-ramp residual MW (matching what `auto_schedule()`'s own internal
+`covered` accounting already assumed) instead of dropping it once a unit flips OFFLINE.
+`load_schedule_json()`'s defensive granularity check (added in Session 93) also stayed — confirmed
+it correctly rejected the stale 48-column `shift10_hourly.json` left on disk with a clear
+"reconfirm the plan" error rather than silently misbehaving; regenerated that file fresh (24
+columns) as part of this session so the repo isn't left holding a file the new code will reject.
+Verified headless: all 24 hours hit exactly 0.00 MW diff and clear the >=50 MW pooled AGC reserve in
+both directions, same as Session 92/93's checks. 29/29 existing tests pass unchanged.
+- Edited: `src/simulation/constants.py` (`PLANNING_STEP_HOURS`, `PLANNING_HOUR_COL_W`,
+  `PLANNING_FONT_SIZE` reverted), `src/gameplay/phase1.py` (docstring/comment wording reverted to
+  "24 hours"/"hourly", logic unchanged), `src/simulation/simulation.py` (docstring default reverted
+  to 0.0-23.0), `src/display/planning_panels.py` (header format and screen title reverted).
+
+**COMPLETE** — Session 93: converted Phase 1 planning from hourly (24 columns, 0.0-23.0) to
+half-hourly (48 columns, 0.0-23.5) granularity, per developer request — the underlying demand
+forecast is a continuous curve (`get_profile_value()` already interpolates any fractional hour), so
+30-minute dispatch steps track it much more closely than hourly steps allow. New constant
+`PLANNING_STEP_HOURS = 0.5` (constants.py) is the single source of truth for the grid's time
+resolution, read by both `phase1.py` (schedule columns, ramp-per-column and cost-per-column math)
+and `simulation.py` (`_apply_hourly_schedule()`'s schedule-boundary detection) — deliberately one
+shared constant, not two independently-tunable ones, since schedule keys are produced exclusively by
+the former and consumed exclusively by the latter. Six literal-`1.0`/`60.0`/`23.0` sites in
+`phase1.py` that assumed a 1-hour step were converted to reference the constant: `_PLANNING_HOURS`'
+construction, `hourly_cost()`'s and `auto_schedule()`'s previous-column lookbacks, `auto_schedule()`'s
+ramp-MW-per-column conversion, `hourly_cost()`'s fuel/AGC-surcharge cost-rate scaling (both terms now
+multiply by `PLANNING_STEP_HOURS` so 48 columns summed by `total_cost()` don't double-count a full
+day's cost), and `build_planning_model()`'s forecast-fetch bounds. `simulation.py`'s
+`_apply_hourly_schedule()` now snaps `sim_hour` to the nearest `PLANNING_STEP_HOURS` grid point
+(`round(sim_hour * steps_per_hour) / steps_per_hour % 24.0`) instead of truncating to the whole hour
+— verified live/ticked against the real Shift 10 fleet that every half-hour boundary crossing
+resolves correctly and AUTO-mode units' targets snap to the right planned MW at each crossing. This
+also makes drift-clearing (`FleetModel.clear_all_drifts()`, already fired at every detected boundary
+regardless of whether a shift has a Phase 1 schedule) run at half-hour cadence campaign-wide, for
+every shift — confirmed with the developer as an accepted, intentional side effect (shorter-lived
+random deviation events on shifts 1-9), a single unified boundary-crossing concept rather than two
+independent timers. `planning_panels.py`'s column headers now render full `HH:MM` (was a bare
+`int(h)`, which couldn't distinguish `:00` from `:30` columns); `PLANNING_HOUR_COL_W` 70→35px and
+`PLANNING_FONT_SIZE` 12→10px so all 48 columns fit on screen without horizontal scrolling — sizing
+verified by direct `pygame.freetype` measurement against the real JetBrains Mono font (not
+estimated): at 10px, `"1000"` measures 24px against a 31px budget and `"00:00"` measures 30px against
+a 33px budget, both with real margin; 11px was checked and rejected (`"00:00"` measures 34px there,
+already over budget). `load_schedule_json()` gained a defensive granularity check (raises a clear
+`ValueError` if a schedule file's columns don't match the expected 48-entry set) — confirmed this
+can't trigger in normal play (`load_schedule_json()` is only ever called from Phase 2 startup,
+immediately after the same session's `write_schedule_json()`), pure fail-loudly-not-silently defense.
+
+Converting the granularity surfaced two real, previously-dormant bugs in last session's
+`auto_schedule()` rewrite, both invisible at hourly granularity (where ramp/shutdown always completed
+within one column) but exposed once columns are half as wide:
+1. **Ramp-unsafe MW reallocation.** The trim-back, force-start, and substitution passes moved MW
+   between units bounded only by `tech_min`/`tech_max`, with no check against how far a unit could
+   actually move from its own previous-column MW within one column's ramp budget. Fixed by snapshotting
+   each unit's true previous-column MW (`prev_hour_mw`, captured before the forward-fill pass mutates
+   `prev_mw`) at the top of every hour, and bounding every pass's reallocation by
+   `prev_hour_mw ± ramp_mw` in addition to `tech_min`/`tech_max`.
+2. **Scheduler/display MW-accounting mismatch (the more interesting one).** `auto_schedule()`'s
+   internal `covered` running total included a decommitting unit's shutdown-ramp residual (e.g. a 250
+   MW coal unit ramping toward 0 still contributing 25 MW mid-ramp), but `total_gen()`/`difference()`
+   — what the player actually sees as DIFF — only summed units still flagged ONLINE, silently dropping
+   that residual. At hourly granularity a decommitting unit's ramp always fully completed within one
+   column (ramp budgets were 2x larger), so the two views coincidentally agreed; at half-hour
+   granularity they don't always finish in one column, so the scheduler under-committed capacity
+   (correctly reading its own residual as "already partly covering load") while the displayed DIFF
+   didn't count it — producing a real -125 MW residual at Shift 10's hour 0. Developer's call (offered
+   as a choice, not assumed): make DIFF match the scheduler's physically-accurate view rather than the
+   other way around — a unit mid-ramp-down really is still generating that MW. Fixed
+   `stacked_by_tech()` to sum every unit's scheduled MW unconditionally (dropped the `is_online()`
+   gate) rather than only online units'; `planning_panels.py`'s per-cell renderer updated to match
+   (shows the actual MW, not a bare `'-'`, whenever a column's value is nonzero even if flagged
+   OFFLINE). Verified headless post-fix: all 48 Shift 10 columns hit exactly 0.00 MW diff and clear
+   the ±50 MW pooled AGC reserve in both directions, with zero ramp/tech-bound violations re-checked
+   against the new step-aware ramp formula.
+- Edited: `src/simulation/constants.py` (new `PLANNING_STEP_HOURS`, `PLANNING_HOUR_COL_W`/
+  `PLANNING_FONT_SIZE` retuned), `src/gameplay/phase1.py` (six step-length literal fixes,
+  `stacked_by_tech()` residual-counting fix, ramp-safety fix across all three post-fill-order passes,
+  `load_schedule_json()` defensive check), `src/simulation/simulation.py`
+  (`_apply_hourly_schedule()`'s boundary detection), `src/display/planning_panels.py` (HH:MM column
+  headers, cell-value display fix, screen title). 29/29 existing tests pass unchanged.
+
+**COMPLETE** — Session 92: fixed `PlanningModel.auto_schedule()` (Phase 1's Ctrl+A auto-fill
+heuristic) not achieving 0 MW diff in every hour, and added the developer's ±50 MW pooled AGC
+regulating-reserve requirement. Root cause of the diff bug: `desired = min(tech_max, tech_min +
+max(0, shortfall))` (phase1.py, was line 398) added `tech_min` *on top of* the shortfall instead of
+clamping the shortfall into `[tech_min, tech_max]` — e.g. at Shift 10's hour 0, HART-2 (NUCLEAR)
+sized to `min(1000, 600+774.4)=1000` MW when only 774.4 MW more was actually needed, since the
+running `covered` total (and therefore `shortfall`) was already correctly decremented by HART-1's
+own contribution — the bug was purely the formula, not a missing cross-unit lookahead. Fixed to
+`min(tech_max, max(tech_min, shortfall))`. That alone resolved most hours to exactly 0.00 diff but
+left residual overshoot on others (up to ~190 MW) where a "sticky" baseload unit correctly stays
+committed (shedding it would need the shortfall below its own `-tech_min`, not just `<=0`) but then
+overshoots a now-small remaining gap with nothing in fill order able to trim it back — added a
+trim-back pass (walks technologies in reverse fill order, most flexible first, pulling already-
+committed units down toward their own tech_min to absorb overshoot; never forces a unit offline,
+that stays purely a commitment decision). Verified headless against the real Shift 10 fleet: **every
+one of 24 hours now hits DIFF = 0.00 exactly.**
+
+For the ±50 MW pooled AGC reserve (developer's requirement: every hour must leave >=50 MW up AND
+>=50 MW down regulating headroom, pooled across online AGC-enrolled CCGT/HYDRO — matching
+`apply_agc_signal()`'s existing pooled/proportional real-time distribution in units.py, not a
+per-unit floor): added new constant `PLANNING_AGC_RESERVE_MW = 50.0` (constants.py) and two new
+`PlanningModel` methods, `reg_band_up()`/`reg_band_down()` (phase1.py, alongside the existing
+`reg_band()`, which is unchanged and still the combined theoretical band — `reg_band_up(h) +
+reg_band_down(h) == reg_band(h)` always holds). `auto_schedule()` gained two more per-hour passes
+after trim-back: a force-start pass (if the online AGC fleet's *actual remaining* pooled headroom —
+not nominal tech_max-tech_min range, which can be large even when a unit is run flat-out — is short
+of the target in either direction, starts the largest available free-toggle, i.e. no min-up/down,
+AGC-eligible unit at its own midpoint, shedding the same MW from online baseload only, never another
+AGC unit, since shedding an AGC donor just relocates headroom rather than creating any) and a
+substitution pass (swaps MW between already-online AGC and baseload units, net covered MW
+unchanged, to push pooled up/down headroom the rest of the way toward the target). Load coverage (0
+diff) always wins if the two ever conflict — verified this only actually binds at Shift 10's single
+tightest hour (h18, peak load 5090.9 MW net, only 9.1 MW spare across the entire committed fleet
+before the reserve passes ran; after them, legitimately settles at 54 MW up given every other unit
+is otherwise maxed). Verified headless: **all 24 hours clear >=50 MW up and >=50 MW down**, the
+`reg_band_up + reg_band_down == reg_band` invariant holds throughout, and every unit stays within
+`[0, tech_max]` and within its own ramp-rate limit on every hour (re-verified independently of the
+new passes' internal logic). `planning_panels.py`'s summary rows: replaced the single `REG BAND` row
+with `REG UP`/`REG DOWN` (a combined number could hide a lopsided band, e.g. 100 MW all up/0 down —
+exactly what the ±50/±50 requirement guards against), colour-coded red below
+`PLANNING_AGC_RESERVE_MW` mirroring `DIFF`'s own colour-coding (both now driven by a shared
+`callable-or-fixed-colour` row spec instead of `DIFF` being special-cased). No changes needed to
+`to_initial_schedule()`/`to_hourly_dispatch()`/`write_schedule_json()`/Phase 2 handoff — confirmed
+the Shift 10 handover hour (5.0) itself now carries 0 diff and 67.5 MW up/down reserve by
+construction, directly addressing the Session 91 bug report's root scenario (a thin player-confirmed
+margin reaching Phase 2 with no regulating headroom to absorb it).
+- Edited: `src/simulation/constants.py` (new `PLANNING_AGC_RESERVE_MW`), `src/gameplay/phase1.py`
+  (`auto_schedule()` bugfix + three new per-hour passes, new `reg_band_up()`/`reg_band_down()`),
+  `src/display/planning_panels.py` (REG BAND row -> REG UP/REG DOWN rows, colour-coded).
+- 29/29 existing tests pass unchanged (none previously covered `auto_schedule()` — no dedicated
+  planning-phase test file exists yet).
+
+**COMPLETE** — Session 91: fixed a real bug (developer-reported, not a false alarm like Session
+86's) where confirming a Shift 10 Phase 1 plan with a small (~10 MW) reserve margin and hydro/CCGT
+enrolled in AGC would runaway to +500 MW excess generation and an over-frequency shift-fail within
+about 1 second of unpausing at the start of Phase 2. Root cause: `LANDING_FREEZE_S` (the 5-real-
+second pause at shift start, added Session 83 purely so the player can read the handover before
+anything moves) was documented and implemented as freezing only `_sim_time_min` (so demand/
+renewables/hourly-schedule stay put) — frequency integration and AGC were left running live at full
+`dt_sim_seconds` every tick throughout the freeze, per `tick()`'s own old comment ("Frequency/AGC/
+load flow/voltage below still run normally throughout"). At ~60 real fps with `SIM_TICK_INTERVAL_S`
+= 0.1s and `TIME_COMPRESSION` = 24, that's ~50 full AGC/frequency ticks (~120 sim-seconds of
+integration) compressed into the 5-second freeze, all against a completely static imbalance (nothing
+else is moving), with the sim clock visibly frozen the whole time from the player's perspective.
+`_agc_integral` has no time-based decay (only the deadband zeroes it), so it grew every one of those
+~50 ticks against the unchanging error — the same "unbounded time to accumulate against a static
+error" pathology Session 82 diagnosed once before for a different (now-removed) time window. Shift
+10's own 10-sustained-second over-frequency fail condition, and `_update_blackout_state`'s clamp-
+sustain timer, both also used the unfrozen `dt_sim_seconds`, so a fail could trigger before the sim
+clock had moved at all. This was never caught by Session 83's own headless verification of the
+freeze because that verification drove `sim.tick()` directly without ever calling
+`tick_real_seconds()` — per the freeze's own documented fallback, a caller that never calls
+`tick_real_seconds()` sees the freeze as already cleared, so that tuning pass never actually
+exercised live-freeze AGC behaviour. Fix: gated the frequency update (and therefore droop/AGC, which
+derive from it), `_update_blackout_state`'s clamp-sustain accrual, and `_update_fail_conditions`'s
+`sustained_s` accrual all behind the same `freeze_active` flag `tick()` already computes for
+`_sim_time_min` — load flow and voltage still resolve every tick during the freeze so the canvas
+doesn't look stale, but nothing that can end the shift advances until the freeze clears. Verified
+headlessly (constructing a `GridSimulation` for Shift 10 and driving it through
+`tick_real_seconds()`/`tick()` in the same pattern `main.py`'s loop uses) that frequency now holds
+at exactly 50.0000 Hz for the full freeze with a realistic ~10 MW starting margin, AGC only begins
+correcting once the freeze clears, and the shift no longer fails. Existing `AGC_INTEGRAL_MAX`/
+`AGC_KI`/ramp-rate constants were left untouched — the bug was when AGC was allowed to run, not its
+tuning. The Phase 1 reserve-margin confirm gate removed in Session 86, and Shift 10's hardcoded
+`INITIAL_SCHEDULE` safety margin removed in Session 89, were both left as-is (out of scope) — this
+fix makes the freeze itself safe regardless of the player's starting margin, rather than
+reintroducing a margin floor upstream. All 29 existing tests still pass unchanged (none previously
+covered the landing freeze). See `src/simulation/simulation.py`'s `tick()` (search
+`freeze_active`), `_update_blackout_state()`, and `_update_fail_conditions()`.
+
+**COMPLETE** — Session 90: Unit Dispatch panel now always lays out 3 fixed columns (was an
+auto-computed count, usually landing on 2) — `DISPATCH_NUM_COLS` (constants.py). `PANEL_DISPATCH_W`
+narrowed 20% (780→624), `PANEL_FORECAST_W` widened 20% (150→180); Alarm absorbs the remaining width
+delta (440→566) so the instrument strip still spans exactly `NATIVE_WIDTH` with no gap. Narrower
+208px columns caused real label/status/value text overlap at the old hardcoded offsets — fixed by
+adding two new tunable constants (`DISPATCH_STATUS_X_OFFSET`, `DISPATCH_VALUE_X_OFFSET`, replacing
+inline `52`/`38` magic numbers in `panels.py`) and retuning them against measured JetBrainsMono
+glyph widths; a 4-digit-MW unit (e.g. 1000 MW nuclear) still fits tightly rather than with margin —
+a hard width constraint at 3 columns, not something offset tuning alone fully resolves. See Session
+90 below.
+
+**COMPLETE** — Session 89: removed `shift_10.py`'s hardcoded `INITIAL_SCHEDULE` — per developer
+directive, no shift should hand-author a starting dispatch. Shift 10 already routes through Phase 1
+before real-time play, so the confirmed plan's `start_hour` column was always the actual source of
+Phase 2's handover dispatch; `INITIAL_SCHEDULE` only ever fed the Planning screen's *default* (pre-
+edit) seed. That default is now generic and blank — every dispatchable unit starts OFFLINE at 0 MW
+— rather than the shift's hand-tuned narrative dispatch (Hartwell at its 400 MW floor, one Brackby
+unit running, Stourbrook/Welbeck deliberately cold). Developer confirmed a generic blank default is
+fine; the narrative shape (Stourbrook/Welbeck cold at story-open) doesn't need reproducing — it's
+simply true by default now rather than an authored fact. Scope was deliberately limited to Shift 10
+(the only shift with a real `INITIAL_SCHEDULE` — shifts 1-9 are stubs with none) — left the general
+`initial_schedule` config plumbing (`loader.py`'s `getattr` fallback, Shift Builder's editable-field
+support) in place, since it's already inert for every current shift and removing it campaign-wide is
+a separate, bigger decision the developer explicitly deferred. See Session 89 below.
+
+**COMPLETE** — Session 88: fixed a wasted-work bug found while investigating a developer report of
+"huge generation excess after Phase 1" (that report turned out to be a real plan-imbalance case with
+no code bug — see Session 86/87 notes below — but tracing it surfaced this separate issue). The
+DIFFICULTY_SELECT menu was building a full `GridSimulation` from the shift's default
+`INITIAL_SCHEDULE` immediately on ENTER, before BRIEFING/PLANNING even ran — for Shift 10
+(`USES_PLANNING`), that instance was always thrown away unused the moment the player confirmed
+Phase 1, since `_on_plan_complete()` unconditionally rebuilds `sim`/`grid`/`renderer`/`state` from
+the plan. Confirmed via trace this was dead work only (Phase 2 always correctly played the Phase 1
+plan, never the shift file's default), not a correctness bug — but confusing to read and wasteful
+(a full load-flow solve discarded every time). Deferred the build: DIFFICULTY_SELECT no longer
+constructs `sim`/`grid`/`renderer` at all, just sets `shift`/`difficulty` and proceeds to BRIEFING;
+the existing startup-built `renderer` (already shift-agnostic for menu/text screens) carries
+through unchanged. BRIEFING's non-planning branch (`else: game_state = GameState.PLAYING`) gained
+the build it was implicitly relying on the DIFFICULTY_SELECT one for — now builds `sim`/`grid`/
+`renderer`/`state` itself right before PLAYING, same pattern `_on_plan_complete()` already uses
+(`SPEED_PAUSE`, `sim_accum = 0.0`). Also fixes the same latent gap in the dormant, currently
+unreachable `CAMPAIGN_INTRO` → `BRIEFING(shift=1)` path (no state transitions into
+`CAMPAIGN_INTRO` today — confirmed via grep — so this is a correctness improvement for if it's ever
+re-enabled, not a live fix). See Session 88 below.
+
+**COMPLETE** — Session 87: `AGC_ELIGIBLE_TYPES` (CCGT + HYDRO) is now fixed campaign-wide — the
+per-shift override mechanism (`shift_NN.py`'s own `AGC_ELIGIBLE_TYPES`, and the "widen on tutorial
+shifts / narrow on hard shifts" difficulty-curve framing) is gone entirely. Shift 10's
+`AGC_ELIGIBLE_TYPES = {HYDRO}` override, which had deliberately excluded CCGT (Ashgrove/Welbeck) as
+a difficulty choice, is removed — Ashgrove/Welbeck are now AGC-eligible there too, same as every
+other shift. `AGC_SPEED_MULT` (response speed, a separate knob) is untouched and still
+per-shift-overridable — Shift 10 keeps its 0.5x. See Session 87 below.
+
+**COMPLETE** — Session 86: removed the Phase 1 planning screen's reserve-margin confirm gate
+(`PLANNING_MIN_RESERVE_MARGIN_FRAC`/`PLANNING_WARN_RESERVE_MARGIN_FRAC` — the screen no longer
+blocks or warns on how much spinning reserve a plan carries at all) and replaced it with scheduler
+economics: dummy per-`unit_type` startup/fuel/AGC-availability costs (`constants.py`), a
+deliberately huge starting budget so it never blocks yet, and a new confirm-time gate on total plan
+cost vs. budget instead. Also added per-unit AGC enrollment to the Planning screen — the player now
+picks which specific AGC-eligible units actually regulate in Phase 2 (not just the shift-wide type
+list), closing a pre-existing gap where Phase 1 → Phase 2 had no AGC handoff at all. See Session 86
+below.
+
+**COMPLETE** — Session 85: two follow-ups to Session 84's Shift 10 work. (1) Cleared
+`shift_10.py`'s `SCRIPTED_EVENTS` to an empty list while the grid itself is still being reworked
+— narrative comments (module docstring, `INITIAL_SCHEDULE` reasoning) left intact, a short note
+marks where the storm/unit-commitment/voltage event beats will be rebuilt later. (2) Moved the
+line reclose cooldown off the per-shift-override pattern entirely: it's a procedural/physical
+constraint every shift has, not a shift-specific difficulty lever, so `LINE_RECLOSE_COOLDOWN_S_BY_VOLTAGE`
+(shift-authored) became `LINE_RECLOSE_COOLDOWN_S_BY_DIFFICULTY` (constants.py, keyed by
+trainee/standard/dispatcher — same keys as `DIFFICULTY_MULT`) — trainee 3/6/12s,
+standard 5/15/30s, dispatcher 15/30/60s (150/220/400kV). Every shift now gets this automatically
+at whatever difficulty the player picked; nothing to declare per-shift. See Session 85 below.
+
+**COMPLETE (playtest pending)** — Session 84 added a new campaign-wide mechanic: random unit
+deviation (operator derate/setpoint drift), plus a general-purpose difficulty multiplier
+(`DIFFICULTY_MULT`, keyed off the trainee/standard/dispatcher menu selection, previously
+completely inert) and a dispatch-panel/fleet-wide setpoint-vs-actual display upgrade. Forward-
+looking — no shift 1-9 exists yet to activate it, engine capability + per-shift override
+constants only. **Also found and flagged (not fixed) a pre-existing bug**: `simulation.py`'s
+overload-cascade-trip branch references an undefined `pv_buses` name (`NameError` if a line
+actually trips from sustained overload) — confirmed present in the last committed version before
+this session's changes, unrelated to anything built here. See Session 84 details below.
+
+Session 83 rebuilt Shift 10 entirely: developer feedback after
+Session 82's fix was that the underlying problem was structural, not missing warnings — an
+overnight downslope shift is inherently the easiest possible grid state (AGC alone tracks a
+gentle falling demand curve, no line ever nears its rating, reactive power never matters since the
+voltage solver has zero coupling to line loading). Rebuilt around the morning demand ramp instead
+(steepest, most sustained rise in `DEMAND_PROFILE_NORMALISED`), grew the fleet substantially
+(anchor capacity 5100MW: Hartwell 2x1000MW nuclear, Brackby+new Stourbrook 3x250MW coal each,
+Ashgrove+new Welbeck 2x400MW CCGT each; plus 7 new small renewables ~233MW, clustered on a storm
+corridor), grew the grid to ~4003MW peak demand (46 buses/69 lines/19 units, up from 31/42/11), and
+added two new engine mechanics: a line reclose cooldown (15/30/60 real-s by voltage tier) and a
+short landing-freeze at shift start. See Session 83 details below — this session's rebuild
+supersedes Session 82's Act-1-warning fix (the old 31-bus grid and its scripted events no longer
+exist).
+
+Session 82 diagnosed and fixed Shift 10 Act 1 feeling inert (historical — grid/schedule since
+replaced by Session 83, mechanism analysis below still accurate for understanding AGC's behavior):
+developer played several real minutes with frequency pinned at 50Hz and nothing requiring action.
+Root cause (confirmed via headless `GridSimulation` trace, not guessed): AGC's PID integral term
+has effectively unlimited time to close the gentle overnight demand ramp regardless of
+`AGC_SPEED_MULT`, so it invisibly absorbs the whole plateau — then a do-nothing player hits a
+near-vertical cliff at T+131 sim-min (hydro bottoms out at its technical-minimum floor, frequency
+runs from 50→55 Hz hard clamp in ~45 real-seconds) with only one soft, non-urgent warning
+beforehand. Fix: two new condition-gated `SCRIPTED_EVENTS` in `shift_10.py` (WARNING at T+108,
+CRITICAL at T+124) keyed on combined Merefield/Clunwell output via the existing
+`UNIT_OUTPUT_MW_SUM` condition metric — no simulation or display code changes needed, the
+Power Balance panel's REG BAND gauge already existed and already showed this exact number, it
+just had nothing telling the player to look at it. See Session 82 details below.
+
+Session 81 fixed three voltage-topology violations in
+`shift10.json` found during a developer review: units wired directly to 150kV (CLUN-1/CLUN-2),
+lines skipping the 220kV tier between 400kV and 150kV (L06, L22, old L23), and a near-total lack
+of backbone redundancy (every corridor single-circuit except the deliberate MDFD-TARN pair). See
+Session 81 details below.
+
+Session 80 built a per-shift AGC capability curve (which unit
 types AGC may dispatch, and how fast it responds), replacing the single global `{HYDRO, CCGT}`
 eligible set and fixed PID gains that applied identically to every shift. Shift 10 "The Bad
 Night" now runs AGC as HYDRO-only and sluggish (`AGC_SPEED_MULT = 0.35`) for its entire duration
@@ -73,6 +374,630 @@ Session 65 re-tuned Shift 4 against the now-stable solver (Session 64) and lande
 - Created: `src/display/planning.py` (`PlanningScreen`), `src/display/planning_panels.py` (`draw_planning` + plot/table/summary/edit-overlay drawing).
 
 ## Session Log
+
+### Session 90 (Unit Dispatch: fixed 3-column layout, -20% panel width; Forecast +20% width)
+
+- **Developer directive**: Unit Dispatch panel had "2 columns," add a 3rd and reduce the panel's
+  total width by 20%; give that 20% to the Forecast panel. Clarified first that Dispatch's column
+  count was actually auto-computed (`ceil(unit_count / rows_that_fit_vertically)`, not a fixed
+  constant) — confirmed the ask was to force exactly 3 fixed columns, not merely let the existing
+  auto-layout land there.
+- **Panel width/position** (`constants.py` INSTRUMENT STRIP PANEL LAYOUT): `PANEL_DISPATCH_W`
+  780→624 (-20%), `PANEL_FORECAST_W` 150→180 (+20%). Since Dispatch's loss (156px) and Forecast's
+  gain (30px) don't net to zero, repositioned every panel from Forecast rightward and grew
+  `PANEL_ALARM_W` 440→566 to absorb the 126px remainder — Alarm already had documented slack (its
+  detail text already word-wraps to whatever width it's given). Confirmed the strip still spans
+  exactly `NATIVE_WIDTH` (1920px) end to end with no gap.
+- **Fixed 3-column layout**: new `DISPATCH_NUM_COLS = 3` constant; `draw_dispatch_panel()`
+  (`display/panels.py`) now derives `rows_per_col = ceil(unit_count / DISPATCH_NUM_COLS)` (columns
+  fixed, rows follow) instead of the old direction (rows fixed by panel height, columns follow) —
+  same per-unit column/row placement math otherwise unchanged.
+- **Overlap regression found and fixed**: rendered the new 208px-wide columns (headless, real
+  JetBrainsMono font) and found real text overlap — the existing hardcoded `sta_x_off=52`/
+  `val_x_off=90` offsets (sized for the old ~390px columns) left too little room for the
+  `'MW(target) MVAr(target)'` value string before the trailing A/M mode-flag character, and status
+  abbreviations were crowding unit labels too. Measured actual glyph widths (longest label ~41px,
+  status ~21px, typical value string ~103px, mode flag ~7px) and added two new tunable constants —
+  `DISPATCH_STATUS_X_OFFSET` (45) and `DISPATCH_VALUE_X_OFFSET` (69), replacing the inline `52`/`38`
+  literals in `panels.py` — per developer preference for a constants.py-tunable fix over shrinking
+  the font or dropping data from the row. Iterated three times against rendered screenshots to land
+  on values with real clearance for typical (3-digit MW) units; flagged that a 4-digit-MW unit
+  (Hartwell nuclear, 1000 MW) still fits tightly rather than with margin — the full label+status+
+  value+mode content (~199px) is close to the 196px usable column width at that width tier, a hard
+  constraint at 3 columns that offset tuning can minimize but not fully eliminate without shortening
+  the value format itself (an option the developer didn't choose).
+- **Verified**: rendered `draw_dispatch_panel()` headlessly at the real 624px width against Shift
+  10's actual 24-unit fleet (real JetBrainsMono font, not a substitute) — confirmed 3 even columns
+  (8/8/8 units), no label/status overlap, typical-value rows fully legible, worst-case 4-digit rows
+  legible though tight. Rendered `draw_forecast_panel()` at the new 180px width — TIME/LOAD/WIND/
+  SOLAR columns comfortably spaced. `python -m pytest tests/` — 29/29 pass (unrelated pre-existing
+  warnings only). `main.py`/`panels.py` import cleanly.
+- **Not done this session**: no live (non-headless) playtest in a real fullscreen window; the
+  4-digit-MW tight-fit edge case (Hartwell) not further addressed since the developer's chosen fix
+  (offset tuning only) has a hard ceiling there.
+- **Files changed**: `src/simulation/constants.py`, `src/display/panels.py`.
+
+### Session 89 (Removed shift_10.py's hardcoded INITIAL_SCHEDULE — Planning screen now seeds blank)
+
+- **Developer directive**: "no shift should have a hardcoded initial schedule." Investigated scope
+  first — only `shift_10.py` actually defines `INITIAL_SCHEDULE` (shifts 1-9 are all placeholder
+  stubs with none, reverted in the prior "Stage 36-37" commit); traced every read site
+  (`loader.py`, `main.py`, `simulation.py`/`units.py`, `phase1.py`, Shift Builder's
+  `CAMPAIGN_EDITABLE_FIELDS`) and confirmed removing it naively (no substitute) would start every
+  dispatchable unit OFFLINE at 0 MW campaign-wide — a dead-grid regression for any shift lacking a
+  Phase 1 screen to fill the gap. Shift 10 is the one shift where this is safe, since it already
+  routes through Phase 1 (`USES_PLANNING = True`) before real-time play begins.
+- **Developer clarified the design**: the Phase 1 confirmed plan's `start_hour` column should be the
+  *only* source of Phase 2's handover dispatch (already true — `to_initial_schedule()` already reads
+  exactly that column); `INITIAL_SCHEDULE` only ever fed the Planning screen's own default (pre-
+  player-edit) seed, and a generic blank default there is fine — the Stourbrook/Welbeck-start-cold
+  narrative doesn't need reproducing on purpose, it's simply true by default now.
+- **Removed**: `shift_10.py`'s `INITIAL_SCHEDULE` dict and its ~26-line hand-tuning comment block
+  (three iterative margin drafts against headless traces, narrative reasoning for which units start
+  online/offline) — replaced with a short comment pointing at Phase 1 as the actual dispatch source.
+  `gameplay/phase1.py`'s `_default_init_schedule()` no longer reads `cfg['initial_schedule']` at
+  all — every dispatchable unit is seeded OFFLINE at 0 MW unconditionally, for every hour. Since the
+  function no longer needs shift config, dropped its now-pointless `shift_number`/`cfg` parameters
+  (and the `load_shift_config()` call they triggered) — updated both call sites
+  (`build_planning_model()`, `PlanningModel.reset()`) and `reset()`'s own now-unused
+  `shift_number` parameter; `display/planning.py`'s `[R]` key handler updated to call
+  `reset()` with no argument and its status message corrected from "reset to shift handover
+  dispatch" (no longer accurate) to "reset — all units OFFLINE."
+- **Scope deliberately limited to Shift 10** (developer's explicit choice, offered as an option):
+  left `loader.py`'s `'initial_schedule': getattr(mod, 'INITIAL_SCHEDULE', {})` fallback,
+  `data/shift_io.py`'s `ShiftDefinition.initial_schedule`/Shift Builder editable-field support, and
+  `main.py`'s `cfg['initial_schedule']` read in `_make_sim_and_renderer()` all untouched — all
+  already inert for every current shift (each resolves to `{}`), and removing that plumbing
+  campaign-wide (plus deciding what non-planning shifts 1-9 will use instead once rebuilt) was
+  explicitly deferred as a separate, bigger decision.
+- **Verified**: built the Shift 10 `PlanningModel` fresh — confirmed zero dispatchable units online
+  at any hour by default (`total_gen(5.0)` = 113.4 MW, exactly the renewable-only forecast
+  contribution; `to_initial_schedule()` returns `{}`); edited a unit online then called `reset()` —
+  correctly returned to the all-OFFLINE blank state; confirmed `load_shift_config(10)`'s
+  `initial_schedule` key is now always `{}`; simulated a full player plan (started both Ashgrove
+  CCGT units) through `write_schedule_json()`/`load_schedule_json()` and confirmed the round-tripped
+  dispatch contains exactly and only what the player explicitly set, nothing left over from any
+  hardcoded default. `main.py`/`phase1.py`/`shift_10.py` all parse and import cleanly.
+- **Not done this session**: no live (non-headless) playtest of Shift 10's Planning screen with the
+  new blank default; no re-tuning of Shift 10's difficulty now that the handover margin is entirely
+  player-determined rather than pre-set close to AGC's own downward authority (the prior tuning
+  reasoning documented three iterative drafts against headless traces — that specific tuning no
+  longer applies since there's no longer a fixed starting point to tune).
+- **Files changed**: `src/gameplay/shifts/shift_10.py`, `src/gameplay/phase1.py`,
+  `src/display/planning.py`.
+
+### Session 88 (Deferred sim/grid build until after Phase 1 confirms — removed a throwaway GridSimulation construction)
+
+- **Developer report investigated**: "after Phase 1, the game starts with a huge excess of
+  generation vs. load that was visible on the planning screen." Traced the full Phase 1 → Phase 2
+  handoff (`PlanningModel.to_initial_schedule()`/`to_hourly_dispatch()` → `write_schedule_json()` →
+  `load_schedule_json()` → `_make_sim_and_renderer()` → `GridSimulation.__init__` → `FleetModel`
+  seeding → first-tick `_apply_hourly_schedule()`) and found it faithful end to end — Phase 2 always
+  starts with exactly the numbers the Planning screen's `start_hour` column held, and demand/
+  renewables are computed identically in both phases from the same shift config. No data-flow bug.
+  Root cause of the reported symptom: the confirm-time reserve-margin gate removed in Session 86 was
+  never replaced with anything, so a plan left imbalanced (e.g. both Hartwell nuclear units at full
+  1000 MW instead of their ~400 MW floor) now confirms with one keypress and Phase 2 correctly
+  starts exactly that far out of balance — reconstructed the case, +812 MW / +44.6% excess at hour
+  5:00 against Shift 10's grid. Developer confirmed the Planning screen's existing red `DIFF` row
+  colouring (already in `planning_panels.py`, unchanged) is sufficient signal — declined a new
+  warning or block, so no economics/gating change was made.
+- **Real bug found in the course of that trace**: developer then asked directly whether
+  `shift_10.py`'s `INITIAL_SCHEDULE` is used during real-time play. Confirmed it is NOT — Phase 2
+  always plays the Phase 1 plan when the player went through Planning — but tracing the question
+  surfaced that the DIFFICULTY_SELECT menu (`main.py`) was building a full `GridSimulation` from
+  that default `INITIAL_SCHEDULE` immediately on ENTER, before BRIEFING/PLANNING even ran. For
+  Shift 10 (`USES_PLANNING`), that instance's `state = sim.get_state()` was captured and then never
+  read (BRIEFING only calls `renderer.tick_text_screen()`, which doesn't touch `sim`) before
+  `_on_plan_complete()` unconditionally overwrote `sim`/`grid`/`renderer`/`state` from the confirmed
+  plan — a full load-flow solve and `GridSimulation` construction thrown away unused every time.
+  Not a correctness bug (verified: the discarded instance's numbers never leaked into what Phase 2
+  actually played), but wasteful and confusing to read.
+- **Fix**: DIFFICULTY_SELECT's ENTER handler no longer calls `_make_sim_and_renderer()` at all —
+  only sets `shift`/`difficulty` and proceeds to BRIEFING; the `renderer` already built at game
+  startup (shift-agnostic for menu/text screens, confirmed by checking `tick_menu_screen()`/
+  `tick_text_screen()` never read `sim`/`grid`) carries through unchanged. BRIEFING's non-planning
+  branch (`else: game_state = GameState.PLAYING`, previously assumed `sim` already existed from
+  DIFFICULTY_SELECT) now builds `sim`/`grid`/`renderer`/`state` itself right before PLAYING, same
+  pattern `_on_plan_complete()` already uses (`SPEED_PAUSE`, `sim_accum = 0.0`). The PLANNING branch
+  is unaffected — it already builds for real, exactly once, in `_on_plan_complete()`.
+- **Verified**: confirmed via grep that `GameState.CAMPAIGN_INTRO` (a second path that reaches
+  `BRIEFING(shift=1)`, a non-planning shift, without ever going through DIFFICULTY_SELECT) is
+  currently unreachable — no code transitions into it — so this fix also silently corrects a latent
+  gap in that dormant path (it would previously have hit `GameState.PLAYING` with no `sim` built at
+  all) without that being a live, currently-exercised bug today. Confirmed the PLANNING state's own
+  ESC/abandon-to-menu path never reads `sim`/`grid` either, so nothing else implicitly depended on
+  the removed early build. `main.py` parses, compiles, and imports cleanly;
+  `inspect.signature(_make_sim_and_renderer)` confirms the call sites still match.
+- **Not done this session**: no live (non-headless) playtest of the corrected DIFFICULTY_SELECT →
+  BRIEFING → PLAYING flow in a real fullscreen window; the underlying "confirm an imbalanced Phase 1
+  plan with no warning" behavior stands as designed per the developer's explicit decision this
+  session, not revisited.
+- **Files changed**: `src/main.py` only.
+
+### Session 87 (AGC eligible types fixed campaign-wide — CCGT + HYDRO on every shift/difficulty, no more per-shift narrowing)
+
+- **Developer directive**: CCGT and (conventional/cascade) HYDRO units are always AGC-eligible, no
+  matter the shift or the difficulty level. Confirmed in follow-up: this overrides Shift 10's
+  existing design (which had deliberately excluded CCGT), HYDRO_PUMP is NOT included in the always-
+  eligible floor (stays a normal type, currently never eligible since no shift widens beyond
+  CCGT/HYDRO), and the whole "campaign-wide AGC difficulty curve" concept documented in
+  `constants.py` (never actually implemented beyond Shift 10's one narrowing case) is removed rather
+  than kept as an unused per-shift-override capability.
+- **`AGC_ELIGIBLE_TYPES` is no longer per-shift-overridable**: removed `shift_10.py`'s
+  `AGC_ELIGIBLE_TYPES = frozenset({'HYDRO'})` override (Ashgrove/Welbeck CCGT are now AGC-eligible
+  on Shift 10 too, same as every other shift) — `AGC_SPEED_MULT = 0.5` (response speed, a separate
+  knob) is untouched, Shift 10 keeps its slower AGC response. Removed the `'agc_eligible_types'` key
+  from `loader.py`'s `load_shift_config()` dict entirely (and its docstring entry, and the
+  now-unused `_AGC_ELIGIBLE_TYPES_DEFAULT` import) — `constants.py`'s `AGC_ELIGIBLE_TYPES` is now
+  read directly wherever eligibility is checked, with no shift-level indirection. Removed the
+  dead `_const.AGC_ELIGIBLE_TYPES = cfg.get('agc_eligible_types', ...)` reassignment from
+  `main.py`'s `_make_sim_and_renderer()`/`_make_shift_test()` (always resolved to the same fixed
+  default now that no shift sets it); `_make_designer_test()` keeps its explicit reset-to-default
+  line since it has no `cfg` to read from. `PlanningModel.agc_eligible_types` (Phase 1) keeps its
+  field — still the one place `is_agc_eligible()`/`reg_band()`/`hourly_cost()` read from — but
+  `build_planning_model()` no longer passes a per-shift value, so it always resolves to the fixed
+  constant. Updated stale comments in `units.py` (`apply_agc_signal()`, `_agc_excluded_units`),
+  `simulation.py` (`AGC_EXCLUDE_UNITS` handler), and `data/shift_io.py`'s module docstring that
+  described eligibility as shift-configurable.
+- **Verified headlessly**: `load_shift_config(10)` no longer has an `'agc_eligible_types'` key;
+  `constants.AGC_ELIGIBLE_TYPES` is the fixed `{HYDRO, CCGT}`; built the Shift 10 `PlanningModel`
+  and confirmed all 4 CCGT units (`ASHG-1/2`, `WELB-1/2`) are now `is_agc_eligible() == True` and
+  enrolled by default (previously ineligible under the old `{HYDRO}` override), all 7 HYDRO units
+  stay eligible, `reg_band(5.0)` correctly grew from 108 MW to 708 MW once CCGT's much larger
+  regulating range is counted. `main.py`/`gameplay/shifts/loader.py`/`shift_10.py` all still import
+  and parse cleanly.
+- **Not done this session**: no live (non-headless) playtest of Shift 10 with CCGT now
+  AGC-regulating — the shift's own "brutal, no eased-in opening" difficulty target was tuned
+  against CCGT being player-only, so this may soften the shift's difficulty in practice and could
+  need re-tuning (flagged, not addressed).
+- **Files changed**: `src/simulation/constants.py`, `src/gameplay/shifts/shift_10.py`,
+  `src/gameplay/shifts/loader.py`, `src/main.py`, `src/gameplay/phase1.py`, `src/simulation/units.py`,
+  `src/simulation/simulation.py`, `src/data/shift_io.py`.
+
+### Session 86 (Phase 1 scheduler: removed reserve-margin gate, added dummy economics + per-unit AGC enrollment)
+
+- **Reserve-margin gate removed**: developer feedback — requiring +5% generation-over-load at
+  confirm time was fighting the wrong problem; the shape it forced at confirm time didn't help once
+  Phase 2 started, since frequency can't be corrected in time regardless. Deleted
+  `PlanningModel.hours_below_min_reserve()`/`hours_above_warn_reserve()`,
+  `PLANNING_MIN_RESERVE_MARGIN_FRAC`/`PLANNING_WARN_RESERVE_MARGIN_FRAC` (`constants.py`), and the
+  two-tier block/warn logic in `PlanningScreen._confirm_plan()`. F10 no longer checks reserve margin
+  at all.
+- **Scheduler economics (dummy values, scaffolding only) — per-technology, not per-unit**: first
+  pass added `startup_cost`/`variable_cost_per_mwh` fields directly on `GenerationUnit`/
+  `DesignerUnit`; developer feedback corrected this — cost should be a per-TECHNOLOGY property
+  (looked up by `unit_type`), not authored per individual fleet unit, so those fields were removed
+  again. `constants.py` ECONOMICS section: `STARTUP_COST_EUR_BY_TYPE`,
+  `VARIABLE_COST_EUR_PER_MWH_BY_TYPE` (baseline carried over from the orphaned, never-called
+  `COST_MAP` that used to live in `simulation.py`'s `run_forecast_mode()`),
+  `AGC_AVAILABILITY_COST_EUR_PER_HOUR`, and a new `DIFFICULTY_COST_MULT` (trainee 0.5x / standard
+  1.0x / dispatcher 1.6x, same keys as `DIFFICULTY_MULT`) that scales all three cost tables
+  uniformly — per developer instruction, the multiplier scales costs only, never
+  `PLANNING_INITIAL_BUDGET_EUR` itself, so a cheaper difficulty stretches the same fixed budget
+  further rather than granting a bigger number outright. `PlanningModel` gained `budget_eur`,
+  `difficulty` (threaded from `main.py`'s menu-selected difficulty into `build_planning_model()`),
+  `hourly_cost()` (fuel + AGC surcharge for enrolled units + startup cost on offline→online
+  transitions, each term × `DIFFICULTY_COST_MULT[difficulty]`), `total_cost()`,
+  `remaining_budget()`. `_confirm_plan()` blocks only if `total_cost() > budget_eur`. Also fixed
+  `designer_units_to_fleet()` (`data/designer_io.py`) to copy `min_up_time_h`/`min_down_time_h`
+  through — it was silently dropping both before this session, unrelated to the cost rework but
+  found while touching the same conversion function.
+- **Per-unit AGC enrollment**: previously AGC eligibility was shift-wide by `unit_type`
+  (`AGC_ELIGIBLE_TYPES`) only, and `PlanningModel.agc_eligible_types` was purely a display figure
+  feeding one row (`REG BAND`) with zero effect on Phase 2. Worse, there was no Phase 1 → Phase 2
+  handoff for AGC at all — `_make_sim_and_renderer()` always re-derived eligibility straight from
+  the shift file, discarding anything the player did in Phase 1. Added
+  `PlanningModel.agc_enrolled: dict[str, bool]` (day-long per-unit flag, not per-hour), seeded
+  `True` for every AGC-eligible-type unit by default (player opts out, not in, so default behavior
+  is unchanged unless they act), `toggle_agc_enrolled()`/`is_agc_enrolled()`/`is_agc_eligible()`.
+  `reg_band()` now also requires enrollment, not just type. New key `PLANNING_KEY_TOGGLE_AGC` (G) on
+  the Planning screen, with a `[A]` indicator column (lit green when enrolled, dim when eligible but
+  excluded, absent for ineligible types) and a footer hint. The enrolled set is written to
+  `shift{NN}_hourly.json` (`agc_enrolled_units`, new field — `load_schedule_json()` now returns a
+  3-tuple, empty frozenset for old files without it) and consumed in
+  `_make_sim_and_renderer()`: computed as *all eligible-type units minus the enrolled set*, passed
+  to the pre-existing `GridSimulation.set_agc_excluded_units()` (previously only ever driven by the
+  mid-shift `AGC_EXCLUDE_UNITS` scripted action) right after construction. Shifts without a Phase 1
+  session are unaffected — the whole eligible type still regulates, no exclusions applied.
+- **Display**: `planning_panels.py` — new `COST EUR` summary row (per-hour), a header-right budget
+  readout (`PLAN COST` / `BUDGET` / `REMAINING`, red when negative), `REG BAND` values now move with
+  per-unit enrollment instead of being a fixed type-level figure.
+- **Verified headlessly**: built the Shift 10 `PlanningModel` and confirmed (1) `remaining_budget()`
+  is positive on the unmodified default plan; (2) zeroing every unit's schedule (previously an
+  instant hard-block) raises nothing and the removed gate methods no longer exist on the model; (3)
+  toggling one HYDRO unit's AGC enrollment off/on changes `reg_band()`/`hourly_cost()` correctly and
+  round-trips through `write_schedule_json()`/`load_schedule_json()` — the excluded unit's label
+  correctly ends up in the computed exclusion set that `main.py` would pass to
+  `set_agc_excluded_units()`; (4) an ineligible unit (`HART-1`, NUCLEAR) is a no-op for
+  `toggle_agc_enrolled()`; (5) built the same model at all three difficulties and confirmed
+  `hourly_cost()`/`total_cost()` scale exactly by 0.5x/1.0x/1.6x while `budget_eur` stays fixed at
+  100,000,000 across all three; (6) confirmed no unit-level `startup_cost`/`variable_cost_per_mwh`
+  references remain anywhere in `src/` after the per-unit fields were reverted. All edited files
+  parse and import cleanly.
+- **Not done this session**: no live (non-headless) visual playtest of the new `[A]` column/budget
+  readout in a fullscreen window; the AGC-availability/startup/fuel cost numbers are placeholders,
+  not balanced against any target plan cost; no difficulty-linked AGC enrollment floor (explicitly
+  out of scope per developer — pure player choice for now).
+- **Files changed**: `src/gameplay/phase1.py`, `src/display/planning.py`,
+  `src/display/planning_panels.py`, `src/simulation/constants.py`, `src/data/fleet.py`,
+  `src/data/designer_io.py`, `src/main.py`.
+
+### Session 85 (Shift 10 events cleared for grid rework; line reclose cooldown moved to difficulty-scaled)
+
+- **Events cleared**: developer is still reworking Shift 10's grid and asked for `SCRIPTED_EVENTS`
+  emptied out (not deleted-and-forgotten — "I'll add the events later once I've ended working on
+  the shift grid"). Removed the 9 scripted events and their now-unused condition constants
+  (`_STOR_STILL_OFFLINE`, `_WELB_STILL_OFFLINE`, `_RESERVE_THIN`, `_FREQ_LOW`, `_FREQ_STILL_LOW`);
+  `SCRIPTED_EVENTS` is now `[]` with a short comment pointing back at the module docstring's
+  narrative (storm strikes, unit-commitment window, voltage/frequency warnings) as the shape to
+  rebuild. Module docstring, `INITIAL_SCHEDULE`, `WIN_CONDITIONS`, `FAIL_CONDITIONS` all left
+  untouched — only asked to remove events, not the narrative or the pass/fail rubric. One small
+  follow-up fix: `INITIAL_SCHEDULE`'s comment referencing "BRCK-2 trips mid-shift (see Act 2
+  scripted events)" was reworded to note that event is currently removed, since the original
+  wording pointed at content that no longer exists.
+- **Line reclose cooldown moved off the per-shift pattern**: developer feedback — the 15/30/60
+  real-second values were hardcoded as `shift_10.py`'s `LINE_RECLOSE_COOLDOWN_S_BY_VOLTAGE`
+  override, duplicating what should have been engine-level data. Corrected further in
+  conversation: this isn't really a per-shift setting at all (a line's physical inability to
+  reclose instantly isn't specific to one shift's story), it should scale with the trainee/
+  standard/dispatcher difficulty selection instead, same mechanism as `DIFFICULTY_MULT`
+  (Session 84). Replaced `LINE_RECLOSE_COOLDOWN_S_BY_VOLTAGE` (shift-authored dict) with
+  `LINE_RECLOSE_COOLDOWN_S_BY_DIFFICULTY` (`constants.py`, `{difficulty: {voltage_kv: sim-s}}`) —
+  trainee 3/6/12s, standard 5/15/30s, dispatcher 15/30/60s (150/220/400kV, developer-specified
+  values). `simulation.py`'s `_start_reclose_cooldown()` now looks up by both
+  `self._difficulty` and the line's voltage tier instead of a flat per-shift dict. Removed the
+  now-dead per-shift wiring entirely: `shift_10.py`'s override, `loader.py`'s
+  `line_reclose_cooldown_s_by_voltage` config key and docstring entry, and all 3 `main.py`
+  call-sites that copied it onto `_const`. Every shift now gets this automatically at whatever
+  difficulty the player picked — nothing to declare per-shift, matching how `DIFFICULTY_MULT`
+  itself works.
+- **Verified headlessly**: tripped a real 400kV, 220kV, and 150kV line in the actual `shift10`
+  grid at all three difficulty levels (9 combinations total) — every resulting cooldown matched
+  the specified real-second value exactly once converted back from sim-seconds via
+  `TIME_COMPRESSION`. Confirmed `shift_10.py` no longer defines (or needs) any reclose-cooldown
+  constant, and that `main.py`/`loader.py`/`shift_10.py` all still import cleanly.
+- **Files changed**: `src/gameplay/shifts/shift_10.py` (events cleared, cooldown override
+  removed, docstring passage reworded), `src/simulation/constants.py`
+  (`LINE_RECLOSE_COOLDOWN_S_BY_DIFFICULTY` replacing `LINE_RECLOSE_COOLDOWN_S_BY_VOLTAGE`),
+  `src/simulation/simulation.py` (`_start_reclose_cooldown()` difficulty-aware lookup),
+  `src/gameplay/shifts/loader.py` (removed the now-dead config key/docstring entry),
+  `src/main.py` (removed the 3 now-dead `_const.LINE_RECLOSE_COOLDOWN_S_BY_VOLTAGE` wiring sites).
+
+### Session 84 (Random unit deviation — operator derate/setpoint drift, difficulty multiplier, dispatch-panel setpoint/actual display)
+
+- **Context**: developer proposal, refined in conversation — from Shift 5 onward (once Phase 1
+  planning shifts exist), dispatchable units (HYDRO/COAL/NUCLEAR/CCGT, never WIND/SOLAR) should
+  occasionally fail to deliver exactly what's commanded, whether the command came from the Phase 1
+  schedule (AUTO) or a manual setpoint. Two distinct mechanics, both confirmed via conversation
+  before implementation: **derate** (a technical fault caps the ceiling below rated for hours,
+  e.g. "boiler steam leak" — unit still obeys commands, just can't reach the top) and **drift**
+  (an operator error, e.g. "distracted," makes actual output settle at a different value than
+  commanded and hold there — no alarm, player must notice the Target/Output mismatch and
+  re-command to fix it).
+- **Reused existing machinery rather than rebuilding**: confirmed via full read of `units.py`
+  that capacity derate (`UnitModel.derate()`, `effective_max_mw`, the scripted `UNIT_DERATE`
+  action) was already fully modeled and already silent (no alarm) — only a clear/expiry path was
+  missing (`derate()` never reset itself). Drift had no existing analog at all — new logic in
+  `_tick_online()`'s ramp loop. Both trigger off a new second RNG generator
+  (`self._deviation_rng`, offset from the existing `SHIFT_RNG_SEED_BASE`-derived seed so it
+  doesn't share renewables' noise stream but stays reproducible per shift replay).
+- **New general-purpose primitive**: `DIFFICULTY_MULT: dict[str, float]` (constants.py), keyed off
+  the trainee/standard/dispatcher menu selection — confirmed via full grep that `difficulty: str`
+  (passed into `GridSimulation` since day one) was completely inert, read nowhere. Built as a
+  reusable scalar any future mechanic can key off, not scoped to deviation alone. Verified
+  end-to-end: trainee (0.5x) vs dispatcher (1.6x) produced a 1:7 event-count ratio over an
+  identical 5-sim-hour trace with the same seed.
+- **Two developer-confirmed design decisions that materially changed the plan mid-build**:
+  - Derate raises an **INFO** alarm naming the unit and an in-fiction reason (unlike drift, and
+    unlike the existing silent scripted `UNIT_DERATE` action) — because unlike drift, a lowered
+    ceiling has no side-by-side Target/Output tell in the UI; the player needs to at least know
+    *something* happened, even if not its exact practical consequence.
+  - Drift auto-resolves at the next sim-hour boundary regardless of whether the player notices
+    (in addition to clearing immediately on a genuine matching re-command) — reuses the existing
+    hour-crossing detection already driving `_apply_hourly_schedule()`'s `_last_dispatch_hour`,
+    restructured so the crossing-detection itself always runs (previously gated behind "does this
+    shift have a Phase 1 schedule at all" — drift needed it unconditionally).
+- **Found and fixed a real bug during implementation, not just anticipated one**: the first
+  drift-clear-on-recommand implementation put the tolerance check inside the shared
+  `_set_target_internal()`, which is also AGC's path (`_apply_agc_delta()`). Headless trace caught
+  AGC's own small incremental corrections occasionally landing within the clear tolerance by pure
+  chance during normal operation, silently and incorrectly clearing an active drift within
+  minutes regardless of the player ever noticing anything. Fixed by moving the check into a new
+  `_maybe_clear_drift_on_recommand()`, called explicitly only from `set_target()` (the genuine
+  player-command path) — never from AGC's delta path. Re-verified: drift now survives sustained
+  AGC activity, still clears correctly on a real matching re-command, and still clears at the
+  hour boundary.
+- **Dispatch panel rewritten** (`src/display/panels.py::draw_dispatch_panel()`) — developer
+  requirement, broader than just a deviation "tell": both setpoint and actual value must be
+  visible fleet-wide, not just in the per-unit context panel (which already showed Target/Output
+  separately — confirmed, no change needed there; MVAr target/actual likewise already shown via
+  the existing `Q Target [Q]:`/`Q:` rows). New row format: `LBL STA out(target) q(qtarget) A/M`
+  — replaced the old single-MW-number + fill-bar + coloured mode-dot with the full 4-number +
+  text mode-flag format the developer specified, amber-highlighted whenever actual and target
+  diverge beyond a small tolerance so a drifting/derated unit is visible without opening its
+  context panel. Verified by rendering to an offscreen surface and inspecting the PNG (this
+  environment has no interactive display) — legible, correctly colour-codes deviation, correctly
+  shows all unit states (ONLINE/STARTING/OFFLINE/TRIPPED/SHUTDOWN) and both AUTO/MANUAL flags.
+- **Panel widths reallocated** (`constants.py`'s `PANEL_*_W`/`PANEL_*_X`) to fit the wider rows —
+  developer explicitly authorized shrinking other panels rather than compressing the new format:
+  dispatch 590→780px, taken from frequency (240→200), forecast (180→150), gen-mix (130→110), and
+  alarm (540→440, safe since alarm detail text already word-wraps to whatever width it's given).
+  Confirmed the renderer already reads all these constants live (`renderer.py`'s panel blit
+  offsets and the alarm-panel scroll hit-test) — no renderer code changes needed, just the
+  constants.
+- **Flavour-text reason pools drafted** (`constants.py`, one tuple per unit type — COAL/NUCLEAR/
+  CCGT/HYDRO), mixing technical and dry-comedic per the original request, matching the campaign's
+  control-room voice. **Explicitly drafted for developer review, not finalized** — sampled via
+  the deviation RNG so they're reproducible per replay, but the actual wording needs a look before
+  considering this content final.
+- **Scoring**: `derate_events`/`drift_events` added to `scoring.py::grade_shift()`'s metrics dict
+  for debrief display, deliberately WITHOUT a banded axis or demotion rule (unlike
+  `cascade_events`, which demotes the `loading` axis) — reasoning: a cascade is a consequence of
+  the player's own dispatch decisions, a random equipment/operator fault is not something the
+  player can prevent, so grading it down would punish bad luck rather than bad play. Flagged as a
+  judgment call worth confirming with the developer, not silently assumed.
+- **Verified headlessly** (real `GridSimulation`, not a mock): derate triggers, raises the INFO
+  alarm with flavour text, correctly caps `effective_max_mw`, and expires back to `rated_mw` after
+  its randomised duration; drift triggers silently, survives sustained AGC activity without
+  false-clearing, clears on a genuine matching re-command, and separately clears at the next
+  sim-hour boundary if never caught; `DIFFICULTY_MULT` scaling confirmed to produce a real,
+  directionally-correct event-rate difference between trainee and dispatcher over an identical
+  seeded trace.
+- **Not yet done**: interactive playtest (no display driver in this environment — dispatch panel
+  verified via offscreen PNG render only, not in the actual running game window); developer
+  sign-off on the flavour-text wording; a decision on whether `derate_events`/`drift_events`
+  should ever affect grading after all.
+- **Files changed**: `src/simulation/constants.py` (DIFFICULTY_MULT, UNIT DEVIATION section,
+  PANEL_*_W/_X reallocation), `src/simulation/units.py` (`clear_derate()`, `drift()`/
+  `clear_drift()`, `_maybe_clear_drift_on_recommand()`, `_tick_online()` drift-aware ramp,
+  `FleetModel` wrappers + `online_dispatchable_labels()`), `src/simulation/simulation.py`
+  (`_roll_random_deviations()` + trigger/expiry/alarm logic, `_apply_hourly_schedule()`
+  restructured for unconditional hour-crossing detection, new RNG generator, new SimulationState
+  fields), `src/display/panels.py` (`draw_dispatch_panel()` rewrite), `src/gameplay/scoring.py`
+  (metrics dict additions).
+
+### Session 83 (Shift 10 full rebuild — morning ramp, bigger fleet/grid, reclose cooldown, landing freeze)
+
+- **Context**: after Session 82's fix, developer played again and reported the real problem —
+  "the load forecast is going down and the AGC is reducing gradually the hydros maintaining the
+  frequency. No tension... A real difficult shift should be set during the upper morning ramp or
+  the afternoon/night ramp not down slope. Also there was no need to increase/decrease the
+  reactive power setpoint... where's the fun?!" Investigated rather than assumed: confirmed via
+  `src/data/profiles.py` that the morning ramp (06:00-09:00) is the steepest, most sustained rise
+  in the whole demand curve (wind falling, solar barely started over the same window — nothing
+  covers the gap automatically, opposite of the old downslope where AGC had unlimited time), and
+  confirmed via reading `voltage.py`'s `solve()` signature that the decoupled voltage model has
+  zero coupling to line loading at all (a deliberate, documented approximation) — so reactive
+  power can only ever matter through Q that's explicitly forced to move, e.g. INDUSTRIAL
+  substations whose draw scales with live demand (`Q = P * tan(power-factor angle)`,
+  `demand.py:258-271`) — a real, already-existing mechanism the old shift never leaned on.
+- **Two new engine mechanics added** (both per-shift-configurable, following the established
+  `AGC_SPEED_MULT` pattern — `constants.py` default + `loader.py`/`main.py` wiring, not
+  `shift_io.py`-integrated since neither is JSON-Shift-Builder-facing yet):
+  - **Line reclose cooldown** (`LINE_RECLOSE_COOLDOWN_S_BY_VOLTAGE`, default `{}` = off): a line
+    cannot be switched again (either direction, manual or automatic) until a per-voltage-tier
+    cooldown elapses. Confirmed via reading `trip_line()`/`close_line()`
+    (`simulation.py:752-781` before this change) that no rate limit existed at all previously.
+    Found and fixed a real gap during implementation: automatic overload trips
+    (`simulation.py`, the cascade-trip block) bypass `trip_line()` entirely, setting
+    `_line_in_service` directly — the cooldown-arming helper (`_start_reclose_cooldown()`) had to
+    be called from both places, not just `trip_line()`, or the highest-stakes trip case (a line
+    that actually overloaded) would have had zero cooldown. Verified headlessly: trip → immediate
+    reclose blocked → still blocked mid-cooldown → succeeds once elapsed → symmetric re-trip also
+    blocked.
+  - **Landing freeze** (`LANDING_FREEZE_S`, default 5.0 real-seconds): holds the sim clock at T+0
+    for a few real seconds so the player can read the handover before anything moves — frequency/
+    AGC/load-flow/voltage keep running live throughout, only demand/renewables/scripted-event
+    timers are held. Found and fixed a real ordering bug during implementation: `main.py` sets
+    `_const.LANDING_FREEZE_S` from the shift's config AFTER constructing `GridSimulation` (same
+    call order as every other `_const.X` assignment there), so caching the value in `__init__`
+    would always see the previous shift's leftover value — fixed with a `None` lazy-init sentinel
+    resolved on first `tick_real_seconds()` call instead. Also found and fixed a second bug: the
+    freeze must be driven by true wall-clock real-seconds, not `dt_sim_seconds` (which already has
+    `TIME_COMPRESSION * speed` baked in by `main.py`'s caller) — otherwise a player at 10x speed
+    could skip a 5-real-second freeze in 0.5 real-seconds. Added `GridSimulation.tick_real_seconds()`
+    as a separate call, wired into all 3 real-time-loop call sites in `main.py`, driven by the
+    loop's own unscaled `dt`. Verified: freeze holds for its configured duration regardless of
+    speed; headless traces that never call `tick_real_seconds()` (every prior session's trace
+    scripts, and this session's own) are completely unaffected — confirmed backward-compatible.
+- **Grid/fleet rebuild** (`src/assets/designer_grids/shift10.json`, expanded rather than replaced —
+  reused Session 81's 31-bus/42-line topology as the base): capacity math check
+  (`AGC_SPEED_MULT` throttling, cold-start timing, unit trips) showed the old fleet
+  (3115 MW nameplate vs 1795 MW peak) could not be made to feel "brutal" through schedule/trip
+  tuning alone — always too much slack. Developer directed growing the fleet instead, confirmed
+  interactively over several rounds: anchor (firm) fleet 5100 MW — Hartwell resized to 2x1000MW
+  nuclear (was 1x700MW), Brackby resized to 3x250MW coal (was 2x300MW) plus a new sister station
+  Stourbrook (3x250MW, new 400kV bus off Midfield), Ashgrove unchanged at 2x400MW CCGT plus a new
+  sister station Welbeck (2x400MW). Renewables retired as large single stations (Galeholt-wind,
+  Sandmere-solar, Merefield/Clunwell-hydro all dropped generation, kept their buses/corridor role)
+  and replaced with 7 new small stations clustered on the storm corridor: Kelmore/Barleigh/Dunwich
+  hydro (30/40/50MW, 220kV), Cairnholt/Braeholt wind (35/45MW, 220kV), Feldrise/Stanmere solar
+  (15/18MW, 150kV — developer specified solar stays small and can sit at 150kV, unlike the
+  Session-81-era assumption that no generation belongs on 150kV at all; clarified that small units
+  on a dedicated non-load 150kV bus are fine, matching the permanent campaign's existing River
+  Brent/Coln cascade-hydro precedent in fleet.py). Total nameplate ~5333MW. Load side: 17 existing
+  buses scaled 1.4x, 6 new buses added (Keltbridge/Fawnhurst/Draymoor/Ormefield/Beckworth/
+  Trussington), landing at ~4003MW peak (75% of nameplate, developer's confirmed target range).
+  Per developer's explicit design: any load bus over ~150MW gets a 2-circuit feed instead of 1 —
+  deliberate redundancy sized for N-1 today that the storm's scripted events selectively cut
+  mid-shift to raise stress, rather than being permanently fragile from handover (this changes
+  Portreath's old "no second feed, ever" narrative — confirmed with developer that PORT should
+  follow the general size rule like everything else now that redundancy is a removable resource,
+  not a fixed structural fact). Verified: zero voltage-tier violations, zero duplicate labels
+  (caught and fixed a real bug in the build script — the renewable-station connector lines
+  originally reused line labels L63-L69 that were already assigned to load feeders), zero
+  generation on LOAD-type buses, load flow solves cleanly with no NaN.
+- **Shift content rewrite** (`src/gameplay/shifts/shift_10.py`, full replacement — new narrative
+  "The Cold Snap," `START_HOUR=5.0`, `DURATION_HOURS=5.5`): storm corridor identified from the new
+  topology's actual connectivity (Howegate-Galeholt and Galeholt-Sandmere, both redundant 220kV
+  pairs, sit directly between every new renewable station and the rest of the grid) — two
+  lightning strikes each take one circuit of a pair (not both), sized so the surviving circuit
+  faces genuine congestion risk, not comfortable headroom (retuned `rating_mw` down from 700MW to
+  450MW/400MW per circuit on these corridors after an initial trace showed even a full circuit
+  loss only reached ~50-60% loading at 700MW rating). One coal unit trip (Brackby 2, not nuclear —
+  Hartwell stays the fixed "wall" every prior shift already established). INDUSTRIAL substations
+  reassigned to the storm corridor's own loads (Wreklow, Millbrook, Draymoor) plus the grid's
+  biggest loads elsewhere (Carrow, Sedgemere, Portreath, Trussington) so reactive power genuinely
+  matters as demand climbs. `AGC_ELIGIBLE_TYPES = {HYDRO}` again, `AGC_SPEED_MULT = 0.5`.
+- **Handover schedule tuned iteratively against headless traces, not guessed** — three drafts hit
+  two distinct failure modes before landing correctly: (1) ~64MW margin against a ~6MW/sim-min
+  ramp collapsed frequency (undersupply) within 10 sim-minutes regardless of skill, before there
+  was time to even read the handover; (2) ~130-334MW margin caused *over*-frequency within 2-8
+  sim-minutes in a do-nothing run, because AGC's hydro fleet (only 75MW total, ~67.5MW of
+  reducible headroom to technical minimum) cannot claw back a surplus larger than that on its own
+  — CCGT/coal aren't AGC-eligible this shift, so nothing corrects an oversized margin without the
+  player. Final: ~60MW margin, just under AGC's own ~67.5MW ceiling — steady-state doesn't run
+  away in either direction on its own, so the real pressure comes from the ramp's own climb
+  outpacing AGC once demand moves (the intended mechanic), not from an initial imbalance the
+  player has no way to see coming before the first tick renders.
+- **Verified headlessly**: do-nothing run fails at T+32min via genuine undersupply (AGC's hydro
+  headroom exhausted, matches the intended mechanic exactly) — confirms the shift is not
+  survivable by inaction, consistent with the "brutal, no easing on-ramp" directive. A player who
+  starts Stourbrook, Welbeck, and the remaining Brackby units all at T+1 (rather than staggered
+  later) survives to T+163min under a simple synthetic feedback controller, well past the point
+  where an equivalent test starting reserve late (T+20/T+35) failed at T+91 — confirmed by direct
+  inspection that the T+91 failure was WELB/BRCK-2/3 genuinely still mid-cold-start at that point
+  (not a bug), i.e. the shift is correctly and heavily rewarding an immediate, correct unit-
+  commitment decision at handover over a delayed one. Capacity math confirmed generous
+  (1170MW+ theoretical margin even without Stourbrook, ramp-rate ceilings ~15x faster than the
+  demand growth rate they need to track) — the shift's difficulty comes from decision timing and
+  compounding pressure (storm + trip + thin AGC), not a raw capacity wall.
+- **Explicit caveat — not fully verified**: every "responsive player" headless trace used a
+  simple synthetic feedback controller (proportional/PI-style, corrected via scripted `set_target`
+  calls), not real interactive play. Multiple controller variants showed inconsistent survival
+  points (T+56 to T+163) purely from differences in controller gain/cadence/damping, which means
+  these traces bound the problem (do-nothing fails fast and for the right reason; a competent
+  script starting reserve immediately survives much further) but do NOT prove a human player using
+  the real W/Q/Up/Down controls, watching the frequency needle and REG BAND/voltage gauges
+  directly, will find the shift beatable-but-hard rather than either too easy or genuinely
+  impossible. An actual interactive playtest (no display driver available in this environment) is
+  the real verification still outstanding — recommended before considering this shift final.
+- **Files changed**: `src/simulation/constants.py`, `src/simulation/simulation.py`,
+  `src/gameplay/shifts/loader.py`, `src/main.py` (engine mechanics — reusable by any future
+  shift); `src/assets/designer_grids/shift10.json` (full grid/fleet expansion),
+  `src/gameplay/shifts/shift_10.py` (full content rewrite).
+
+### Session 82 (Shift 10 Act 1 pacing fix — plateau-then-cliff diagnosed and warned)
+
+- **Context**: developer played Shift 10 for several real minutes and reported nothing required
+  any action — frequency held rock-solid at 50Hz, no unit/line/setpoint ever needed touching.
+  Investigated as a real tuning bug, not a report to take at face value without evidence — traced
+  the actual `GridSimulation` (constructed the same way `main.py::_make_sim_and_renderer()` does:
+  `DesignerGrid` + `GridSimulation`, ticked headlessly with `sim.tick(dt)`) against Shift 10's
+  real `INITIAL_SCHEDULE` and demand curve.
+- **Root cause, confirmed numerically, not assumed**: Act 1's demand decline is only ~2-3
+  MW/sim-minute. AGC's PID controller (HYDRO-only, `AGC_SPEED_MULT = 0.35`) tracks this
+  essentially perfectly — frequency stays within ±0.01 Hz of 50.00 Hz from T+0 all the way to
+  T+131 sim-min, walking the four hydro units down smoothly with zero visible drama. **This is
+  not a rate-tuning problem**: re-traced at `AGC_SPEED_MULT` down to 0.01 (35x lower) and the
+  outcome barely changes (hydro ends within a few MW of the same trajectory) — the PID's integral
+  term has effectively unlimited time to close a slow-moving error no matter how throttled the
+  rate ceiling is; only disabling AGC outright (0.0) changes anything, which isn't a usable
+  difficulty knob. At T+131, hydro bottoms out at its combined technical minimum (56.5 MW —
+  `TECH_MIN_FRAC_HYDRO = 0.10` applied to MERE-1/2 and CLUN-1/2's rated MW) — AGC has no more room
+  to give (it can turn hydro down but never take a unit fully offline, that's player-only). From
+  that exact point, with ASHG-1/2 pinned at 760 MW combined (never AGC-eligible, no player input
+  yet) and nothing else able to respond, frequency runs from 50.0 Hz to the 55.0 Hz hard clamp in
+  just 18 more sim-minutes (~45 real-seconds) — a near-vertical cliff, not a ramp. The only
+  existing signal before this was one soft WARNING at T+90 ("Ashgrove CCGT 2 has real room to
+  come off") — informational, not urgent-sounding, and nothing escalates afterward.
+- **The instrument the player needs already existed and needed no new code**: the Power Balance
+  panel's "REG BAND" gauge (`src/display/panels.py:237-296`) already renders exactly this number
+  — `FleetModel.agc_regulation_state()` (`units.py:684-706`) already returns
+  `(current_mw, min_mw, max_mw)` for AGC-eligible online units, colour-coded
+  GOOD/WARN/CRIT by margin to the rails. The gap was never missing UI, only that nothing directs
+  the player's attention to it or escalates as it degrades.
+- **Fix, entirely inside `shift_10.py`, no simulation/display/schema changes**: added two new
+  `SCRIPTED_EVENTS`, using the existing `UNIT_OUTPUT_MW_SUM` condition metric
+  (`shift_io.py`/`simulation.py:1366-1370`, already sums `current_mw` across named units — no new
+  metric type needed) on the four hydro units' combined output:
+  - WARNING at `trigger_min: 108.0`, condition `< 200.0` MW combined — "Hydro headroom is running
+    out... check the REG BAND gauge... take a unit fully offline now, or start managing Ashgrove
+    by hand." First message in the shift to name the gauge directly.
+  - CRITICAL at `trigger_min: 124.0`, condition `< 110.0` MW combined — last-call, names the
+    fastest concrete action ("Stop Clunwell 2 now").
+  - Important mechanic constraint discovered and respected: scripted-event conditions are sampled
+    **once**, at the first tick `sim_time_min >= trigger_min`, and never re-arm if false then
+    (`simulation.py::_process_scripted_events()`, same behaviour the existing
+    `_ASHG2_STILL_ONLINE`-gated T+90 event already relies on) — so `trigger_min` itself had to be
+    picked from a do-nothing trace (T+90≈225 MW, T+100≈190, T+110≈153, T+120≈120, T+125≈91,
+    T+129≈58, floor≈T+131) rather than treating the condition as a continuously-rechecked
+    threshold.
+- **Verified headlessly, not just reasoned about**: re-ran the trace after the edit — both new
+  events fire correctly in a do-nothing run (WARNING at T+109, hydro=177.9 MW; CRITICAL at T+125,
+  hydro=91.2 MW — both comfortably inside their condition thresholds). Verified a responsive
+  player: stopping ASHG-2 at T+100 (already the T+90 event's advice) plus CLUN-2 at T+109 avoids
+  the runaway entirely — AGC absorbs the 380 MW ASHG-2 loss by raising hydro back up (frequency
+  dips to a real, visible 48.6 Hz at T+120, then recovers to 50.0 by T+140, hydro settling around
+  380-460 MW, nowhere near its floor). Also confirmed stopping only the two Clunwell units
+  (without touching ASHG-2) is **not** sufficient to prevent the runaway — it only delays it — matching
+  the shift's documented design that ASHG-2 is genuinely the first, necessary lever, not optional.
+  Re-ran the full do-nothing trace through Act 2 afterward and confirmed Act 2's event timings
+  (T+150, T+180, T+182) are unaffected by the Act 1 change.
+- **Not changed and confirmed unnecessary**: `AGC_SPEED_MULT`/`AGC_MAX_RATE_MW_S`/any simulation
+  constant (proven not to be the lever), `src/display/panels.py` (gauge already correct),
+  `shift_io.py`'s condition schema (`UNIT_OUTPUT_MW_SUM` already sufficient), Acts 2-4's events,
+  `MAINTENANCE_LINES`, `WIN_CONDITIONS`, `FAIL_CONDITIONS`.
+- **Not yet done**: an actual interactive playtest of the new warnings' timing/tone feel (no
+  display driver available in this environment) — confirm in-game that T+108/T+124 read as
+  legible and well-paced, not just correct in a headless trace. If the T+131→T+149 runaway itself
+  still proves too fast to react to even with advance warning once played, that's a separate,
+  smaller follow-up (softening that specific transition) — not pursued here since it wasn't shown
+  to be necessary.
+- **Files changed**: `src/gameplay/shifts/shift_10.py` only (two new `SCRIPTED_EVENTS` entries,
+  two new condition constants, docstring update).
+
+### Session 81 (Shift 10 grid topology fix — voltage-tier violations and backbone redundancy)
+
+- **Context**: developer review of `shift10.json` (authored Session 79) found it violated three
+  conventions the permanent campaign topology (`topology.py`) and fleet (`fleet.py`) hold
+  everywhere else: (1) no line redundancy anywhere except the deliberate MDFD-TARN spare-circuit
+  pair; (2) two hydro units (CLUN-1 100MW, CLUN-2 65MW) wired directly onto a 150kV bus, when no
+  unit in `fleet.py` above 30MW ever sits below 220kV; (3) three lines (L06, L22, old L23) ran
+  400kV straight to a 150kV bus, skipping the 220kV tier that all 62 lines in `topology.py`
+  always interpose. Confirmed via full cross-reference of every line/unit voltage pair in both
+  files before making any change — see `topology.py`'s own docstring ("no direct lower-voltage
+  tie bypasses the spine") for the established rule.
+- **Two narrative exceptions preserved deliberately, not fixed**: PORT's single feed via L15 (Act
+  4's entire dramatic beat — "no N-1 fix available here" — depends on it) and WYLD's single-radial
+  dead end off CLUN (a deliberate "named risk that never pays off" handover note). Confirmed with
+  developer before implementation; both remain single-fed.
+- **Fix 1 — tier skips**: inserted two new 220kV intermediate buses, **NORG** (Northgate, between
+  HART and NORT) and **RUSG** (Rushgate, between BRCK and RUSH/LYDD). L06 (HART→NORT, 400→150)
+  rewritten to HART→NORG (400→220); new line L31 carries NORG→NORT (220→150). L22 (BRCK→RUSH)
+  rewritten to BRCK→RUSG (400→220); new lines L32 (RUSG→RUSH) and L23 (rewritten, RUSG→LYDD,
+  both 220→150) replace the old direct BRCK→LYDD 400kV line.
+- **Fix 2 — CLUN units off 150kV**: added new 220kV bus **CLUV** (Clunview, the Clunwell hydro
+  switchyard) with new line L33 (CLUV→CLUN, 220→150). CLUN-1/CLUN-2's `bus_label` moved from
+  `CLUN` to `CLUV`; `station_label` stays `CLUN` (station identity vs. bus label now differ for
+  the first time in this shift, matching the pattern topology.py's cascade-hydro stations already
+  use elsewhere). CLUN itself is unchanged otherwise — still the sole upstream feed for WYLD.
+- **Fix 3 — backbone redundancy**: added a second parallel circuit on the nine major hub
+  corridors (MDFD-HART, MDFD-BRCK, MDFD-ASHG, MDFD-MERE, BRCK-FENM, TARN-FENM, TARN-HOWE,
+  HOWE-GALE, GALE-SAND) as new lines L34-L42, each an exact copy of its partner's electrical
+  parameters (mirroring how L07/L08 already exist as independent rows). 150kV load spurs and the
+  two deliberate single-fed exceptions (PORT, WYLD) were left untouched. Also fixed a pre-existing
+  display bug found in passing: L07/L08 both had `parallel: 0` (the perpendicular draw-offset
+  field, `symbols.py`'s `PARALLEL_LINE_OFFSET_PX`), meaning the one corridor that already had
+  redundancy was rendering its two circuits on top of each other; set to `-1`/`1` along with every
+  new pair.
+- **Net topology change**: 28→31 buses, 30→42 lines, unit count unchanged at 11.
+  `shift_10.py`'s docstring "Grid:" shape summary updated to match.
+- **Verified headlessly** (no interactive display driver available in this environment for a
+  screenshot pass — flagged as a gap, see below): `load_designer_grid_named('shift10')` loads
+  cleanly; a full voltage-pair scan over every line confirms zero (150, 400) pairs remain and
+  zero units resolve to a 150kV bus; a redundancy scan confirms all nine target corridors carry
+  exactly 2 circuits and PORT/WYLD remain at exactly 1; constructed a real `GridSimulation` via
+  the same path `main.py::_make_sim_and_renderer()` uses (`DesignerGrid` + `GridSimulation`) and
+  ran 600 ticks (60 simulated seconds) with no exceptions — frequency settled at 49.99 Hz, no NaN
+  anywhere. **Not done**: an actual in-game visual/interactive playtest of Shift 10's four acts
+  (L08 spare-circuit bet, CLUN-1/2 dispatch from their new bus, Act 4's L15/PORT blackout) — do
+  this before considering the shift fully validated.
+- **Files changed**: `src/assets/designer_grids/shift10.json`, `src/gameplay/shifts/shift_10.py`
+  (docstring only — no gameplay logic, `SCRIPTED_EVENTS`/`MAINTENANCE_LINES`/`WIN_CONDITIONS`/
+  `FAIL_CONDITIONS`/`INITIAL_SCHEDULE` all untouched; none referenced the changed line labels or
+  CLUN's bus_label).
 
 ### Session 80 (Campaign-wide AGC difficulty curve — per-shift eligible types + response speed, Shift 10 Act 3 rewritten)
 

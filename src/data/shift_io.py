@@ -66,13 +66,13 @@ dispatch within a single continuous session, rather than fixing
 AGC_ENABLED for the shift's whole duration via the shift file's
 AGC_ENABLED constant.
 AGC_EXCLUDE_UNITS excludes the named units from AGC eligibility
-regardless of unit_type, on top of the shift's AGC_ELIGIBLE_TYPES filter
-— instance state (resets between shift runs), not a process-wide global
-like AGC_SET. Pass an empty "units" list to restore full eligibility.
-For a shift whose baseline AGC is already narrowed (via AGC_ELIGIBLE_TYPES)
-rather than fully on, this is the way to script a further mid-shift
-degradation without a full on/off flip — e.g. "two of your four hydro
-units drop off the AGC bus" instead of "AGC fails entirely."
+regardless of unit_type, on top of the fixed campaign-wide
+AGC_ELIGIBLE_TYPES filter (constants.py — CCGT + HYDRO, not
+per-shift-configurable) — instance state (resets between shift runs), not
+a process-wide global like AGC_SET. Pass an empty "units" list to restore
+full eligibility. This is the way to script a mid-shift degradation
+without a full on/off flip — e.g. "two of your four hydro units drop off
+the AGC bus" instead of "AGC fails entirely."
 Executed by GridSimulation._process_scripted_events() after the alarm
 for that event fires.
 """

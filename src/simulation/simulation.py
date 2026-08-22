@@ -222,6 +222,8 @@ class SimulationState:
     max_line_loading_seen:   float
     load_shed_events:        int
     cascade_events:          int
+    derate_events:           int
+    drift_events:            int
     min_voltage_seen:        float
 
 
@@ -321,6 +323,14 @@ class GridSimulation:
             grid,
             rng=np.random.default_rng(self._rng_seed) if self._rng_seed is not None else None,
         )
+        # Separate generator for random unit deviation (derate/drift) events
+        # — offset from the renewables seed so the two streams don't draw
+        # from the same sequence, while staying derived from the same
+        # per-shift base for reproducible replays (see _rng_seed above).
+        self._deviation_rng = (
+            np.random.default_rng(self._rng_seed + 100000)
+            if self._rng_seed is not None else np.random.default_rng()
+        )
         self._cascade    = CascadeModel()
         self._reactive   = ReactiveDevices()
 
@@ -344,6 +354,35 @@ class GridSimulation:
 
         # Overload timer state (owned here, passed to CascadeModel each tick)
         self._overload_timers: dict = {}
+
+        # Reclose-cooldown state — {line_label: sim-seconds remaining before
+        # this line may be switched again}, decremented every tick. Voltage
+        # lookup cached once here rather than re-derived per trip/close call.
+        self._line_voltage_kv: dict = {
+            l.label: l.voltage_kv for l in grid.get_active_lines()
+        }
+        self._reclose_cooldown_remaining: dict = {}
+
+        # Random-derate expiry state — {unit_label: sim-minutes remaining
+        # before UnitModel.clear_derate() is called}, decremented every
+        # tick alongside the deviation trigger roll (see _apply_hourly_schedule()
+        # / _roll_random_deviations()). Only entries for units currently
+        # under a RANDOM (non-scripted) derate live here — a scripted
+        # UNIT_DERATE action's cap is intentionally permanent for the
+        # shift, matching today's behaviour, so it's never added here.
+        self._random_derate_remaining_min: dict = {}
+
+        # {unit_label: unit_type} / {unit_label: rated_mw} lookups for the
+        # deviation trigger/flavour-reason logic, built once here from the
+        # public GenerationUnit spec rather than reaching into FleetModel's
+        # private UnitModel._spec from this module — mirrors the existing
+        # self._line_voltage_kv cache-once pattern.
+        self._unit_type_by_label: dict = {
+            u.label: u.unit_type for u in grid.get_active_units()
+        }
+        self._unit_rated_mw_by_label: dict = {
+            u.label: u.rated_mw for u in grid.get_active_units()
+        }
 
         # Voltage collapse acceleration — stateful post-solve overlay (see
         # _apply_collapse_acceleration). {bus_label: offset_pu}, offset <= 0.
@@ -369,6 +408,26 @@ class GridSimulation:
         self._blackout_clamp_s: float = 0.0
         self._shift_failed:     bool  = False
 
+        # Landing freeze — real seconds remaining before the sim clock
+        # (_sim_time_min) starts advancing. Decremented by true wall-clock
+        # dt (passed separately via tick_real_seconds(), NOT by
+        # dt_sim_seconds — that argument already has TIME_COMPRESSION and
+        # the player's speed multiplier baked in by the caller, so it can't
+        # drive a speed-immune real-time countdown). Frequency/AGC/load
+        # flow/voltage still run normally on the frozen T+0 snapshot while
+        # this is > 0, so the player sees a live, stable grid rather than a
+        # paused screenshot while reading the handover.
+        #
+        # Deliberately NOT read from _sim_const.LANDING_FREEZE_S here:
+        # main.py sets _const.LANDING_FREEZE_S from the shift's config
+        # AFTER constructing GridSimulation (same call-order as every other
+        # _const.X assignment in _make_sim_and_renderer()), so caching it
+        # in __init__ would always see the previous shift's leftover value,
+        # never this shift's own override. None is a lazy-init sentinel —
+        # tick_real_seconds() resolves it from _sim_const on first call,
+        # by which point main.py has already set the real per-shift value.
+        self._landing_freeze_remaining_s: float | None = None
+
         # Simulation time
         self._sim_time_min: float = 0.0
 
@@ -378,6 +437,8 @@ class GridSimulation:
         self._max_line_loading: float = 0.0
         self._load_shed_events: int   = 0
         self._cascade_events:   int   = 0
+        self._derate_events:    int   = 0
+        self._drift_events:     int   = 0
         self._min_voltage:      float = 1.0
 
         # AGC PID state
@@ -456,6 +517,24 @@ class GridSimulation:
 
     # ─────── MAIN TICK ────────────────────────────────────────────────────
 
+    def tick_real_seconds(self, real_dt_seconds: float) -> None:
+        """
+        Decrement the landing-freeze countdown by true wall-clock elapsed
+        time, independent of TIME_COMPRESSION and the player's speed
+        multiplier. Call once per real frame BEFORE tick(), with the same
+        unscaled dt main.py's loop already tracks (real_dt_seconds), so the
+        freeze takes the same real time to clear at 1x or 10x speed — a
+        player can't skip it by changing speed. No-op once the freeze has
+        already cleared.
+        """
+        if self._landing_freeze_remaining_s is None:
+            # Lazy-resolve on first call — see __init__'s comment on why
+            # this can't be read at construction time.
+            self._landing_freeze_remaining_s = _sim_const.LANDING_FREEZE_S
+        if self._landing_freeze_remaining_s > 0.0:
+            self._landing_freeze_remaining_s = max(
+                0.0, self._landing_freeze_remaining_s - real_dt_seconds)
+
     def tick(self, dt_sim_seconds: float) -> None:
         """
         Advance simulation by dt_sim_seconds of simulated time.
@@ -482,8 +561,34 @@ class GridSimulation:
 
         dt_min = dt_sim_seconds / 60.0
 
-        # 1. Advance time
-        self._sim_time_min += dt_min
+        # Reclose-cooldown decrement — sim-seconds, so it scales with speed
+        # like every other tripped-line timer (TRIP_DELAY_S, overload
+        # timers), unlike the landing freeze below.
+        if self._reclose_cooldown_remaining:
+            for _label in list(self._reclose_cooldown_remaining):
+                remaining = self._reclose_cooldown_remaining[_label] - dt_sim_seconds
+                if remaining <= 0.0:
+                    del self._reclose_cooldown_remaining[_label]
+                else:
+                    self._reclose_cooldown_remaining[_label] = remaining
+
+        # 1. Advance time — held at T+0 during the landing freeze (real
+        # seconds, decremented via tick_real_seconds(), independent of
+        # dt_sim_seconds/speed) so demand/renewables/scripted-event timers
+        # don't move until the player has had a moment to land. Frequency/
+        # AGC/droop and the sustained_s fail/blackout timers are held too
+        # (see the freeze_active checks below) — only load flow/voltage
+        # keep resolving every tick, so the canvas still reflects the
+        # handover state exactly rather than looking stale. A caller that
+        # never calls tick_real_seconds() (headless traces, any test
+        # harness driving tick() directly) sees _landing_freeze_remaining_s
+        # stay None, which is treated as "already cleared" — the freeze is
+        # purely a tick_real_seconds() opt-in, never a behaviour change for
+        # a caller that ignores it.
+        freeze_active = (self._landing_freeze_remaining_s is not None
+                          and self._landing_freeze_remaining_s > 0.0)
+        if not freeze_active:
+            self._sim_time_min += dt_min
         sim_hour = self._start_hour + self._sim_time_min / 60.0
 
         # 1b. Phase 1 per-hour schedule executor — advance AUTO-mode units'
@@ -501,22 +606,32 @@ class GridSimulation:
         # 4. Tick unit state machines
         self._fleet.tick(dt_sim_seconds)
 
-        # 5. Frequency update (swing equation)
-        self._frequency.update(
-            dt_sim_seconds=dt_sim_seconds,
-            p_generation_mw=self._fleet.total_generation_mw(),
-            p_load_mw=self._demand.total_load_mw,
-            online_unit_types=self._fleet.online_unit_types(),
-        )
+        # 4b. Random unit deviation (derate/drift) — trigger rolls and
+        # derate expiry. See _roll_random_deviations().
+        self._roll_random_deviations(dt_min)
 
-        # 5a. Governor droop — fast primary response, all synchronous units, ahead of AGC.
-        if _sim_const.DROOP_ENABLED:
-            delta_f = self._frequency.frequency_hz - F_NOMINAL
-            self._fleet.apply_droop_response(delta_f)
+        # 5. Frequency update (swing equation) — held during the landing
+        # freeze along with sim time above, so AGC/droop don't integrate
+        # against a static handover imbalance the player can't see or react
+        # to yet. Everything else in this block (droop, AGC) derives from
+        # frequency_hz, so gating the update alone is sufficient to freeze
+        # the whole chain.
+        if not freeze_active:
+            self._frequency.update(
+                dt_sim_seconds=dt_sim_seconds,
+                p_generation_mw=self._fleet.total_generation_mw(),
+                p_load_mw=self._demand.total_load_mw,
+                online_unit_types=self._fleet.online_unit_types(),
+            )
 
-        # 5b. AGC secondary frequency response
-        if _sim_const.AGC_ENABLED:
-            self._apply_agc(dt_sim_seconds)
+            # 5a. Governor droop — fast primary response, all synchronous units, ahead of AGC.
+            if _sim_const.DROOP_ENABLED:
+                delta_f = self._frequency.frequency_hz - F_NOMINAL
+                self._fleet.apply_droop_response(delta_f)
+
+            # 5b. AGC secondary frequency response
+            if _sim_const.AGC_ENABLED:
+                self._apply_agc(dt_sim_seconds)
 
         # 5c. Automatic reactive devices (shunt banks) act on the previous
         # tick's solved voltage — one-tick lag, no algebraic loop with the solver.
@@ -548,6 +663,7 @@ class GridSimulation:
             self._cascade_events += 1
             for line_label in trips:
                 self._line_in_service[line_label] = False
+                self._start_reclose_cooldown(line_label)
                 self._raise_alarm(
                     priority='CRITICAL',
                     message=f'Line {line_label} tripped — overload protection',
@@ -595,8 +711,9 @@ class GridSimulation:
         self._update_crisis(lf_result.line_loading_pct, v_eff)
 
         # 13b. Blackout / frequency-collapse fail state — track consecutive
-        # sim-seconds pinned at the F_MIN/F_MAX hard clamp.
-        self._update_blackout_state(dt_sim_seconds)
+        # sim-seconds pinned at the F_MIN/F_MAX hard clamp. Held during the
+        # landing freeze, same as the frequency update itself above.
+        self._update_blackout_state(0.0 if freeze_active else dt_sim_seconds)
 
         # 14. Performance counters
         self._total_ticks += 1
@@ -613,8 +730,10 @@ class GridSimulation:
         )
 
         # 16. Objective evaluation — after the snapshot, so _eval_condition()
-        # reads this tick's state rather than the previous one.
-        self._update_fail_conditions(dt_sim_seconds)
+        # reads this tick's state rather than the previous one. Held during
+        # the landing freeze so a sustained_s timer can't accrue against a
+        # frozen handover state before the player has had a chance to react.
+        self._update_fail_conditions(0.0 if freeze_active else dt_sim_seconds)
 
         if DEBUG_SIMULATION:
             self._print_debug(lf_result, vr_result)
@@ -622,20 +741,140 @@ class GridSimulation:
         if _sim_const.SIM_STATE_LOG:
             self._write_sim_state_log()
 
+    def _roll_random_deviations(self, dt_min: float) -> None:
+        """
+        Random unit deviation — derate and drift trigger rolls, plus
+        derate expiry. Runs every tick against every ONLINE dispatchable
+        (non-renewable) unit, converting each event type's per-sim-hour
+        probability (RANDOM_DERATE_CHANCE_PER_HOUR/RANDOM_DRIFT_CHANCE_PER_HOUR,
+        scaled by DIFFICULTY_MULT) into a per-tick probability via
+        dt_min/60 so risk accrues continuously through the hour rather
+        than only at hour boundaries. See constants.py's UNIT DEVIATION
+        section for the full mechanic description.
+        """
+        derate_chance_per_hour = (_sim_const.RANDOM_DERATE_CHANCE_PER_HOUR
+                                   * _sim_const.DIFFICULTY_MULT.get(self._difficulty, 1.0))
+        drift_chance_per_hour = (_sim_const.RANDOM_DRIFT_CHANCE_PER_HOUR
+                                  * _sim_const.DIFFICULTY_MULT.get(self._difficulty, 1.0))
+        derate_p_tick = derate_chance_per_hour * (dt_min / 60.0)
+        drift_p_tick = drift_chance_per_hour * (dt_min / 60.0)
+
+        # Derate expiry — decrement first, so a unit whose derate expires
+        # this tick is eligible to roll a fresh one the same tick (rare,
+        # but no reason to special-case it out).
+        if self._random_derate_remaining_min:
+            for _label in list(self._random_derate_remaining_min):
+                remaining = self._random_derate_remaining_min[_label] - dt_min
+                if remaining <= 0.0:
+                    del self._random_derate_remaining_min[_label]
+                    self._fleet.clear_unit_derate(_label)
+                else:
+                    self._random_derate_remaining_min[_label] = remaining
+
+        if derate_p_tick <= 0.0 and drift_p_tick <= 0.0:
+            return
+
+        for label in self._fleet.online_dispatchable_labels():
+            unit = self._fleet.get_unit(label)
+
+            if (derate_p_tick > 0.0 and not unit.is_derated
+                    and self._deviation_rng.random() < derate_p_tick):
+                self._trigger_random_derate(label)
+                continue  # one event per unit per tick
+
+            if (drift_p_tick > 0.0 and not unit.is_drifting
+                    and self._deviation_rng.random() < drift_p_tick):
+                self._trigger_random_drift(label, unit.target_mw)
+
+    def _trigger_random_derate(self, label: str) -> None:
+        """
+        Start a random capacity derate on the named unit: pick a magnitude
+        and duration, apply via FleetModel.derate_unit(), track expiry,
+        and raise an INFO alarm naming the unit and an in-fiction reason —
+        the player is told WHAT happened but must still notice the
+        practical ceiling themselves (see constants.py's UNIT DEVIATION
+        section for the full rationale).
+        """
+        rated_mw = self._unit_rated_mw_by_label.get(label, 0.0)
+        pct = self._deviation_rng.uniform(
+            _sim_const.RANDOM_DERATE_PCT_MIN, _sim_const.RANDOM_DERATE_PCT_MAX)
+        cap_mw = rated_mw * (1.0 - pct / 100.0)
+        duration_h = self._deviation_rng.uniform(
+            _sim_const.RANDOM_DERATE_DURATION_H_MIN, _sim_const.RANDOM_DERATE_DURATION_H_MAX)
+
+        self._fleet.derate_unit(label, cap_mw)
+        self._random_derate_remaining_min[label] = duration_h * 60.0
+        self._derate_events += 1
+
+        reason = self._pick_derate_reason(label)
+        self._raise_alarm(
+            priority='INFO',
+            message=f'{label} — capacity reduced',
+            element_label=label,
+            detail=f'{label}: {reason} (capped near {cap_mw:.0f} MW).',
+        )
+
+    def _trigger_random_drift(self, label: str, target_mw: float) -> None:
+        """
+        Start a random setpoint drift on the named unit: pick a magnitude
+        and direction, apply via FleetModel.drift_unit(). No alarm — the
+        player must notice the Target/Output mismatch themselves (see
+        constants.py's UNIT DEVIATION section).
+        """
+        pct = self._deviation_rng.uniform(
+            _sim_const.RANDOM_DRIFT_PCT_MIN, _sim_const.RANDOM_DRIFT_PCT_MAX)
+        sign = 1.0 if self._deviation_rng.random() < 0.5 else -1.0
+        offset_mw = sign * target_mw * (pct / 100.0)
+
+        self._fleet.drift_unit(label, offset_mw)
+        self._drift_events += 1
+
+    def _pick_derate_reason(self, label: str) -> str:
+        """Sample an in-fiction derate reason from the pool matching the
+        unit's type, via the deviation RNG (reproducible per shift replay)."""
+        unit_type = self._unit_type_by_label.get(label, '')
+        pool = {
+            'COAL':    _sim_const.RANDOM_DERATE_REASONS_COAL,
+            'NUCLEAR': _sim_const.RANDOM_DERATE_REASONS_NUCLEAR,
+            'CCGT':    _sim_const.RANDOM_DERATE_REASONS_CCGT,
+            'HYDRO':   _sim_const.RANDOM_DERATE_REASONS_HYDRO,
+        }.get(unit_type, _sim_const.RANDOM_DERATE_REASONS_COAL)
+        idx = int(self._deviation_rng.integers(0, len(pool)))
+        return pool[idx]
+
     def _apply_hourly_schedule(self, sim_hour: float) -> None:
         """
         Advance every AUTO-mode unit's target to its Phase 1 planned MW
-        whenever sim_hour crosses an integer-hour boundary (schedules are
-        keyed by whole hour, 0.0-23.0 — see gameplay/phase1.py). No-op if
-        this shift has no hourly_schedule (Shifts without a planning phase).
+        whenever sim_hour crosses a PLANNING_STEP_HOURS boundary (schedules
+        are keyed at that same step, 0.0-23.0 by default — see
+        gameplay/phase1.py), and clear every unit's active setpoint drift
+        fleet-wide at that same crossing (see UnitModel.drift()/
+        FleetModel.clear_all_drifts()) — drift never persists across a
+        schedule boundary regardless of whether this shift has a Phase 1
+        schedule at all, so the boundary-crossing detection below always
+        runs even when self._hourly_schedule is empty (shifts without a
+        planning phase); only the schedule application itself is
+        conditional on a plan existing. This makes drift-clearing itself
+        run at PLANNING_STEP_HOURS cadence campaign-wide (every shift, not
+        just planning-enabled ones) — a single unified boundary-crossing
+        concept, not two independently-tuned timers.
+
+        hour_key is snapped to the nearest PLANNING_STEP_HOURS grid point
+        (not floored) since sim_hour accumulates continuously from
+        tick-driven float addition and will essentially never land exactly
+        on a grid point — nearest-neighbour rounding resolves the boundary
+        the moment sim_hour gets close, same tolerance the old int()-floor
+        version implicitly had at hourly granularity.
         """
-        if not self._hourly_schedule:
-            return
-        hour_key = float(int(sim_hour) % 24)
+        steps_per_hour = 1.0 / _sim_const.PLANNING_STEP_HOURS
+        hour_key = round(sim_hour * steps_per_hour) / steps_per_hour % 24.0
+        hour_key = round(hour_key, 10)
         if hour_key == self._last_dispatch_hour:
             return
         self._last_dispatch_hour = hour_key
-        self._fleet.apply_hourly_schedule(hour_key, self._hourly_schedule)
+        self._fleet.clear_all_drifts()
+        if self._hourly_schedule:
+            self._fleet.apply_hourly_schedule(hour_key, self._hourly_schedule)
 
     # ─────── PUBLIC INTERFACE ─────────────────────────────────────────────
 
@@ -749,10 +988,42 @@ class GridSimulation:
     def set_pumped_storage_mode(self, station_label: str, mode: str) -> bool:
         return False  # deferred to Shift 8 mechanics
 
+    def _start_reclose_cooldown(self, line_label: str) -> None:
+        """
+        Arm the reclose cooldown for a line after ANY switch (trip or
+        close, manual or automatic). Looked up by the line's voltage_kv
+        against _sim_const.LINE_RECLOSE_COOLDOWN_S_BY_DIFFICULTY[self._difficulty]
+        — scales with the trainee/standard/dispatcher difficulty selection
+        (same keys as DIFFICULTY_MULT), not per-shift — every shift gets
+        this procedural constraint automatically. A difficulty or voltage
+        tier absent from the table falls back to LINE_RECLOSE_COOLDOWN_DEFAULT_S
+        (no cooldown) — see constants.py. Symmetric: arms on every switch
+        in either direction, so the next switch of any kind on this line
+        is blocked until it elapses.
+        """
+        voltage_kv = self._line_voltage_kv.get(line_label)
+        cooldown_table = _sim_const.LINE_RECLOSE_COOLDOWN_S_BY_DIFFICULTY.get(self._difficulty, {})
+        cooldown_s = cooldown_table.get(voltage_kv, _sim_const.LINE_RECLOSE_COOLDOWN_DEFAULT_S)
+        if cooldown_s > 0.0:
+            self._reclose_cooldown_remaining[line_label] = cooldown_s
+
+    def _reclose_cooldown_active(self, line_label: str) -> bool:
+        return self._reclose_cooldown_remaining.get(line_label, 0.0) > 0.0
+
     def trip_line(self, line_label: str) -> bool:
         if not self._line_in_service.get(line_label, False):
             return False
+        if self._reclose_cooldown_active(line_label):
+            self._raise_alarm(
+                priority='WARNING',
+                message=f'Line {line_label} switch blocked — cooldown active',
+                element_label=line_label,
+                detail=(f'Line {line_label} switched too recently. Wait for the '
+                        f'reclose cooldown to clear before switching it again.'),
+            )
+            return False
         self._line_in_service[line_label] = False
+        self._start_reclose_cooldown(line_label)
         in_service = self._get_in_service_lines()
         self._loadflow.rebuild(in_service)
         self._voltage.rebuild(in_service)
@@ -768,7 +1039,17 @@ class GridSimulation:
     def close_line(self, line_label: str) -> bool:
         if self._line_in_service.get(line_label, True):
             return False
+        if self._reclose_cooldown_active(line_label):
+            self._raise_alarm(
+                priority='WARNING',
+                message=f'Line {line_label} reclose blocked — cooldown active',
+                element_label=line_label,
+                detail=(f'Line {line_label} switched too recently. Wait for the '
+                        f'reclose cooldown to clear before closing it.'),
+            )
+            return False
         self._line_in_service[line_label] = True
+        self._start_reclose_cooldown(line_label)
         in_service = self._get_in_service_lines()
         self._loadflow.rebuild(in_service)
         self._voltage.rebuild(in_service)
@@ -1421,10 +1702,11 @@ class GridSimulation:
             _sim_const.AGC_ENABLED = bool(action['enabled'])
         elif action_type == 'AGC_EXCLUDE_UNITS':
             # Excludes specific named units from AGC eligibility regardless
-            # of type, on top of the shift-wide AGC_ELIGIBLE_TYPES filter —
-            # instance state (self._fleet), not a _sim_const global, since
-            # this is scoped to one shift run and must reset cleanly between
-            # runs. An empty 'units' list restores full eligibility.
+            # of type, on top of the fixed campaign-wide AGC_ELIGIBLE_TYPES
+            # filter — instance state (self._fleet), not a _sim_const
+            # global, since this is scoped to one shift run and must reset
+            # cleanly between runs. An empty 'units' list restores full
+            # eligibility.
             self.set_agc_excluded_units(action.get('units', []))
 
     def _process_scripted_events(self) -> None:
@@ -1871,6 +2153,8 @@ class GridSimulation:
             max_line_loading_seen=self._max_line_loading,
             load_shed_events=self._load_shed_events,
             cascade_events=self._cascade_events,
+            derate_events=self._derate_events,
+            drift_events=self._drift_events,
             min_voltage_seen=self._min_voltage,
         )
 

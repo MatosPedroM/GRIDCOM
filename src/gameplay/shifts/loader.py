@@ -23,7 +23,7 @@ from __future__ import annotations
 import importlib
 
 from data.profiles import DEMAND_PROFILE_NORMALISED
-from simulation.constants import AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT
+from simulation.constants import LANDING_FREEZE_S as _LANDING_FREEZE_S_DEFAULT
 
 
 def load_shift_config(shift_number: int) -> dict:
@@ -54,20 +54,15 @@ def load_shift_config(shift_number: int) -> dict:
                                                           in a shift_NN.py to widen the alarm/crisis
                                                           band for a tutorial shift. F_MIN/F_MAX, the
                                                           hard clamp, are never scaled)
-        agc_eligible_types  frozenset[str]             — unit types AGC may dispatch (default
-                                                          constants.py AGC_ELIGIBLE_TYPES, {HYDRO,
-                                                          CCGT}); set AGC_ELIGIBLE_TYPES in a
-                                                          shift_NN.py to widen (tutorial shifts —
-                                                          add HYDRO_PUMP) or narrow (hard shifts —
-                                                          HYDRO only) the campaign-wide AGC
-                                                          difficulty curve. HYDRO_ROR is never
-                                                          eligible on any shift — it has no
-                                                          controllable reservoir to respond with
         agc_speed_mult      float                      — multiplier on AGC_MAX_RATE_MW_S and
                                                           AGC_KI together (default 1.0 — see
                                                           constants.py AGC_SPEED_MULT); < 1.0 makes
                                                           AGC noticeably slower to close a given
                                                           error, without changing eligibility
+        landing_freeze_s    float                      — real seconds the sim clock holds at T+0
+                                                          before demand/renewables/scripted events
+                                                          begin advancing (default — see
+                                                          constants.py LANDING_FREEZE_S)
         substation_load_mw  dict[str, dict[float, float]] — per-bus hourly load table (MW), built by
                                                           scaling each LOAD bus's peak_load_mw by the
                                                           shared DEMAND_PROFILE_NORMALISED curve; empty
@@ -143,8 +138,8 @@ def load_shift_config(shift_number: int) -> dict:
         'agc_enabled':             getattr(mod, 'AGC_ENABLED',             False),
         'droop_enabled':           getattr(mod, 'DROOP_ENABLED',           False),
         'freq_tolerance_mult':     getattr(mod, 'FREQ_TOLERANCE_MULT',     1.0),
-        'agc_eligible_types':      frozenset(getattr(mod, 'AGC_ELIGIBLE_TYPES', _AGC_ELIGIBLE_TYPES_DEFAULT)),
         'agc_speed_mult':          getattr(mod, 'AGC_SPEED_MULT',          1.0),
+        'landing_freeze_s':        getattr(mod, 'LANDING_FREEZE_S',        _LANDING_FREEZE_S_DEFAULT),
         'substation_load_mw':      substation_load_mw,
         'substation_types':        dict(getattr(mod, 'SUBSTATION_TYPES', {})),
         'shunt_bank_overrides':    dict(getattr(mod, 'SHUNT_BANK_OVERRIDES', {})),

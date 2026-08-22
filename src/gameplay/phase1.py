@@ -16,7 +16,9 @@ not wired in yet — see STAGE_STATUS.md.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from data.designer_io import load_designer_grid_named
 from data.fleet import GenerationUnit
@@ -29,8 +31,6 @@ from simulation.constants import (
     TECH_MIN_FRAC_CCGT,
     TECH_MIN_FRAC_COAL,
     TECH_MIN_FRAC_NUCLEAR,
-    PLANNING_MIN_RESERVE_MARGIN_FRAC,
-    PLANNING_WARN_RESERVE_MARGIN_FRAC,
     MIN_UP_HOURS_NUCLEAR, MIN_DOWN_HOURS_NUCLEAR,
     MIN_UP_HOURS_COAL, MIN_DOWN_HOURS_COAL,
     MIN_UP_HOURS_CCGT, MIN_DOWN_HOURS_CCGT,
@@ -40,6 +40,11 @@ from simulation.constants import (
     PLANNING_PREV_DAY_FRAC_NUCLEAR, PLANNING_PREV_DAY_FRAC_COAL,
     PLANNING_PREV_DAY_FRAC_CCGT, PLANNING_PREV_DAY_FRAC_HYDRO,
     PLANNING_PREV_DAY_FRAC_HYDRO_ROR, PLANNING_PREV_DAY_FRAC_HYDRO_PUMP,
+    PLANNING_AGC_RESERVE_MW,
+    PLANNING_STEP_HOURS,
+    STARTUP_COST_EUR_BY_TYPE, VARIABLE_COST_EUR_PER_MWH_BY_TYPE,
+    AGC_AVAILABILITY_COST_EUR_PER_HOUR, PLANNING_INITIAL_BUDGET_EUR,
+    DIFFICULTY_COST_MULT,
 )
 from simulation.demand import DemandModel
 from simulation.designer_grid import DesignerGrid
@@ -102,7 +107,9 @@ _AUTO_SCHEDULE_FILL_ORDER: tuple[str, ...] = (
     'HYDRO_ROR', 'NUCLEAR', 'COAL', 'CCGT', 'HYDRO', 'HYDRO_PUMP',
 )
 
-_PLANNING_HOURS: tuple[float, ...] = tuple(float(h) for h in range(24))
+_PLANNING_HOURS: tuple[float, ...] = tuple(
+    round(h * PLANNING_STEP_HOURS, 10) for h in range(int(24 / PLANNING_STEP_HOURS))
+)
 
 
 @dataclass
@@ -128,7 +135,24 @@ class PlanningModel:
     renewable_specs:     list[GenerationUnit] = field(default_factory=list)
     renewable_forecast:  dict[str, dict[float, float]] = field(default_factory=dict)
     maintenance_units: frozenset[str] = frozenset()
+    # Fixed campaign-wide, same value as constants.py AGC_ELIGIBLE_TYPES
+    # (CCGT + HYDRO) — not shift-configurable. Kept as a field (rather than
+    # importing the constant directly at every call site) purely so
+    # is_agc_eligible()/reg_band()/hourly_cost() have one place to read it.
     agc_eligible_types: frozenset[str] = _AGC_ELIGIBLE_TYPES_DEFAULT
+
+    # Per-unit AGC enrollment for the whole plan (not per-hour — a day-long
+    # commitment decision, unlike schedule/online). Only meaningful for units
+    # whose unit_type is in agc_eligible_types; seeded True by default for
+    # those units (see _default_init_schedule) so the player opts OUT rather
+    # than starting from nothing enrolled.
+    agc_enrolled:   dict[str, bool] = field(default_factory=dict)
+
+    budget_eur: float = PLANNING_INITIAL_BUDGET_EUR
+
+    # trainee/standard/dispatcher — scales per-technology costs via
+    # DIFFICULTY_COST_MULT (constants.py). Does not affect budget_eur itself.
+    difficulty: str = 'standard'
 
     hours: tuple[float, ...] = _PLANNING_HOURS
 
@@ -189,17 +213,41 @@ class PlanningModel:
     def is_online(self, label: str, hour: float) -> bool:
         return self.online.get(label, {}).get(hour, False)
 
-    def reset(self, shift_number: int = 10) -> None:
-        _default_init_schedule(self, shift_number)
+    def is_agc_eligible(self, label: str) -> bool:
+        return self.unit(label).unit_type in self.agc_eligible_types
+
+    def is_agc_enrolled(self, label: str) -> bool:
+        return self.agc_enrolled.get(label, False)
+
+    def toggle_agc_enrolled(self, label: str) -> None:
+        """Flip a unit's AGC enrollment for the whole plan. No-op for units
+        whose unit_type isn't in agc_eligible_types this shift."""
+        if not self.is_agc_eligible(label):
+            return
+        self.agc_enrolled[label] = not self.agc_enrolled.get(label, False)
+
+    def reset(self) -> None:
+        _default_init_schedule(self)
 
     # ─────── aggregates ─────────────────────────────────────────────────────
 
     def stacked_by_tech(self, hour: float) -> dict[str, float]:
+        """Generation by technology this column, including a decommitting
+        unit's shutdown-ramp residual (self.schedule holds that ramped-down
+        MW even once self.online flips False — see auto_schedule()'s
+        offline-branch ramp, which moves current output toward 0 rather
+        than snapping it there) — physically that unit is still generating
+        that MW, so it counts toward total_gen()/difference() the same as
+        any online unit. At the previous (hourly) step length this residual
+        always reached exactly 0 within one column, so the distinction was
+        invisible; at a finer step it doesn't always finish ramping down
+        that fast, so counting it is required for total_gen() to match
+        auto_schedule()'s own internal covered-MW accounting."""
         stack: dict[str, float] = {}
         for unit in self.unit_specs:
-            if not self.is_online(unit.label, hour):
-                continue
             mw = self.schedule.get(unit.label, {}).get(hour, 0.0)
+            if mw == 0.0:
+                continue
             stack[unit.unit_type] = stack.get(unit.unit_type, 0.0) + mw
         for unit in self.renewable_specs:
             mw = self.renewable_forecast.get(unit.label, {}).get(hour, 0.0)
@@ -228,31 +276,90 @@ class PlanningModel:
         for unit in self.unit_specs:
             if unit.unit_type not in self.agc_eligible_types:
                 continue
+            if not self.is_agc_enrolled(unit.label):
+                continue
             if not self.is_online(unit.label, hour):
                 continue
             sum_pmax += self.tech_max(unit)
             sum_pmin += self.tech_min(unit)
         return sum_pmax - sum_pmin
 
-    def hours_below_min_reserve(self, frac: float = PLANNING_MIN_RESERVE_MARGIN_FRAC) -> list[float]:
-        """Hours where scheduled generation is below load_forecast * (1 + frac) —
-        insufficient spinning-reserve margin. Blocks Planning-screen confirm."""
-        result = []
-        for h in self.hours:
-            load = self.load_forecast.get(h, 0.0)
-            if self.total_gen(h) < load * (1.0 + frac):
-                result.append(h)
-        return result
+    def reg_band_up(self, hour: float) -> float:
+        """Pooled up-regulation headroom (sum of tech_max - scheduled_mw)
+        across online, AGC-enrolled CCGT/HYDRO units this hour. Always
+        reg_band_up(h) + reg_band_down(h) == reg_band(h)."""
+        total = 0.0
+        for unit in self.unit_specs:
+            if unit.unit_type not in self.agc_eligible_types:
+                continue
+            if not self.is_agc_enrolled(unit.label):
+                continue
+            if not self.is_online(unit.label, hour):
+                continue
+            mw = self.schedule.get(unit.label, {}).get(hour, 0.0)
+            total += self.tech_max(unit) - mw
+        return total
 
-    def hours_above_warn_reserve(self, frac: float = PLANNING_WARN_RESERVE_MARGIN_FRAC) -> list[float]:
-        """Hours where scheduled generation exceeds load_forecast * (1 + frac) —
-        an oversized reserve margin. Non-blocking warning on Planning-screen confirm."""
-        result = []
-        for h in self.hours:
-            load = self.load_forecast.get(h, 0.0)
-            if self.total_gen(h) > load * (1.0 + frac):
-                result.append(h)
-        return result
+    def reg_band_down(self, hour: float) -> float:
+        """Pooled down-regulation headroom (sum of scheduled_mw - tech_min)
+        across online, AGC-enrolled CCGT/HYDRO units this hour. Always
+        reg_band_up(h) + reg_band_down(h) == reg_band(h)."""
+        total = 0.0
+        for unit in self.unit_specs:
+            if unit.unit_type not in self.agc_eligible_types:
+                continue
+            if not self.is_agc_enrolled(unit.label):
+                continue
+            if not self.is_online(unit.label, hour):
+                continue
+            mw = self.schedule.get(unit.label, {}).get(hour, 0.0)
+            total += mw - self.tech_min(unit)
+        return total
+
+    # ─────── economics ────────────────────────────────────────────────────
+
+    def hourly_cost(self, hour: float) -> float:
+        """Variable (fuel) cost + AGC-availability surcharge + startup cost
+        for this hour, summed across all online dispatchable units. Costs
+        are looked up per unit_type (STARTUP_COST_EUR_BY_TYPE /
+        VARIABLE_COST_EUR_PER_MWH_BY_TYPE / AGC_AVAILABILITY_COST_EUR_PER_HOUR,
+        constants.py) and scaled uniformly by DIFFICULTY_COST_MULT[difficulty]
+        — cost is a per-technology property, not a per-fleet-unit one. The
+        fuel and AGC-surcharge terms are rate-based (EUR/MWh, EUR/hour) so
+        both are also scaled by PLANNING_STEP_HOURS to reflect the fraction
+        of an hour each schedule column actually represents — a no-op at
+        the default 1.0 (hourly) step, but keeps total_cost() correct if
+        the step is ever tuned finer again.
+
+        Startup cost is a one-time per-event charge, not a rate, so it is
+        NOT scaled by PLANNING_STEP_HOURS — it fires once on a rising edge
+        (offline -> online) between the previous hour and this one; hour 0
+        is never treated as a startup edge (the fleet is assumed already in
+        whatever state it's in, same boundary assumption auto_schedule()
+        makes)."""
+        cost_mult = DIFFICULTY_COST_MULT.get(self.difficulty, 1.0)
+        total = 0.0
+        h0 = self.hours[0]
+        for unit in self.unit_specs:
+            label = unit.label
+            if not self.is_online(label, hour):
+                continue
+            mw = self.schedule.get(label, {}).get(hour, 0.0)
+            var_cost = VARIABLE_COST_EUR_PER_MWH_BY_TYPE.get(unit.unit_type, 0.0)
+            total += mw * var_cost * cost_mult * PLANNING_STEP_HOURS
+
+            if unit.unit_type in self.agc_eligible_types and self.is_agc_enrolled(label):
+                total += AGC_AVAILABILITY_COST_EUR_PER_HOUR * cost_mult * PLANNING_STEP_HOURS
+
+            if hour != h0 and not self.is_online(label, hour - PLANNING_STEP_HOURS):
+                total += STARTUP_COST_EUR_BY_TYPE.get(unit.unit_type, 0.0) * cost_mult
+        return total
+
+    def total_cost(self) -> float:
+        return sum(self.hourly_cost(h) for h in self.hours)
+
+    def remaining_budget(self) -> float:
+        return self.budget_eur - self.total_cost()
 
     # ─────── auto-scheduler ──────────────────────────────────────────────────
 
@@ -279,6 +386,34 @@ class PlanningModel:
         boundary state is never written to schedule/online and never
         displayed — 00:00 is a fully computed, ordinary hour like any
         other.
+
+        Each hour, after the fill-order commitment pass, three more passes
+        run to reach exactly 0 MW diff and leave AGC (CCGT/HYDRO) with
+        real regulating room, without disturbing any commitment decision
+        above (min-up/min-down, ramp rate):
+
+          1. Trim-back — a baseload/CCGT unit that stays committed because
+             shedding it would need the shortfall to drop below its own
+             -tech_min (not just <=0) can still overshoot a small residual
+             shortfall once online. Walks technologies in *reverse* fill
+             order (most flexible first) pulling already-online units down
+             toward their own tech_min to absorb any such overshoot.
+          2. Force-start — if the hour's online, AGC-enrolled CCGT/HYDRO
+             fleet doesn't have at least 2*PLANNING_AGC_RESERVE_MW of
+             combined range (tech_max-tech_min) to work with, starts the
+             smallest available free-toggle (no min-up/down) AGC-eligible
+             unit at its own range midpoint, shedding the same MW from
+             online baseload to keep diff at 0. Skipped if there isn't
+             enough sheddable baseload room (never overshoots load just to
+             manufacture reserve).
+          3. Substitution — swaps MW between online AGC-eligible and
+             baseload units (same total covered MW, diff undisturbed) so
+             pooled up-headroom and down-headroom across enrolled CCGT/
+             HYDRO units are each independently >= PLANNING_AGC_RESERVE_MW
+             wherever the fleet has the range to support it. Load coverage
+             always wins if the two ever conflict — this pass only ever
+             reallocates MW that's already scheduled, never adds or removes
+             any.
         """
         units_by_type: dict[str, list[GenerationUnit]] = {}
         for unit in self.unit_specs:
@@ -306,15 +441,24 @@ class PlanningModel:
             last_change_hour[label] = h0 - 1000.0
             prev_mw[label] = prev_mw0[label]
 
+        trim_order: tuple[str, ...] = tuple(reversed(_AUTO_SCHEDULE_FILL_ORDER))
+
         for h in self.hours:
             covered = 0.0
+            want_online_this_hour: dict[str, bool] = {}
+            # Snapshot each unit's actual committed MW from the previous
+            # column (or the synthetic D-1 boundary at h0) BEFORE this
+            # column's forward-fill pass mutates prev_mw — Pass 1/2/3 below
+            # need this as the true ramp-budget anchor, since prev_mw
+            # itself becomes "this column's MW so far" partway through.
+            prev_hour_mw: dict[str, float] = dict(prev_mw)
             for tech in _AUTO_SCHEDULE_FILL_ORDER:
                 min_up = _MIN_UP_HOURS.get(tech, 0.0)
                 min_down = _MIN_DOWN_HOURS.get(tech, 0.0)
                 for unit in units_by_type.get(tech, []):
                     label = unit.label
                     shortfall = net_load[h] - covered
-                    prev_online = prev_online0[label] if h == h0 else self.online[label][h - 1.0]
+                    prev_online = prev_online0[label] if h == h0 else self.online[label][h - PLANNING_STEP_HOURS]
                     hours_in_state = h - last_change_hour[label]
 
                     if min_up == 0.0 and min_down == 0.0:
@@ -339,10 +483,16 @@ class PlanningModel:
                         # indefinitely" into 01:00 onward.
                         last_change_hour[label] = h
 
-                    ramp_mw = (unit.ramp_pct_per_min / 100.0) * unit.rated_mw * 60.0
+                    ramp_mw = (unit.ramp_pct_per_min / 100.0) * unit.rated_mw * (PLANNING_STEP_HOURS * 60.0)
                     prev = prev_mw[label]
                     if want_online:
-                        desired = min(self.tech_max(unit), self.tech_min(unit) + max(0.0, shortfall))
+                        # Clamp the remaining shortfall into this unit's own
+                        # [tech_min, tech_max] range — NOT tech_min+shortfall,
+                        # which would double-count tech_min as an offset on
+                        # top of the shortfall and over-size every committed
+                        # unit toward its own ceiling regardless of how much
+                        # is actually still needed.
+                        desired = min(self.tech_max(unit), max(self.tech_min(unit), shortfall))
                     else:
                         desired = 0.0
                     delta = desired - prev
@@ -355,7 +505,229 @@ class PlanningModel:
                     self.online.setdefault(label, {})[h] = want_online
                     self.schedule.setdefault(label, {})[h] = mw
                     prev_mw[label] = mw
+                    want_online_this_hour[label] = want_online
                     covered += mw
+
+            # ---- Pass 1: trim-back ----
+            # A "sticky" baseload/CCGT unit kept online above can overshoot
+            # a small residual shortfall (or shortfall <= 0) once running,
+            # since shedding it was correctly refused unless doing so would
+            # itself create a *worse* shortfall. Pull already-online units
+            # down toward their own tech_min, most flexible technology
+            # first, to soak up any such overshoot — never forces a unit
+            # offline (that stays purely a commitment decision, above).
+            # room_to_trim is bounded by BOTH tech_min and the unit's
+            # remaining ramp-down budget for this column relative to its
+            # actual previous-column MW (prev_hour_mw[label], the true
+            # committed value carried in from the last column) — the
+            # forward-fill pass above may already have used some of that
+            # budget moving toward its own `desired`, so this pass must not
+            # push the unit further than the ramp still allows in total.
+            overshoot = covered - net_load[h]
+            if overshoot > 1e-6:
+                for tech in trim_order:
+                    if overshoot <= 1e-6:
+                        break
+                    for unit in reversed(units_by_type.get(tech, [])):
+                        if overshoot <= 1e-6:
+                            break
+                        label = unit.label
+                        if not want_online_this_hour.get(label, False):
+                            continue
+                        current_mw = self.schedule[label][h]
+                        ramp_mw = (unit.ramp_pct_per_min / 100.0) * unit.rated_mw * (PLANNING_STEP_HOURS * 60.0)
+                        min_mw_this_column = max(
+                            self.tech_min(unit), prev_hour_mw[label] - ramp_mw
+                        )
+                        room_to_trim = current_mw - min_mw_this_column
+                        trim = min(room_to_trim, overshoot)
+                        if trim <= 1e-9:
+                            continue
+                        new_mw = current_mw - trim
+                        self.schedule[label][h] = new_mw
+                        prev_mw[label] = new_mw
+                        overshoot -= trim
+                        covered -= trim
+
+            # ---- Pass 2: force-start (AGC reserve floor) ----
+            # Triggered on the online AGC-enrolled fleet's ACTUAL remaining
+            # pooled headroom (not nominal tech_max-tech_min range) — a
+            # CCGT run flat-out to cover a tight hour's load has plenty of
+            # nominal range but zero real headroom left, and that case must
+            # still trigger a force-start. If pooled up-headroom (or
+            # down-headroom) is short of PLANNING_AGC_RESERVE_MW, starts
+            # the largest available free-toggle (no min-up/down — CCGT is
+            # never a candidate here, it can't flip on for one hour) AGC-
+            # eligible unit at its own midpoint, shedding the same MW from
+            # online BASELOAD only (never another AGC unit — shedding an
+            # AGC donor would just relocate headroom, not create any) to
+            # keep diff at 0. Skips a candidate if there isn't enough
+            # sheddable baseload room to fully offset it.
+            def _agc_online_units() -> list[GenerationUnit]:
+                return [
+                    u for u in self.unit_specs
+                    if u.unit_type in self.agc_eligible_types
+                    and self.is_agc_enrolled(u.label)
+                    and want_online_this_hour.get(u.label, False)
+                ]
+
+            def _baseload_online_units() -> list[GenerationUnit]:
+                return [
+                    u for u in self.unit_specs
+                    if u.unit_type not in self.agc_eligible_types
+                    and want_online_this_hour.get(u.label, False)
+                ]
+
+            def _pooled_up() -> float:
+                return sum(self.tech_max(u) - self.schedule[u.label][h] for u in _agc_online_units())
+
+            def _pooled_down() -> float:
+                return sum(self.schedule[u.label][h] - self.tech_min(u) for u in _agc_online_units())
+
+            def _force_start_toward(pooled_fn) -> None:
+                candidates = [
+                    u for u in self.unit_specs
+                    if u.unit_type in self.agc_eligible_types
+                    and self.is_agc_enrolled(u.label)
+                    and _MIN_UP_HOURS.get(u.unit_type, 0.0) == 0.0
+                    and _MIN_DOWN_HOURS.get(u.unit_type, 0.0) == 0.0
+                    and not want_online_this_hour.get(u.label, False)
+                ]
+                candidates.sort(key=lambda u: -(self.tech_max(u) - self.tech_min(u)))
+                for unit in candidates:
+                    if pooled_fn() >= PLANNING_AGC_RESERVE_MW - 1e-6:
+                        break
+                    label = unit.label
+                    # Midpoint gives roughly equal up/down headroom from
+                    # this one start regardless of which direction
+                    # triggered it — Pass 3 (substitution) fine-tunes the
+                    # exact balance afterward using whatever is committed.
+                    start_mw = (self.tech_min(unit) + self.tech_max(unit)) / 2.0
+                    need_to_shed = start_mw
+                    for tech in trim_order:
+                        if need_to_shed <= 1e-6:
+                            break
+                        if tech in self.agc_eligible_types:
+                            continue
+                        for bunit in reversed(units_by_type.get(tech, [])):
+                            if need_to_shed <= 1e-6:
+                                break
+                            blabel = bunit.label
+                            if not want_online_this_hour.get(blabel, False):
+                                continue
+                            current = self.schedule[blabel][h]
+                            bramp_mw = (bunit.ramp_pct_per_min / 100.0) * bunit.rated_mw * (PLANNING_STEP_HOURS * 60.0)
+                            bmin_mw_this_column = max(
+                                self.tech_min(bunit), prev_hour_mw[blabel] - bramp_mw
+                            )
+                            room = current - bmin_mw_this_column
+                            take = min(room, need_to_shed)
+                            if take <= 1e-9:
+                                continue
+                            self.schedule[blabel][h] = current - take
+                            prev_mw[blabel] = self.schedule[blabel][h]
+                            need_to_shed -= take
+                    if need_to_shed > 1e-6:
+                        # Not enough sheddable baseload room to fully offset
+                        # this unit without overshooting net_load — skip it
+                        # rather than break 0 diff to manufacture reserve.
+                        continue
+                    self.online.setdefault(label, {})[h] = True
+                    self.schedule.setdefault(label, {})[h] = start_mw
+                    prev_mw[label] = start_mw
+                    want_online_this_hour[label] = True
+                    last_change_hour[label] = h
+
+            if _pooled_up() < PLANNING_AGC_RESERVE_MW:
+                _force_start_toward(_pooled_up)
+            if _pooled_down() < PLANNING_AGC_RESERVE_MW:
+                _force_start_toward(_pooled_down)
+
+            # ---- Pass 3: substitution (balance up/down headroom) ----
+            # Swap MW between online AGC-eligible and baseload units (net
+            # covered MW unchanged, so diff stays exactly as passes 1-2
+            # left it) so pooled up-headroom and down-headroom across
+            # enrolled CCGT/HYDRO are each independently pushed toward
+            # PLANNING_AGC_RESERVE_MW wherever the fleet's online range
+            # allows it. Reuses _agc_online_units()/_baseload_online_units()
+            # from Pass 2. Every MW moved here is bounded by the receiving/
+            # donating unit's remaining ramp budget against its actual
+            # previous-column MW (prev_hour_mw), same as Pass 1/2 — a swap
+            # can move a unit further from its own last committed value
+            # than a single column's ramp allows otherwise.
+            def _ramp_mw_of(u: GenerationUnit) -> float:
+                return (u.ramp_pct_per_min / 100.0) * u.rated_mw * (PLANNING_STEP_HOURS * 60.0)
+
+            def _room_up(u: GenerationUnit, label: str) -> float:
+                # How much this unit can rise this column: capped by both
+                # tech_max and its remaining ramp-up budget from prev_hour_mw.
+                current = self.schedule[label][h]
+                max_mw_this_column = min(self.tech_max(u), prev_hour_mw[label] + _ramp_mw_of(u))
+                return max(0.0, max_mw_this_column - current)
+
+            def _room_down(u: GenerationUnit, label: str) -> float:
+                # How much this unit can fall this column: capped by both
+                # tech_min and its remaining ramp-down budget from prev_hour_mw.
+                current = self.schedule[label][h]
+                min_mw_this_column = max(self.tech_min(u), prev_hour_mw[label] - _ramp_mw_of(u))
+                return max(0.0, current - min_mw_this_column)
+
+            agc_units = _agc_online_units()
+            if agc_units:
+                up_headroom = sum(self.tech_max(u) - self.schedule[u.label][h] for u in agc_units)
+                need_up = max(0.0, PLANNING_AGC_RESERVE_MW - up_headroom)
+                if need_up > 1e-6:
+                    baseload_units = _baseload_online_units()
+                    for unit in reversed(agc_units):
+                        if need_up <= 1e-6:
+                            break
+                        label = unit.label
+                        can_pull = _room_down(unit, label)
+                        pull = min(can_pull, need_up)
+                        if pull <= 1e-9:
+                            continue
+                        for bunit in baseload_units:
+                            if pull <= 1e-9:
+                                break
+                            blabel = bunit.label
+                            spare = _room_up(bunit, blabel)
+                            take = min(spare, pull)
+                            if take <= 1e-9:
+                                continue
+                            self.schedule[blabel][h] += take
+                            self.schedule[label][h] -= take
+                            pull -= take
+                            need_up -= take
+
+                agc_units = _agc_online_units()
+                down_headroom = sum(self.schedule[u.label][h] - self.tech_min(u) for u in agc_units)
+                need_down = max(0.0, PLANNING_AGC_RESERVE_MW - down_headroom)
+                if need_down > 1e-6:
+                    baseload_units = _baseload_online_units()
+                    for unit in agc_units:
+                        if need_down <= 1e-6:
+                            break
+                        label = unit.label
+                        can_push = _room_up(unit, label)
+                        push = min(can_push, need_down)
+                        if push <= 1e-9:
+                            continue
+                        for bunit in baseload_units:
+                            if push <= 1e-9:
+                                break
+                            blabel = bunit.label
+                            spare = _room_down(bunit, blabel)
+                            take = min(spare, push)
+                            if take <= 1e-9:
+                                continue
+                            self.schedule[blabel][h] -= take
+                            self.schedule[label][h] += take
+                            push -= take
+                            need_down -= take
+
+            for label, hours_dict in self.schedule.items():
+                if h in hours_dict:
+                    prev_mw[label] = hours_dict[h]
 
     # ─────── output to the sim ─────────────────────────────────────────────
 
@@ -370,8 +742,10 @@ class PlanningModel:
         return result
 
     def to_hourly_dispatch(self) -> dict[str, dict[float, float]]:
-        """Full 24h schedule, zeroed for hours a unit is offline. Consumed by
-        a future per-hour executor; currently inert once passed to the sim."""
+        """Full 24h schedule, zeroed for hours a unit is offline. Written to
+        disk by write_schedule_json() and consumed each simulated-hour
+        boundary by FleetModel.apply_hourly_schedule() (see
+        GridSimulation._apply_hourly_schedule())."""
         result: dict[str, dict[float, float]] = {}
         for unit in self.unit_specs:
             result[unit.label] = {
@@ -383,6 +757,94 @@ class PlanningModel:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# JSON HANDOFF — Phase 1 -> Phase 2
+#
+# The confirmed plan is written to disk rather than passed to GridSimulation
+# in memory: src/assets/planning_schedules/shift{NN}_hourly.json is the
+# actual automatic hourly per-unit setpoint program Phase 2 runs against,
+# not a debug mirror of something else already carrying the data. This
+# makes the handoff inspectable/editable by hand and reproducible
+# independent of the PlanningModel instance that produced it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PLANNING_SCHEDULES_DIR = Path(__file__).parent.parent / 'assets' / 'planning_schedules'
+
+
+def write_schedule_json(model: PlanningModel, shift_number: int) -> Path:
+    """Serialize the confirmed plan's handover dispatch and full 24h
+    schedule to src/assets/planning_schedules/shift{NN}_hourly.json.
+    Overwrites any existing file for this shift."""
+    _PLANNING_SCHEDULES_DIR.mkdir(parents=True, exist_ok=True)
+    path = _PLANNING_SCHEDULES_DIR / f'shift{shift_number:02d}_hourly.json'
+
+    hourly = model.to_hourly_dispatch()
+    data = {
+        'shift_number':     shift_number,
+        'start_hour':       model.start_hour,
+        'duration_hours':   model.duration_hours,
+        'initial_schedule': model.to_initial_schedule(),
+        'hourly_schedule':  {
+            label: {str(h): mw for h, mw in by_hour.items()}
+            for label, by_hour in hourly.items()
+        },
+        'agc_enrolled_units': sorted(
+            label for label, enrolled in model.agc_enrolled.items() if enrolled
+        ),
+    }
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+    return path
+
+
+def load_schedule_json(
+    shift_number: int,
+) -> tuple[dict[str, float], dict[str, dict[float, float]], frozenset[str]]:
+    """Read back shift{NN}_hourly.json written by write_schedule_json().
+
+    Returns (initial_schedule, hourly_schedule, agc_enrolled_units) in
+    exactly the shapes GridSimulation/_make_sim_and_renderer expect.
+    agc_enrolled_units is an empty frozenset for files predating that field.
+    Raises FileNotFoundError if the shift was never planned — this is only
+    ever called right after a confirmed plan, so a missing file means the
+    caller is wired wrong, not a normal fallback case."""
+    path = _PLANNING_SCHEDULES_DIR / f'shift{shift_number:02d}_hourly.json'
+    if not path.exists():
+        raise FileNotFoundError(
+            f'No confirmed Phase 1 plan for shift {shift_number} — expected {path}'
+        )
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    initial_schedule: dict[str, float] = dict(data['initial_schedule'])
+    hourly_schedule: dict[str, dict[float, float]] = {
+        label: {float(h): mw for h, mw in by_hour.items()}
+        for label, by_hour in data['hourly_schedule'].items()
+    }
+
+    # Defensive: a schedule file written before a PLANNING_STEP_HOURS change
+    # would silently under-apply (units never update at the missing
+    # columns) rather than error, if read back today. This is only ever
+    # called right after write_schedule_json() in the same session (see
+    # this function's docstring), so a mismatch should never occur in
+    # normal play — this exists purely to fail loudly instead of silently
+    # if that assumption is ever violated.
+    expected_hours = frozenset(
+        round(h * PLANNING_STEP_HOURS, 10) for h in range(int(24 / PLANNING_STEP_HOURS))
+    )
+    for label, by_hour in hourly_schedule.items():
+        if frozenset(by_hour.keys()) != expected_hours:
+            raise ValueError(
+                f'{path} has a stale/mismatched schedule granularity for '
+                f'{label!r} (expected {len(expected_hours)} columns at '
+                f'{PLANNING_STEP_HOURS}h steps) — reconfirm the Phase 1 '
+                f'plan for shift {shift_number} to regenerate it.'
+            )
+
+    agc_enrolled_units: frozenset[str] = frozenset(data.get('agc_enrolled_units', []))
+    return initial_schedule, hourly_schedule, agc_enrolled_units
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # FACTORY — Shift 10 only
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -391,7 +853,7 @@ def build_planning_model_for_shift10() -> PlanningModel:
     return build_planning_model(10)
 
 
-def build_planning_model(shift_number: int) -> PlanningModel:
+def build_planning_model(shift_number: int, difficulty: str = 'standard') -> PlanningModel:
     cfg = load_shift_config(shift_number)
 
     grid_source = cfg.get('grid_source')
@@ -411,10 +873,14 @@ def build_planning_model(shift_number: int) -> PlanningModel:
 
     substation_specs = get_substation_demand_specs(cfg['substation_load_mw'])
     demand_model = DemandModel(cfg['peak_demand_mw'], substation_specs)
-    load_forecast = demand_model.forecast_by_hour(0.0, 23.0, step=1.0)
+    load_forecast = demand_model.forecast_by_hour(
+        0.0, 24.0 - PLANNING_STEP_HOURS, step=PLANNING_STEP_HOURS
+    )
 
     renewables = RenewablesModel(grid)
-    renewable_forecast = renewables.forecast_by_hour(0.0, 23.0, step=1.0)
+    renewable_forecast = renewables.forecast_by_hour(
+        0.0, 24.0 - PLANNING_STEP_HOURS, step=PLANNING_STEP_HOURS
+    )
 
     model = PlanningModel(
         unit_specs=dispatchable,
@@ -424,25 +890,21 @@ def build_planning_model(shift_number: int) -> PlanningModel:
         renewable_specs=renewable_specs,
         renewable_forecast=renewable_forecast,
         maintenance_units=frozenset(cfg['maintenance_units']),
-        agc_eligible_types=cfg.get('agc_eligible_types', _AGC_ELIGIBLE_TYPES_DEFAULT),
+        difficulty=difficulty,
     )
-    _default_init_schedule(model, shift_number, cfg=cfg)
+    _default_init_schedule(model)
     return model
 
 
-def _default_init_schedule(model: PlanningModel, shift_number: int, cfg: dict | None = None) -> None:
-    """Seed the schedule flat across all 24 hours from the shift's
-    INITIAL_SCHEDULE / MAINTENANCE_UNITS. Units absent from INITIAL_SCHEDULE
-    (or on maintenance) start OFFLINE."""
-    if cfg is None:
-        cfg = load_shift_config(shift_number)
-    initial_schedule: dict[str, float] = cfg['initial_schedule']
-    maintenance_units: set[str] = cfg['maintenance_units']
-
+def _default_init_schedule(model: PlanningModel) -> None:
+    """Seed the schedule flat across all 24 hours: every dispatchable unit
+    starts OFFLINE at 0 MW, with no shift-authored starting point — the
+    player builds the whole day's commitment from a blank slate. No shift
+    file hardcodes a handover dispatch; the confirmed plan's start_hour
+    column is the only source of Phase 2's initial dispatch."""
     for unit in model.unit_specs:
         label = unit.label
-        mw = initial_schedule.get(label)
-        is_on = (mw is not None) and (label not in maintenance_units)
-        model.online[label] = {h: is_on for h in model.hours}
-        flat_mw = mw if mw is not None else 0.0
-        model.schedule[label] = {h: flat_mw for h in model.hours}
+        model.online[label] = {h: False for h in model.hours}
+        model.schedule[label] = {h: 0.0 for h in model.hours}
+        if unit.unit_type in model.agc_eligible_types:
+            model.agc_enrolled[label] = True

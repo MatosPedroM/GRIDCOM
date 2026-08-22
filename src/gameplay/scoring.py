@@ -90,6 +90,8 @@ def grade_shift(state, failed: bool = False, failed_objective: dict | None = Non
         'unit_trips':              trips,
         'load_shed_events':        state.load_shed_events,
         'cascade_events':          state.cascade_events,
+        'derate_events':           state.derate_events,
+        'drift_events':            state.drift_events,
     }
 
     if failed:

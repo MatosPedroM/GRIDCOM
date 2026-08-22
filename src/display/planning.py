@@ -24,7 +24,7 @@ from typing import Callable
 import pygame
 import pygame.freetype
 
-from display.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_CRIT, COL_ALARM_WARN
+from display.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_CRIT
 from gameplay.phase1 import PlanningModel
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
@@ -33,7 +33,8 @@ from simulation.constants import (
     PLANNING_STATUS_DISPLAY_S,
     PLANNING_KEY_UP, PLANNING_KEY_DOWN, PLANNING_KEY_LEFT, PLANNING_KEY_RIGHT,
     PLANNING_KEY_EDIT, PLANNING_KEY_TECH_MIN, PLANNING_KEY_TECH_MAX,
-    PLANNING_KEY_ZERO, PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_RESET,
+    PLANNING_KEY_ZERO, PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_TOGGLE_AGC,
+    PLANNING_KEY_RESET,
     PLANNING_KEY_AUTO, PLANNING_KEY_CONFIRM, PLANNING_KEY_BACK,
 )
 from utils.helpers import resource_path
@@ -188,9 +189,17 @@ class PlanningScreen:
                 self._model.fill_cell_zero(label, hour)
         elif event.key == PLANNING_KEY_TOGGLE_ONLINE:
             self._model.toggle_online(self._selected_label())
+        elif event.key == PLANNING_KEY_TOGGLE_AGC:
+            label = self._selected_label()
+            if self._model.is_agc_eligible(label):
+                self._model.toggle_agc_enrolled(label)
+                state = 'ENROLLED' if self._model.is_agc_enrolled(label) else 'excluded'
+                self._set_status(f'{label} AGC {state}', COL_DESIGNER_STATUS_INFO)
+            else:
+                self._set_status(f'{label} is not an AGC-eligible type this shift', COL_TEXT_CRIT)
         elif event.key == PLANNING_KEY_RESET:
-            self._model.reset(self._shift_number)
-            self._set_status('Schedule reset to shift handover dispatch', COL_DESIGNER_STATUS_INFO)
+            self._model.reset()
+            self._set_status('Schedule reset — all units OFFLINE', COL_DESIGNER_STATUS_INFO)
         elif event.key == PLANNING_KEY_CONFIRM:
             self._confirm_plan()
         return True
@@ -260,24 +269,12 @@ class PlanningScreen:
             self._set_status(f'Invalid value: {buf!r}', COL_TEXT_CRIT)
 
     def _confirm_plan(self) -> None:
-        bad_hours = self._model.hours_below_min_reserve()
-        if bad_hours:
+        remaining = self._model.remaining_budget()
+        if remaining < 0.0:
             self._pending_confirm = False
-            hour_str = ', '.join(f'{int(h):02d}:00' for h in bad_hours[:2])
-            extra = f' (+{len(bad_hours) - 2} more)' if len(bad_hours) > 2 else ''
             self._set_status(
-                f'Cannot confirm: generation below +5% reserve margin at {hour_str}{extra}',
+                f'Cannot confirm: plan is EUR {-remaining:,.0f} over budget',
                 COL_TEXT_CRIT)
-            return
-
-        warn_hours = self._model.hours_above_warn_reserve()
-        if warn_hours and not self._pending_confirm:
-            self._pending_confirm = True
-            hour_str = ', '.join(f'{int(h):02d}:00' for h in warn_hours[:2])
-            extra = f' (+{len(warn_hours) - 2} more)' if len(warn_hours) > 2 else ''
-            self._set_status(
-                f'Generation over +20% reserve margin at {hour_str}{extra} — press CONFIRM again to proceed',
-                COL_ALARM_WARN)
             return
 
         self._pending_confirm = False

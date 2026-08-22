@@ -49,6 +49,12 @@ class GenerationUnit:
                            not enforced by the real-time simulation)
         min_down_time_h:   Minimum hours a unit must stay OFFLINE before
                            restarting (Phase 1 planning-layer constraint only)
+
+    Phase 1 scheduler economics (startup cost, fuel cost, AGC-availability
+    cost) are NOT unit fields — they're looked up by unit_type from
+    constants.py's STARTUP_COST_EUR_BY_TYPE / VARIABLE_COST_EUR_PER_MWH_BY_TYPE,
+    scaled by DIFFICULTY_COST_MULT. Cost is a per-technology property, not a
+    per-fleet-unit override.
     """
     label:             str
     station_label:     str

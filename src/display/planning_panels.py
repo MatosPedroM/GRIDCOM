@@ -35,8 +35,10 @@ from simulation.constants import (
     PLANNING_ROW_H, PLANNING_PLOT_H, PLANNING_PLOT_Y_HEADROOM_FRAC,
     PLANNING_TABLE_GROUP_GAP, PLANNING_TABLE_VISIBLE_H,
     PLANNING_KEY_EDIT, PLANNING_KEY_TECH_MIN, PLANNING_KEY_TECH_MAX,
-    PLANNING_KEY_ZERO, PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_RESET,
+    PLANNING_KEY_ZERO, PLANNING_KEY_TOGGLE_ONLINE, PLANNING_KEY_TOGGLE_AGC,
+    PLANNING_KEY_RESET,
     PLANNING_KEY_AUTO, PLANNING_KEY_CONFIRM, PLANNING_KEY_BACK,
+    PLANNING_AGC_RESERVE_MW,
 )
 
 _scale: float = 1.0
@@ -89,6 +91,15 @@ def draw_planning(surf: pygame.Surface, screen, font, font_large, scale: float =
 
     _label(surf, font_large, PLANNING_LEFT_MARGIN, 2,
            f'SHIFT {screen._shift_number} PLANNING — 24H UNIT SCHEDULE', COL_TEXT_HEADING)
+
+    remaining = model.remaining_budget()
+    budget_colour = COL_TEXT_CRIT if remaining < 0.0 else COL_TEXT_VALUE
+    budget_text = (
+        f'PLAN COST: EUR {model.total_cost():,.0f}   '
+        f'BUDGET: EUR {model.budget_eur:,.0f}   '
+        f'REMAINING: EUR {remaining:,.0f}'
+    )
+    _label_right(surf, font, NATIVE_WIDTH - PLANNING_LEFT_MARGIN, 6, budget_text, budget_colour)
 
     plot_top = PLANNING_TOP_MARGIN
     _draw_plot(surf, screen, font, plot_top)
@@ -288,7 +299,12 @@ def _draw_table(surf, screen, font, y0) -> float:
         toggle_rect = pygame.Rect(x0, y, 34, PLANNING_ROW_H)
         screen._hit_rects.append((f'toggle:{unit.label}', toggle_rect))
         _label(surf, font, x0, y, '[ON]' if online else '[OFF]', label_colour)
-        _label(surf, font, x0 + 40, y, f'{unit.label:<8}', label_colour)
+
+        if model.is_agc_eligible(unit.label):
+            agc_colour = COL_TEXT_GOOD if model.is_agc_enrolled(unit.label) else COL_TEXT_DIM
+            _label(surf, font, x0 + 38, y, '[A]', agc_colour)
+
+        _label(surf, font, x0 + 62, y, f'{unit.label:<8}', label_colour)
 
         for i, h in enumerate(model.hours):
             cx = x0 + PLANNING_LABEL_COL_W + i * PLANNING_HOUR_COL_W
@@ -299,7 +315,12 @@ def _draw_table(surf, screen, font, y0) -> float:
             screen._hit_rects.append((f'cell:{unit.label}:{h}', cell_rect))
             if is_sel:
                 _rect(surf, COL_PLAN_CELL_SEL, cx, y, PLANNING_HOUR_COL_W, PLANNING_ROW_H, width=1)
-            text = f'{mw:.0f}' if hour_online else '-'
+            # A column can be OFFLINE but still show a nonzero MW — the
+            # auto-scheduler's shutdown ramp (and total_gen()/DIFF) count a
+            # decommitting unit's residual output until it actually reaches
+            # 0, so the cell must show that value rather than a bare '-'
+            # once it's mid-ramp-down.
+            text = f'{mw:.0f}' if (hour_online or mw != 0.0) else '-'
             colour = COL_TEXT_VALUE if hour_online else COL_PLAN_OFFLINE
             _label_right(surf, font, cx + PLANNING_HOUR_COL_W - 4, y, text, colour)
 
@@ -326,30 +347,37 @@ def _draw_summary_rows(surf, screen, font, y0) -> None:
     _line(surf, COL_PANEL_BORDER, (x0, y), (x0 + PLANNING_LABEL_COL_W + PLANNING_HOUR_COL_W * len(model.hours), y))
     y += 4
 
+    def _diff_colour(h, val):
+        abs_val = abs(val)
+        if abs_val < 0.02 * max(1.0, model.load_forecast.get(h, 1.0)):
+            return COL_TEXT_GOOD
+        elif abs_val < 0.05 * max(1.0, model.load_forecast.get(h, 1.0)):
+            return COL_TEXT_WARN
+        return COL_TEXT_CRIT
+
+    def _reserve_colour(h, val):
+        # Below the auto-scheduler's own reserve target is a real gap
+        # (either a capacity-scarce hour or a hand-edited plan) — red,
+        # same alert weight as DIFF's own worst tier.
+        return COL_TEXT_CRIT if val < PLANNING_AGC_RESERVE_MW else COL_TEXT_GOOD
+
     rows = (
         ('WIND FCST', lambda h: model.renewable_total(h, 'WIND'), COL_TEXT_SECONDARY),
         ('SOLAR FCST', lambda h: model.renewable_total(h, 'SOLAR'), COL_TEXT_SECONDARY),
         ('TOTAL GEN', lambda h: model.total_gen(h), COL_TEXT_VALUE),
         ('LOAD FCST', lambda h: model.load_forecast.get(h, 0.0), COL_TEXT_VALUE),
-        ('DIFF',      lambda h: model.difference(h), None),
-        ('REG BAND',  lambda h: model.reg_band(h), COL_TEXT_SECONDARY),
+        ('DIFF',      lambda h: model.difference(h), _diff_colour),
+        ('REG UP',    lambda h: model.reg_band_up(h), _reserve_colour),
+        ('REG DOWN',  lambda h: model.reg_band_down(h), _reserve_colour),
+        ('COST EUR',  lambda h: model.hourly_cost(h), COL_TEXT_SECONDARY),
     )
 
-    for label, fn, fixed_colour in rows:
+    for label, fn, colour_spec in rows:
         _label(surf, font, x0, y, label, COL_TEXT_HEADING)
         for i, h in enumerate(model.hours):
             cx = x0 + PLANNING_LABEL_COL_W + i * PLANNING_HOUR_COL_W
             val = fn(h)
-            if fixed_colour is not None:
-                colour = fixed_colour
-            else:
-                abs_val = abs(val)
-                if abs_val < 0.02 * max(1.0, model.load_forecast.get(h, 1.0)):
-                    colour = COL_TEXT_GOOD
-                elif abs_val < 0.05 * max(1.0, model.load_forecast.get(h, 1.0)):
-                    colour = COL_TEXT_WARN
-                else:
-                    colour = COL_TEXT_CRIT
+            colour = colour_spec(h, val) if callable(colour_spec) else colour_spec
             _label_right(surf, font, cx + PLANNING_HOUR_COL_W - 4, y, f'{val:.0f}', colour)
         y += PLANNING_ROW_H
 
@@ -373,6 +401,7 @@ def _draw_footer(surf, screen, font) -> None:
         f'[{tech_min}/{tech_max}] tech min/max  [Shift+{tech_min}/{tech_max}] fill row  '
         f'[{zero_key}] zero  [Shift+{zero_key}] zero row  '
         f'[{_key_label(PLANNING_KEY_TOGGLE_ONLINE)}] online/off  '
+        f'[{_key_label(PLANNING_KEY_TOGGLE_AGC)}] AGC enroll  '
         f'[{_key_label(PLANNING_KEY_RESET)}] reset  '
         f'[Ctrl+{_key_label(PLANNING_KEY_AUTO)}] auto-schedule  '
         f'[{_key_label(PLANNING_KEY_CONFIRM)}] confirm plan  '

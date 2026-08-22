@@ -64,6 +64,7 @@ from simulation.constants import (
     SPEED_PAUSE, SPEED_SLOW, SPEED_NORMAL, SPEED_FAST, SPEED_VERY_FAST,
     TYPEWRITER_CHARS_PER_SEC,
     AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT,
+    LANDING_FREEZE_S as _LANDING_FREEZE_S_DEFAULT,
 )
 import simulation.constants as _const
 from debug_scenario import make_debug_sim, DEBUG_SCENARIO
@@ -239,7 +240,7 @@ def _make_sim_and_renderer(
     display_surf: pygame.Surface,
     shift: int,
     difficulty: str = 'standard',
-    planning_model=None,
+    use_planned_schedule: bool = False,
 ):
     """
     Build sim + renderer for a campaign shift.
@@ -251,11 +252,12 @@ def _make_sim_and_renderer(
     still passed through unchanged so briefing/debrief/HUD/scripted-events
     continue to key off the real shift number either way.
 
-    planning_model: a completed gameplay.phase1.PlanningModel, if the player
-    went through the Phase 1 planning screen for this shift. When given, its
-    shift-start-hour column overrides the shift file's INITIAL_SCHEDULE (the
-    handover dispatch), and its full 24h schedule is passed through to
-    GridSimulation as hourly_schedule (currently inert — see simulation.py).
+    use_planned_schedule: True if the player went through and confirmed the
+    Phase 1 planning screen for this shift. When True, the handover dispatch
+    and full 24h hourly schedule are loaded from
+    gameplay.phase1.load_schedule_json(shift) (written by
+    write_schedule_json() when the plan was confirmed) instead of from the
+    shift file's own INITIAL_SCHEDULE.
     """
     cfg         = load_shift_config(shift)
     grid_source = cfg.get('grid_source')
@@ -270,9 +272,10 @@ def _make_sim_and_renderer(
 
     initial_schedule = cfg['initial_schedule']
     hourly_schedule   = None
-    if planning_model is not None:
-        initial_schedule = planning_model.to_initial_schedule()
-        hourly_schedule   = planning_model.to_hourly_dispatch()
+    agc_enrolled_units: frozenset[str] | None = None
+    if use_planned_schedule:
+        from gameplay.phase1 import load_schedule_json
+        initial_schedule, hourly_schedule, agc_enrolled_units = load_schedule_json(shift)
 
     # load_shift_config() already derives substation_load_mw from the grid's
     # own per-bus peak_load_mw (GRID_SOURCE shifts) or from SUBSTATION_LOAD_MW.
@@ -317,12 +320,24 @@ def _make_sim_and_renderer(
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.DROOP_ENABLED = cfg['droop_enabled']
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
-    # Reset to the true default (not _const.AGC_ELIGIBLE_TYPES, which may
-    # still hold a PREVIOUS shift's override otherwise) so a shift that
-    # declares nothing gets the real baseline, not whatever the last shift
-    # left behind — same reasoning AGC_SET's docstring already calls out.
-    _const.AGC_ELIGIBLE_TYPES = cfg.get('agc_eligible_types', _AGC_ELIGIBLE_TYPES_DEFAULT)
     _const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
+    _const.LANDING_FREEZE_S = cfg.get('landing_freeze_s', _LANDING_FREEZE_S_DEFAULT)
+
+    # Per-unit AGC enrollment chosen on the Planning screen (Phase 1) —
+    # invert into the exclusion set FleetModel already supports (same
+    # mechanism the AGC_EXCLUDE_UNITS scripted action uses mid-shift), so
+    # only units the player actually enrolled regulate, not the whole
+    # eligible type. AGC_ELIGIBLE_TYPES itself is fixed campaign-wide (CCGT +
+    # HYDRO, never per-shift), so this only ever narrows within that fixed
+    # set. Shifts without a planning session keep today's behavior
+    # unchanged (whole eligible type regulates, no exclusions).
+    if agc_enrolled_units is not None:
+        eligible_labels = {
+            u.label for u in grid.get_active_units()
+            if u.unit_type in _const.AGC_ELIGIBLE_TYPES
+        }
+        sim.set_agc_excluded_units(eligible_labels - agc_enrolled_units)
+
     return sim, grid, renderer
 
 
@@ -383,6 +398,7 @@ def _make_designer_test(
     _const.FREQ_TOLERANCE_MULT = 1.0
     _const.AGC_ELIGIBLE_TYPES = _AGC_ELIGIBLE_TYPES_DEFAULT
     _const.AGC_SPEED_MULT = 1.0
+    _const.LANDING_FREEZE_S = _LANDING_FREEZE_S_DEFAULT
     return sim, designer_grid, renderer
 
 
@@ -439,8 +455,8 @@ def _make_shift_test(
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.DROOP_ENABLED = cfg.get('droop_enabled', False)
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
-    _const.AGC_ELIGIBLE_TYPES = cfg.get('agc_eligible_types', _AGC_ELIGIBLE_TYPES_DEFAULT)
     _const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
+    _const.LANDING_FREEZE_S = cfg.get('landing_freeze_s', _LANDING_FREEZE_S_DEFAULT)
     return sim, designer_grid, renderer
 
 
@@ -755,10 +771,18 @@ def main() -> None:
                         # ("The Bad Night") instead of Shift 1 for playtest.
                         # Revert to shift = 1 once Shift 10 testing is done.
                         shift = 10
-                        sim, grid, renderer = _make_sim_and_renderer(
-                            display_surf, shift=shift, difficulty=difficulty,
-                        )
-                        state = sim.get_state()
+                        # sim/grid deliberately NOT built here — for a
+                        # USES_PLANNING shift the real dispatch only exists
+                        # once the Phase 1 plan is confirmed, so building
+                        # from the shift's default INITIAL_SCHEDULE here
+                        # would be thrown away unused the moment BRIEFING
+                        # routes to PLANNING. Built once, for real, in
+                        # BRIEFING's completion handler below (either
+                        # directly, for non-planning shifts, or via
+                        # _on_plan_complete after Phase 1 confirms). The
+                        # existing renderer (built at startup, shift-
+                        # agnostic for menu/text screens) carries through
+                        # unchanged.
                         campaign_start_time = pygame.time.get_ticks()
                         # SKIP: campaign intro sequence disabled for now — go
                         # straight to shift 1's briefing (see CAMPAIGN_INTRO
@@ -851,9 +875,15 @@ def main() -> None:
                     else:
                         if load_shift_config(shift).get('uses_planning'):
                             from gameplay.phase1 import build_planning_model
-                            _planning_model = build_planning_model(shift)
+                            _planning_model = build_planning_model(shift, difficulty=difficulty)
                             game_state = GameState.PLANNING
                         else:
+                            sim, grid, renderer = _make_sim_and_renderer(
+                                display_surf, shift=shift, difficulty=difficulty,
+                            )
+                            state      = sim.get_state()
+                            sim_accum  = 0.0
+                            speed      = SPEED_PAUSE
                             game_state = GameState.PLAYING
             briefing_chars = min(briefing_chars + TYPEWRITER_CHARS_PER_SEC * dt,
                                  float(total) + 1)
@@ -862,7 +892,7 @@ def main() -> None:
         # ── PLANNING (Phase 1 — pre-shift unit scheduling) ──────────────────────
         # Entered from BRIEFING when the shift's config declares
         # uses_planning (shift_NN.py's USES_PLANNING = True) — currently
-        # only Shift 5. Other shifts skip straight to PLAYING as before.
+        # Shift 10. Other shifts skip straight to PLAYING as before.
         elif game_state == GameState.PLANNING:
             if _planning_screen is None:
                 from display.planning import PlanningScreen
@@ -871,9 +901,11 @@ def main() -> None:
             if _planning_screen.on_plan_complete is None:
                 def _on_plan_complete(model) -> None:
                     nonlocal game_state, sim, grid, renderer, state, sim_accum, speed, _planning_screen
+                    from gameplay.phase1 import write_schedule_json
+                    write_schedule_json(model, shift)
                     sim, grid, renderer = _make_sim_and_renderer(
                         display_surf, shift=shift, difficulty=difficulty,
-                        planning_model=model,
+                        use_planned_schedule=True,
                     )
                     state      = sim.get_state()
                     sim_accum  = 0.0
@@ -1133,6 +1165,7 @@ def main() -> None:
                     renderer.on_scroll(event.y, _to_native(pygame.mouse.get_pos(), renderer._letterbox_rect, renderer._scale))
 
             if speed > 0.0:
+                sim.tick_real_seconds(dt)
                 sim_accum += dt
                 if sim_accum >= SIM_TICK_INTERVAL_S:
                     sim.tick(sim_accum * TIME_COMPRESSION * speed)
@@ -1504,6 +1537,7 @@ def main() -> None:
                     _rend.on_scroll(event.y, _to_native(pygame.mouse.get_pos(), _rend._letterbox_rect, _rend._scale))
 
             if game_state == GameState.DESIGNER_TEST and speed > 0.0:
+                _sim.tick_real_seconds(dt)
                 sim_accum += dt
                 if sim_accum >= SIM_TICK_INTERVAL_S:
                     _sim.tick(sim_accum * TIME_COMPRESSION * speed)

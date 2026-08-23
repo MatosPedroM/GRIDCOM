@@ -461,9 +461,9 @@ FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or belo
 FONT_SIZE_LABEL:          int = 18      # bus/station labels on canvas
 LABEL_PAD_PX:             int = 3       # px — gap between a label and the symbol it labels
 FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
-FONT_SIZE_PANEL:          int = 15      # standard instrument strip text
+FONT_SIZE_PANEL:          int = 18      # standard instrument strip text
 FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
-FONT_SIZE_CONTEXT:        int = 15      # unit context overlay text
+FONT_SIZE_CONTEXT:        int = 18      # unit context overlay text
 
 UNIT_BORDER_W_PX:          int = 3       # px — generation unit square border, normal
 UNIT_BORDER_W_SELECTED_PX: int = 4       # px — generation unit square border, selected
@@ -485,10 +485,10 @@ MENU_TOP_MARGIN:    int   = 440   # px — top margin for menu item list (below 
 # ─────────────────────────────────────────────
 CONTEXT_OVERLAY_X:     int = 8     # px from canvas left edge
 CONTEXT_OVERLAY_Y:     int = 8     # px from canvas top edge
-CONTEXT_OVERLAY_W:     int = 240   # panel width in px
+CONTEXT_OVERLAY_W:     int = 288   # panel width in px
 CONTEXT_OVERLAY_PAD:   int = 6     # inner padding
-CONTEXT_OVERLAY_ROW_H: int = 16    # text row height
-CONTEXT_OVERLAY_HDR_H: int = 18    # header row height
+CONTEXT_OVERLAY_ROW_H: int = 19    # text row height
+CONTEXT_OVERLAY_HDR_H: int = 22    # header row height
 
 # ─────────────────────────────────────────────
 # VSI VOLTAGE HALOS + REACTIVE DEVICE GLYPHS
@@ -503,42 +503,41 @@ UNIT_MODE_BADGE_RADIUS_PX: int = 3   # px — AUTO/MANUAL dispatch-mode dot on a
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANEL LAYOUT
 # ─────────────────────────────────────────────
-# Dispatch narrowed 20% (780->624) and Forecast widened 20% (150->180) —
-# Dispatch now always lays out DISPATCH_NUM_COLS (3) fixed columns rather
-# than an auto-computed count, so each column is narrower to match; the
-# freed dispatch width plus forecast's growth is reflected in Alarm, which
-# absorbs the remainder (440->566) to keep the strip spanning exactly
-# NATIVE_WIDTH — Alarm already had headroom to lose or gain width, since
-# its detail text word-wraps to whatever width it's given (_wrap_text()).
+# Reworked when FONT_SIZE_PANEL moved 15 -> 18: Dispatch grew to 900px to
+# fit DISPATCH_NUM_COLS (3) comfortably at the larger glyph width (300px/
+# column — see offset comment below), funded by shrinking Alarm 566->290
+# (its detail text word-wraps to whatever width it's given, _wrap_text(),
+# so it degrades gracefully rather than clipping). Forecast and GenMix keep
+# their previous widths, just repositioned immediately after Dispatch so
+# Alarm — now the tightest panel — sits last. Order left to right: Freq,
+# Power, Dispatch, Forecast, GenMix, Alarm. Panel widths still sum to
+# exactly NATIVE_WIDTH.
 PANEL_FREQ_X:     int = 0
 PANEL_FREQ_W:     int = 200
 PANEL_POWER_X:    int = 200
 PANEL_POWER_W:    int = 240
 PANEL_DISPATCH_X:  int = 440
-PANEL_DISPATCH_W:  int = 624
-PANEL_FORECAST_X:  int = 1064
+PANEL_DISPATCH_W:  int = 900
+PANEL_FORECAST_X:  int = 1340
 PANEL_FORECAST_W:  int = 180
-PANEL_GENMIX_X:    int = 1244
+PANEL_GENMIX_X:    int = 1520
 PANEL_GENMIX_W:    int = 110
-PANEL_ALARM_X:     int = 1354
-PANEL_ALARM_W:     int = 566
+PANEL_ALARM_X:     int = 1630
+PANEL_ALARM_W:     int = 290
 
 # Unit Dispatch panel always lays out this many columns, regardless of unit
 # count or panel height (previously auto-computed as
 # ceil(unit_count / rows_that_fit_vertically) — see draw_dispatch_panel()).
 DISPATCH_NUM_COLS: int = 3
 
-# Within-row x-offsets (px, pre-font_scale), unit label at 0. Tightened from
-# 52/38 alongside DISPATCH_NUM_COLS's move to 3 narrower columns (208px
-# each at PANEL_DISPATCH_W's default) — measured against JetBrainsMono at
-# FONT_SIZE_PANEL: longest label ~41px, status abbreviation ~21px, typical
-# value string 'NNN(NNN) NN(NN)' ~103px, mode flag ~7px. Fits every unit
-# whose MW/MVAr values stay under 4 digits with room to spare; a 4-digit
-# unit (e.g. 1000 MW nuclear) can still clip the trailing mode flag by a
-# character or two — a hard width constraint at 3 columns, not something
-# offset tuning alone can fully absorb.
-DISPATCH_STATUS_X_OFFSET: int = 45   # unit label -> ONL/OFF/STR status abbreviation
-DISPATCH_VALUE_X_OFFSET:  int = 69   # unit label -> MW/MVAr/mode value block
+# Within-row x-offsets (px, pre-font_scale), unit label at 0. Measured
+# against JetBrainsMono at FONT_SIZE_PANEL=18: longest label (e.g. 'RVSD-1')
+# ~60px, status abbreviation ~30px, typical value string 'NNN(NNN) NNN(NNN)'
+# ~170px (fleet-wide max is 700 MW / 300 MVAr, both 3-digit — see
+# data/fleet.py), mode flag ~10px. Fits every unit in the fleet with room to
+# spare at DISPATCH_NUM_COLS=3 (300px columns, PANEL_DISPATCH_W=900).
+DISPATCH_STATUS_X_OFFSET: int = 66   # unit label -> ONL/OFF/STR status abbreviation
+DISPATCH_VALUE_X_OFFSET:  int = 102  # unit label -> MW/MVAr/mode value block
 
 # ─────────────────────────────────────────────
 # SIMULATION SPEED MULTIPLIERS

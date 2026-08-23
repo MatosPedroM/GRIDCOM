@@ -42,7 +42,7 @@ from simulation.constants import (
 
 _HEADER_H:  int = 20    # px — panel header row height
 _PAD:       int = 6     # px — horizontal text padding
-_ROW_H:     int = 18    # px — unit/alarm row height
+_ROW_H:     int = 22    # px — unit/alarm row height
 _BAR_H:     int = 8     # px — progress/loading bar height
 
 
@@ -509,9 +509,9 @@ def draw_alarm_panel(
     w = surf.get_width()
 
     dot_x  = pad
-    pri_x  = dot_x + int(12 * fs)
-    time_x = pri_x + int(34 * fs)
-    msg_x  = time_x + int(40 * fs)
+    pri_x  = dot_x + int(14 * fs)
+    time_x = pri_x + int(44 * fs)
+    msg_x  = time_x + int(54 * fs)
     detail_max_w = max(1, w - msg_x - pad)
 
     # Pre-wrap detail text and compute each row's height (in row units) so

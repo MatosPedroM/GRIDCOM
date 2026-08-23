@@ -116,7 +116,19 @@ def load_shift_config(shift_number: int) -> dict:
     substation_load_mw: dict[str, dict[float, float]] = {}
     if grid_source:
         from data.designer_io import load_designer_grid_named
-        buses, _lines, _units = load_designer_grid_named(grid_source)
+        try:
+            buses, _lines, _units = load_designer_grid_named(grid_source)
+        except FileNotFoundError:
+            # Grid not authored yet -- degrade to the same defaults as a
+            # shift with no GRID_SOURCE at all (peak_demand_mw=0.0,
+            # substation_load_mw={}) rather than crashing every speculative
+            # caller (briefing/debrief text, title labels, uses_planning
+            # checks) that reads config before a shift is actually entered.
+            # Real gameplay paths (_make_sim_and_renderer(),
+            # build_planning_model()) load the grid again directly and
+            # still raise loudly if a shift a player actually starts has
+            # no grid.
+            buses = []
         load_buses = [b for b in buses if b.bus_type == 'LOAD' and b.peak_load_mw > 0]
         peak_demand_mw = sum(b.peak_load_mw for b in load_buses)
         substation_load_mw = {

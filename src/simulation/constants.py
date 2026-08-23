@@ -177,20 +177,27 @@ FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the freq
 # ─────────────────────────────────────────────
 # DROOP / GOVERNOR
 # ─────────────────────────────────────────────
-# 4% droop setting (per-unit on machine base). Applied to ALL ONLINE
-# synchronous units (COAL, NUCLEAR, HYDRO, HYDRO_ROR, HYDRO_PUMP, CCGT) as
-# an immediate, non-ramp-limited primary frequency response -- see
-# units.py FleetModel.apply_droop_response(). Runs ahead of AGC each tick.
+# 4% droop setting (per-unit on machine base). Applied to ONLINE
+# non-AGC-eligible synchronous units only (COAL, NUCLEAR, HYDRO_ROR,
+# HYDRO_PUMP -- AGC_ELIGIBLE_TYPES units get their fast correction from
+# AGC instead, see FleetModel.apply_droop_response()'s eligibility skip)
+# as a primary frequency response that sits additively on top of
+# target_mw (never mutates it) and is smoothed both in the offset itself
+# (DROOP_SMOOTHING_TAU_S below) and via the unit's normal ramp rate.
+# Runs ahead of AGC each tick.
 DROOP_R: float = 0.04
 
+# Time constant (seconds, simulated) for low-pass-filtering the droop
+# offset toward its instantaneous frequency-implied value -- without
+# this, a raw per-tick delta_f reading (re-sampled every rendered frame)
+# produces a visibly jittery MW correction that reads as AGC rather than
+# governor sway. Larger = gentler/slower-tracking oscillation. Not
+# derived from any other constant -- retune against playtest.
+DROOP_SMOOTHING_TAU_S: float = 2.0
+
 # Per-shift override, mirroring AGC_ENABLED's plumbing (see gameplay/shifts
-# loader.py's 'droop_enabled' config key). Defaults False -- playtesting
-# found universal droop (non-ramp-limited, re-anchoring target_mw every
-# tick on every synchronous unit including slow-ramping COAL) fought a
-# player's manual setpoint hard enough to read as a control bug, and with
-# AGC already handling fast correction on HYDRO/CCGT, droop's realism
-# wasn't earning its confusion cost. Any shift_NN.py can still set
-# DROOP_ENABLED = True explicitly to opt back in.
+# loader.py's 'droop_enabled' config key). Defaults False. Any shift_NN.py
+# can still set DROOP_ENABLED = True explicitly to opt back in.
 DROOP_ENABLED: bool = False
 
 # ─────────────────────────────────────────────

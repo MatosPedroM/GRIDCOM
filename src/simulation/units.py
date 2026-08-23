@@ -35,6 +35,7 @@ See DOMAIN_GLOSSARY.md for unit type definitions and ramp/inertia values.
 """
 
 import logging
+import math
 
 from simulation.constants import (
     MIN_OUTPUT_FRACTION,
@@ -114,6 +115,12 @@ class UnitModel:
         # _tick_online()'s ramp loop, so current_mw converges toward the
         # WRONG value while active. 0.0 = no drift. See drift()/clear_drift().
         self._drift_offset_mw: float = 0.0
+        # Governor droop correction — also added to target_mw in
+        # _tick_online()'s ramp loop, but unlike drift it's recomputed
+        # fresh (smoothed, not accumulated) every tick from the live
+        # frequency deviation rather than sticky until cleared. Never
+        # mutates target_mw itself. See apply_droop_delta().
+        self._droop_offset_mw: float = 0.0
         self._dispatch_mode: str = 'MANUAL'   # 'MANUAL' or 'AUTO' — see set_target()/set_auto_mode()
         # Running total of AGC-attributable adjustment to target_mw since the
         # unit's last hourly-schedule snap. Carried across hour boundaries by
@@ -391,34 +398,40 @@ class UnitModel:
         self._agc_offset_mw += share_mw
         return True
 
-    def apply_droop_delta(self, delta_mw: float) -> float:
+    def apply_droop_delta(self, delta_mw: float, dt_sim_seconds: float) -> float:
         """
-        Apply an immediate (non-ramp-limited) governor droop correction.
-
-        Unlike set_target()/AGC, droop is a fast primary response — it must
-        move current_mw directly rather than crawl there at the unit's
-        normal ramp rate, or it would arrive too late to matter within the
-        player's reaction window. target_mw is re-anchored to match so the
-        next tick's ramp-limited _tick_online() doesn't immediately fight
-        the droop nudge (drive it back toward a stale target).
+        Low-pass-filter this tick's governor droop offset toward the
+        freshly-computed target delta, rather than snapping to it — an
+        additive correction on top of target_mw (never mutates target_mw
+        itself). DROOP_SMOOTHING_TAU_S (constants.py) sets how fast the
+        offset eases toward the live frequency-implied value; the smoothed
+        offset itself is then ramped toward via the unit's normal ramp
+        rate in _tick_online(), exactly like _drift_offset_mw, so a slow
+        unit's droop contribution phases in gradually on two levels rather
+        than snapping current_mw instantly. Does not move target_mw — the
+        player's commanded setpoint is untouched.
 
         Args:
-            delta_mw: Requested MW change (positive = raise, negative = lower).
+            delta_mw:       Requested MW change (positive = raise, negative = lower).
+            dt_sim_seconds: Elapsed simulated time this tick (seconds).
 
         Returns:
-            The actual applied delta in MW (may be less than requested if
-            clamped to [min_mw, effective_max_mw]). 0.0 if not ONLINE.
+            The unit's current droop offset in MW after smoothing.
+            0.0 if not ONLINE (also resets any existing offset to 0.0).
         """
         if self._state != 'ONLINE':
+            self._droop_offset_mw = 0.0
             return 0.0
-        new_mw = max(
-            self._spec.min_mw,
-            min(self.effective_max_mw, self._current_mw + delta_mw)
-        )
-        applied = new_mw - self._current_mw
-        self._current_mw = new_mw
-        self._target_mw = new_mw
-        return applied
+        max_offset = self.effective_max_mw - self._target_mw
+        min_offset = self._spec.min_mw - self._target_mw
+        target_offset = max(min_offset, min(max_offset, delta_mw))
+
+        # First-order exponential smoothing toward target_offset, in
+        # simulated time so it's frame-rate independent (matches the ramp
+        # math in _tick_online()).
+        alpha = 1.0 - math.exp(-dt_sim_seconds / _sim_const.DROOP_SMOOTHING_TAU_S)
+        self._droop_offset_mw += (target_offset - self._droop_offset_mw) * alpha
+        return self._droop_offset_mw
 
     def set_auto_mode(self) -> bool:
         """
@@ -509,10 +522,13 @@ class UnitModel:
                                                f'(min output {self._spec.min_mw:.1f} MW)')
 
     def _tick_online(self, dt_sim_seconds: float) -> None:
-        """Ramp output toward (target + any active drift offset) at the
-        unit's ramp rate — a drifting unit chases the WRONG value, exactly
-        as if it had been commanded there, until the drift clears (see
-        drift()/clear_drift())."""
+        """Ramp output toward (target + any active drift offset + any
+        active droop offset) at the unit's ramp rate — a drifting unit
+        chases the WRONG value, exactly as if it had been commanded
+        there, until the drift clears (see drift()/clear_drift()); a
+        droop offset chases a value the player didn't command at all,
+        but target_mw itself is never touched by either (see
+        apply_droop_delta())."""
         if self._is_renewable:
             return  # renewable output is set externally
 
@@ -520,7 +536,7 @@ class UnitModel:
                           * self._spec.rated_mw / 60.0
         max_delta = ramp_mw_per_sec * dt_sim_seconds
 
-        chase_mw = self._target_mw + self._drift_offset_mw
+        chase_mw = self._target_mw + self._drift_offset_mw + self._droop_offset_mw
         delta = chase_mw - self._current_mw
         if abs(delta) <= max_delta:
             self._current_mw = chase_mw
@@ -751,28 +767,37 @@ class FleetModel:
             assignments[unit.label] = unit.target_mw
         return assignments
 
-    def apply_droop_response(self, delta_f_hz: float) -> dict[str, float]:
+    def apply_droop_response(self, delta_f_hz: float, dt_sim_seconds: float) -> dict[str, float]:
         """
-        Apply immediate governor droop correction to every ONLINE synchronous
-        unit (all non-renewable types — COAL, NUCLEAR, HYDRO, HYDRO_ROR,
-        HYDRO_PUMP, CCGT), proportional to each unit's rated capacity.
+        Apply smoothed governor droop correction to every ONLINE
+        non-AGC-eligible synchronous unit (COAL, NUCLEAR, HYDRO_ROR,
+        HYDRO_PUMP — AGC_ELIGIBLE_TYPES units are skipped since AGC
+        already provides their fast correction; applying both would
+        double-correct the same unit), proportional to each unit's rated
+        capacity.
 
-        This is a fast, non-ramp-limited primary response (see
-        UnitModel.apply_droop_delta()) that runs ahead of AGC each tick —
-        it blunts a frequency excursion within the player's reaction window,
-        it does not eliminate steady-state deviation (that's AGC's job).
+        This is a primary response (see UnitModel.apply_droop_delta())
+        that runs ahead of AGC each tick — it blunts a frequency excursion
+        within the player's reaction window, it does not eliminate
+        steady-state deviation (that's AGC's job). It sits additively on
+        top of target_mw (never mutates it) and is smoothed both in the
+        offset itself and via the unit's normal ramp rate, so it reads as
+        a gentle sway rather than an instant snap.
 
         Formula: deltaP = -(delta_f / F_NOMINAL) * (1 / DROOP_R) * rated_mw
 
         Returns:
-            {unit_label: new_current_mw} for every unit that moved.
+            {unit_label: new_current_mw} for every unit with a nonzero
+            droop offset.
         """
         assignments: dict[str, float] = {}
         for unit in self._units.values():
             if unit.state != 'ONLINE' or unit.is_renewable:
                 continue
+            if unit._spec.unit_type in _sim_const.AGC_ELIGIBLE_TYPES:
+                continue   # AGC already provides fast correction for this unit
             delta_mw = -(delta_f_hz / F_NOMINAL) * (1.0 / DROOP_R) * unit._spec.rated_mw
-            applied = unit.apply_droop_delta(delta_mw)
+            applied = unit.apply_droop_delta(delta_mw, dt_sim_seconds)
             if applied != 0.0:
                 assignments[unit.label] = unit.current_mw
         return assignments

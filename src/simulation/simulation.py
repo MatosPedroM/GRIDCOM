@@ -624,10 +624,10 @@ class GridSimulation:
                 online_unit_types=self._fleet.online_unit_types(),
             )
 
-            # 5a. Governor droop — fast primary response, all synchronous units, ahead of AGC.
+            # 5a. Governor droop — primary response, non-AGC-eligible synchronous units, ahead of AGC.
             if _sim_const.DROOP_ENABLED:
                 delta_f = self._frequency.frequency_hz - F_NOMINAL
-                self._fleet.apply_droop_response(delta_f)
+                self._fleet.apply_droop_response(delta_f, dt_sim_seconds)
 
             # 5b. AGC secondary frequency response
             if _sim_const.AGC_ENABLED:

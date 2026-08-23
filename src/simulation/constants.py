@@ -419,11 +419,23 @@ LANDING_FREEZE_S: float = 5.0
 # timestep. Frequency is the one subsystem that must NOT run at full
 # TIME_COMPRESSION speed (real dispatchers react to frequency in real time,
 # not compressed time) -- this tunable dial sets how fast a disturbance
-# reaches the player, independent of TIME_COMPRESSION. Target: a large
-# unit trip should leave the alert band in ~10-20 real seconds at 1x speed.
+# reaches the player, independent of TIME_COMPRESSION. Read live via
+# _sim_const.FREQ_DYNAMICS_SCALE in frequency.py (not a bare imported name),
+# so it can be retuned/verified without a process restart.
 # Not derived from any other constant -- retune against playtest/verification
 # harness, not by formula.
-FREQ_DYNAMICS_SCALE: float = 0.02
+# Retuned 0.02 -> 0.005 (developer report: real-time play reacts too fast
+# to control even at 1x, worst on Shift 10). Headless do-nothing trace
+# against Shift 10's real grid/fleet (auto-scheduled plan, 1x speed):
+#   0.02 (old)  leaves the alert band at  13.8 real-s, bottoms at F_MIN (45.0)
+#   0.005 (new) leaves the alert band at  21.7 real-s, still bottoms at F_MIN
+# ~1.6x more reaction time before the alert band, without going low enough
+# to blunt frequency response on easier shifts (single-unit-trip scale
+# disturbances) into feeling sluggish. Does not by itself make Shift 10
+# recoverable by reaction speed alone -- its do-nothing/responsive-player
+# gap is a separate, structural AGC-headroom shortfall in the Phase 1
+# auto-scheduler, not a frequency-timing issue; deferred as a follow-up.
+FREQ_DYNAMICS_SCALE: float = 0.005
 
 # ─────────────────────────────────────────────
 # DISPLAY / RENDERING

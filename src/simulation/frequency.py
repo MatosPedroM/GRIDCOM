@@ -23,6 +23,7 @@ See GRID_SIMULATION_MECHANICS.md Section 5 for physics detail.
 
 import numpy as np
 
+import simulation.constants as _sim_const
 from simulation.constants import (
     F_NOMINAL,
     F_MIN,
@@ -33,7 +34,6 @@ from simulation.constants import (
     H_CCGT,
     H_NUCLEAR,
     H_HYDRO,
-    FREQ_DYNAMICS_SCALE,
 )
 
 # Minimum inertia H to avoid division-by-zero when no synchronous units online.
@@ -123,7 +123,7 @@ class FrequencyModel:
         # Governor droop and AGC are handled externally (FleetModel, after this call).
         p_net_pu = (p_generation_mw - p_load_mw) / S_BASE
         df_dt = (F_NOMINAL / (2.0 * h_sys)) * p_net_pu
-        self._frequency_hz += df_dt * dt_sim_seconds * FREQ_DYNAMICS_SCALE
+        self._frequency_hz += df_dt * dt_sim_seconds * _sim_const.FREQ_DYNAMICS_SCALE
 
         # Hard clamp to operational limits.
         self._frequency_hz = float(np.clip(self._frequency_hz, F_MIN, F_MAX))

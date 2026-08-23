@@ -12,3 +12,6 @@ is loaded.
 """
 
 from __future__ import annotations
+
+
+GRID_SOURCE: str = 'grid_small'

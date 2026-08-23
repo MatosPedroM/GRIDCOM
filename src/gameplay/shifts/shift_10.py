@@ -108,7 +108,7 @@ Narrative:
 from __future__ import annotations
 
 
-GRID_SOURCE: str = 'shift10'
+GRID_SOURCE: str = 'grid_big'
 
 SHIFT_DATE: str = 'THU 8 FEB 1996'
 
@@ -174,19 +174,17 @@ AGC_SPEED_MULT: float = 0.5
 # lengthened just because this shift is hard.
 LANDING_FREEZE_S: float = 5.0
 
-# INDUSTRIAL substations behind the storm corridor (WREK, MILL, DRAY) and
-# the grid's biggest loads elsewhere (CARR, SEDG, PORT, TRUS) draw
-# reactive power proportional to their live MW demand — as the ramp
-# climbs, voltage genuinely sags at these buses without any scripted
-# event forcing it (see module docstring). Every other bus is MIXED.
-SUBSTATION_TYPES: dict[str, str] = {
-    'RUSH': 'MIXED', 'ELDB': 'MIXED', 'STOK': 'MIXED', 'WYLD': 'MIXED',
-    'CARR': 'INDUSTRIAL', 'BLAK': 'MIXED', 'NORT': 'MIXED', 'SEDG': 'INDUSTRIAL',
-    'AVEN': 'MIXED', 'PORT': 'INDUSTRIAL', 'MILL': 'INDUSTRIAL', 'GREN': 'MIXED',
-    'HALE': 'MIXED', 'COMB': 'MIXED', 'LYDD': 'MIXED', 'WREK': 'INDUSTRIAL',
-    'ODEN': 'MIXED', 'KELT': 'MIXED', 'FAWN': 'MIXED', 'DRAY': 'INDUSTRIAL',
-    'ORME': 'MIXED', 'BECK': 'MIXED', 'TRUS': 'INDUSTRIAL',
-}
+# Substation types (INDUSTRIAL substations behind the storm corridor —
+# WREK, MILL, DRAY — and the grid's biggest loads elsewhere — CARR, SEDG,
+# PORT, TRUS — draw reactive power proportional to their live MW demand,
+# so voltage genuinely sags at these buses without any scripted event
+# forcing it; see module docstring) are authored directly on each bus in
+# assets/designer_grids/grid_big.json (Grid Designer TYPE field), not here
+# — main.py reads substation_type straight off the loaded grid for
+# GRID_SOURCE shifts. NOTE: these bus labels (WREK, MILL, DRAY, CARR,
+# SEDG, PORT, TRUS) were authored against the old shift10.json and will
+# need to be re-verified/updated once grid_big.json is authored fresh
+# from grid_medium.json — labels may not carry over.
 
 # No non-default reactive targets at handover — every generator starts at
 # 0.0 MVAr (direct-Q default).

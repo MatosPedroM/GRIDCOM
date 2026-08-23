@@ -281,10 +281,22 @@ def _make_sim_and_renderer(
     # own per-bus peak_load_mw (GRID_SOURCE shifts) or from SUBSTATION_LOAD_MW.
     substation_load_mw = cfg['substation_load_mw'] or None
 
-    # Substation types (and the reactive devices they seed) are opt-in per
-    # shift via SUBSTATION_TYPES — shifts that declare none get None here,
-    # which reproduces the pre-existing all-MIXED/no-devices default exactly.
-    substation_types = cfg.get('substation_types') or None
+    # Substation types (and the reactive devices they seed) come from the
+    # grid itself for GRID_SOURCE shifts — every DesignerBus always carries
+    # an explicit authored substation_type (Grid Designer click-to-cycle
+    # field), so reading it here keeps this in sync with the grid JSON
+    # instead of duplicating it by hand in the shift file (see
+    # _make_designer_test() below, which reads the same way). Other shifts
+    # fall back to the shift file's own opt-in SUBSTATION_TYPES, if any —
+    # shifts that declare none get None here, which reproduces the
+    # pre-existing all-MIXED/no-devices default exactly.
+    if grid_source:
+        substation_types = {
+            b.label: b.substation_type for b in buses
+            if b.label in (substation_load_mw or {})
+        } or None
+    else:
+        substation_types = cfg.get('substation_types') or None
 
     sim = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
                          initial_schedule=initial_schedule,

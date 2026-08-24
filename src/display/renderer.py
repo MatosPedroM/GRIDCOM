@@ -8,9 +8,10 @@ Native resolution is always 1920×1080 regardless of monitor size.
 At the end of each frame the native surface is scaled to the display surface.
 
 Layers (bottom to top):
-  1. Canvas background + grid schematic (GridCanvas)
-  2. Instrument strip — four panels (frequency, power, dispatch, alarms)
-  3. Debug overlay                 (when DEBUG_DISPLAY = True)
+  1. Top bar — power balance (GEN/LOAD/BAL/... + regulation band)
+  2. Canvas background + grid schematic (GridCanvas)
+  3. Instrument strip — panels (frequency, dispatch, forecast, gen mix, alarms)
+  4. Debug overlay                 (when DEBUG_DISPLAY = True)
 
 Usage:
     renderer = Renderer(display_surf, shift=1)
@@ -35,7 +36,7 @@ from display.context import draw_unit_context, draw_bus_context, draw_line_conte
 from display.editor import GridEditor
 from display.symbols import draw_load_triangles
 from display.panels import (
-    draw_frequency_panel, draw_power_panel,
+    draw_frequency_panel, draw_topbar_panel,
     draw_dispatch_panel, draw_alarm_panel,
     draw_genmix_panel, draw_forecast_panel,
 )
@@ -46,12 +47,12 @@ from display.palette import (
 )
 import simulation.constants as _sim_const
 from simulation.constants import (
-    CANVAS_HEIGHT, STRIP_HEIGHT,
+    TOPBAR_HEIGHT, CANVAS_HEIGHT, STRIP_HEIGHT,
+    HINT_GAP_HEIGHT, HINT_BAR_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
     FONT_PATH_MONO_REGULAR,
-    FONT_SIZE_PANEL, FONT_SIZE_OVERLAY,
+    FONT_SIZE_PANEL, FONT_SIZE_OVERLAY, FONT_SIZE_HINT,
     PANEL_FREQ_X, PANEL_FREQ_W,
-    PANEL_POWER_X, PANEL_POWER_W,
     PANEL_DISPATCH_X, PANEL_DISPATCH_W,
     PANEL_FORECAST_X, PANEL_FORECAST_W,
     PANEL_GENMIX_X, PANEL_GENMIX_W,
@@ -99,8 +100,12 @@ class Renderer:
         self._scale          = min(disp_w / NATIVE_WIDTH, disp_h / NATIVE_HEIGHT)
         scaled_w             = int(NATIVE_WIDTH  * self._scale)
         scaled_h             = int(NATIVE_HEIGHT * self._scale)
+        scaled_topbar_h      = int(TOPBAR_HEIGHT * self._scale)
         scaled_canvas_h      = int(CANVAS_HEIGHT * self._scale)
-        scaled_strip_h       = scaled_h - scaled_canvas_h
+        scaled_strip_h       = int(STRIP_HEIGHT * self._scale)
+        scaled_hint_gap_h    = int(HINT_GAP_HEIGHT * self._scale)
+        scaled_hint_bar_h    = scaled_h - scaled_topbar_h - scaled_canvas_h - scaled_strip_h - scaled_hint_gap_h
+        self._scaled_topbar_h = scaled_topbar_h
         self._scaled_canvas_h = scaled_canvas_h
         offset_x             = (disp_w - scaled_w) // 2
         offset_y             = (disp_h - scaled_h) // 2
@@ -113,13 +118,26 @@ class Renderer:
         self._native        = pygame.Surface((scaled_w, scaled_h)).convert()
         self._display_dirty = True   # force first-frame blit to display
 
-        # Canvas region: top scaled_canvas_h rows
-        self._canvas_surf = self._native.subsurface(
-            pygame.Rect(0, 0, scaled_w, scaled_canvas_h)
+        # Top bar region: top scaled_topbar_h rows
+        self._topbar_surf = self._native.subsurface(
+            pygame.Rect(0, 0, scaled_w, scaled_topbar_h)
         )
-        # Strip region: bottom scaled_strip_h rows
+        # Canvas region: scaled_canvas_h rows below the top bar
+        self._canvas_surf = self._native.subsurface(
+            pygame.Rect(0, scaled_topbar_h, scaled_w, scaled_canvas_h)
+        )
+        # Strip region: scaled_strip_h rows below the canvas
         self._strip_surf = self._native.subsurface(
-            pygame.Rect(0, scaled_canvas_h, scaled_w, scaled_strip_h)
+            pygame.Rect(0, scaled_topbar_h + scaled_canvas_h, scaled_w, scaled_strip_h)
+        )
+        # Shortcut hint bar: bottom-most rows, separated from the strip by a
+        # blank scaled_hint_gap_h gap (left unpainted — native background colour)
+        self._hint_bar_surf = self._native.subsurface(
+            pygame.Rect(
+                0,
+                scaled_topbar_h + scaled_canvas_h + scaled_strip_h + scaled_hint_gap_h,
+                scaled_w, scaled_hint_bar_h,
+            )
         )
 
         font_path = resource_path(FONT_PATH_MONO_REGULAR)
@@ -165,8 +183,8 @@ class Renderer:
         # Panel surface cache: converted to display pixel format for fast blits.
         _sc = self._scale
         self._panel_cache: dict[str, pygame.Surface] = {
+            'topbar':   pygame.Surface((scaled_w, scaled_topbar_h)).convert(),
             'freq':     pygame.Surface((int(PANEL_FREQ_W     * _sc), scaled_strip_h)).convert(),
-            'power':    pygame.Surface((int(PANEL_POWER_W    * _sc), scaled_strip_h)).convert(),
             'dispatch': pygame.Surface((int(PANEL_DISPATCH_W * _sc), scaled_strip_h)).convert(),
             'forecast': pygame.Surface((int(PANEL_FORECAST_W * _sc), scaled_strip_h)).convert(),
             'genmix':   pygame.Surface((int(PANEL_GENMIX_W   * _sc), scaled_strip_h)).convert(),
@@ -174,6 +192,10 @@ class Renderer:
         }
         # Sentinel objects force a full draw on the first frame
         self._panel_keys: dict[str, object] = {k: object() for k in self._panel_cache}
+
+        # Shortcut hint bar: redrawn only when the hint text changes (see
+        # _build_shortcut_hint()/tick()) — sentinel forces the first-frame draw.
+        self._hint_bar_text: object = object()
 
         # Sound: alarm loop + info/tutor ping, driven from tick()
         self._sound = SoundManager()
@@ -253,7 +275,7 @@ class Renderer:
 
     def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:
         """Route mouse wheel to the alarm panel based on native-space position."""
-        if pos[1] < self._scaled_canvas_h:
+        if pos[1] < self._scaled_topbar_h + self._scaled_canvas_h:
             return
         nx = pos[0]
         if PANEL_ALARM_X <= nx < PANEL_ALARM_X + PANEL_ALARM_W:
@@ -831,6 +853,44 @@ class Renderer:
         self._display.blit(self._native, self._letterbox_rect.topleft)
         self._display_dirty = False
 
+    # ─── Shortcut hint bar (Phase 2 / DESIGNER_TEST) ──────────────────────────
+
+    def _build_shortcut_hint(self) -> str:
+        """
+        One line of context-sensitive keyboard shortcuts for the bottom hint
+        bar, based on current selection/input-arm state. Mirrors the
+        Phase 2 keybindings documented in CLAUDE.md.
+        """
+        if self._input_active or self._setpoint_active:
+            return '[ENTER]  Confirm    [ESC]  Cancel'
+        if self._adjust_active or self._setpoint_adjust_active:
+            return ('[UP/DOWN]  Step    [CTRL+UP/DOWN]  Coarse Step    '
+                     '[ENTER]  Type Value    [ESC]  Cancel')
+        if self._get_selected_unit() is not None:
+            return ('[W]  Arm MW    [Q]  Arm MVAr    [S/X]  Start/Stop    '
+                     '[M]  Auto    [TAB]  Cycle    [ESC]  Deselect')
+        if self._get_selected_line() is not None:
+            return '[T/C]  Trip/Close    [TAB]  Cycle    [ESC]  Deselect'
+        if self._get_selected_bus() is not None:
+            return ('[H]  Shed Load    [SHIFT+H]  Restore    [,/.]  SVC    '
+                     '[TAB]  Cycle    [ESC]  Deselect')
+        return ('[TAB]  Select    [P]  Pause    [F12]  Speed    '
+                '[CTRL+A]  AGC    [A]  Ack    [SHIFT+A]  Ack All')
+
+    def _draw_hint_bar(self) -> None:
+        """Redraw the shortcut hint bar only when its text has changed."""
+        hint_text = self._build_shortcut_hint()
+        if hint_text == self._hint_bar_text:
+            return
+        self._hint_bar_text = hint_text
+        sc  = self._scale
+        pad = int(6 * sc)
+        self._hint_bar_surf.fill(COL_STRIP_BG)
+        self._font.render_to(
+            self._hint_bar_surf, (pad, max(1, int(3 * sc))),
+            hint_text, COL_TEXT_DIM, size=int(FONT_SIZE_HINT * sc),
+        )
+
     # ─── Per-frame entry point ────────────────────────────────────────────────
 
     def tick(
@@ -937,7 +997,7 @@ class Renderer:
             len(self._freq_history),
             round(self._freq_history[0], 2) if self._freq_history else None,
         )
-        power_key = (
+        topbar_key = (
             round(state.total_generation_mw)  if state else None,
             round(state.total_load_mw)        if state else None,
             round(state.net_imbalance_mw)     if state else None,
@@ -983,11 +1043,12 @@ class Renderer:
             self._panel_keys['freq'] = freq_key
             panel_changed = True
 
-        if power_key != self._panel_keys['power']:
-            draw_power_panel(self._panel_cache['power'], self._font, state,
-                             load_rate_history=self._load_rate_history, font_scale=_fs)
-            self._panel_keys['power'] = power_key
-            panel_changed = True
+        if topbar_key != self._panel_keys['topbar']:
+            draw_topbar_panel(self._panel_cache['topbar'], self._font, state,
+                              load_rate_history=self._load_rate_history, font_scale=_fs)
+            self._panel_keys['topbar'] = topbar_key
+            self._topbar_surf.blit(self._panel_cache['topbar'], (0, 0))
+            native_changed = True
 
         if dispatch_key != self._panel_keys['dispatch']:
             draw_dispatch_panel(
@@ -1019,11 +1080,15 @@ class Renderer:
             # Blit updated panel surfaces to the strip (scaled X positions)
             _sc = self._scale
             self._strip_surf.blit(self._panel_cache['freq'],     (int(PANEL_FREQ_X     * _sc), 0))
-            self._strip_surf.blit(self._panel_cache['power'],    (int(PANEL_POWER_X    * _sc), 0))
             self._strip_surf.blit(self._panel_cache['dispatch'], (int(PANEL_DISPATCH_X * _sc), 0))
             self._strip_surf.blit(self._panel_cache['forecast'], (int(PANEL_FORECAST_X * _sc), 0))
             self._strip_surf.blit(self._panel_cache['genmix'],   (int(PANEL_GENMIX_X   * _sc), 0))
             self._strip_surf.blit(self._panel_cache['alarm'],    (int(PANEL_ALARM_X    * _sc), 0))
+            native_changed = True
+
+        prev_hint_text = self._hint_bar_text
+        self._draw_hint_bar()
+        if self._hint_bar_text != prev_hint_text:
             native_changed = True
 
         if _perf:
@@ -1139,17 +1204,17 @@ class Renderer:
         """Call with native-space mouse position each motion event."""
         self._mouse_pos = pos
         if _sim_const.EDITOR_MODE:
-            self._editor.on_mouse_move(pos)
+            self._editor.on_mouse_move(self._to_canvas_local(pos))
 
     def on_mouse_down(self, pos: tuple[int, int]) -> None:
         """Call with native-space position on mouse button down."""
         if _sim_const.EDITOR_MODE:
-            self._editor.on_mouse_down(pos)
+            self._editor.on_mouse_down(self._to_canvas_local(pos))
 
     def on_mouse_up(self, pos: tuple[int, int]) -> None:
         """Call with native-space position on mouse button release."""
         if _sim_const.EDITOR_MODE:
-            self._editor.on_mouse_up(pos)
+            self._editor.on_mouse_up(self._to_canvas_local(pos))
             self._editor.set_canvas(self._canvas)
 
     def save_layout(self) -> None:
@@ -1165,10 +1230,16 @@ class Renderer:
         self._canvas.rebuild()
         self._editor.set_canvas(self._canvas)
 
+    def _to_canvas_local(self, pos: tuple[int, int]) -> tuple[int, int]:
+        """Translate a native-space position into the canvas subsurface's own
+        local coordinate space (canvas top-left sits scaled_topbar_h rows
+        below native (0,0))."""
+        return (pos[0], pos[1] - self._scaled_topbar_h)
+
     def on_click(self, pos: tuple[int, int]) -> None:
         """Hit-test buses and unit squares; update selection. Canvas clicks only."""
-        nx, ny = pos
-        if ny >= self._scaled_canvas_h:
+        nx, ny = self._to_canvas_local(pos)
+        if ny < 0 or ny >= self._scaled_canvas_h:
             return
 
         best_label: str | None = None
@@ -1256,7 +1327,6 @@ class Renderer:
         p8    = int(8  * sc)
         p18   = int(18 * sc)
         p32   = int(32 * sc)
-        p46   = int(46 * sc)
 
         # Faint coordinate grid — built once at current scaled size, blitted every frame
         if self._debug_grid_surf is None:
@@ -1294,13 +1364,6 @@ class Renderer:
         res_w, _ = font.get_rect(res_str, size=so)[2:4]
         font.render_to(self._native, (nw - res_w - p8, p32),
                        res_str, COL_DEBUG_TEXT, size=so)
-
-        # Droop status — top-right, fourth line
-        droop_str = f'DROOP {"ON" if _sim_const.DROOP_ENABLED else "OFF"}'
-        droop_col = COL_DEBUG_TEXT if _sim_const.DROOP_ENABLED else COL_TEXT_DIM
-        droop_w, _ = font.get_rect(droop_str, size=so)[2:4]
-        font.render_to(self._native, (nw - droop_w - p8, p46),
-                       droop_str, droop_col, size=so)
 
         # Perf section timings — top-right, fourth line (only when DEBUG_PERF is on)
         if _sim_const.DEBUG_PERF and self._perf_last_ms:

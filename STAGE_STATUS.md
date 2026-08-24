@@ -10,6 +10,39 @@
 
 ## Current Status
 
+**COMPLETE** — Session 97: added a bottom-of-screen keyboard-shortcut hint bar to the Phase 2
+real-time gameplay screen and Grid Designer's Test Grid mode (`GameState.DESIGNER_TEST`) — both
+render through the same `Renderer.tick()`, so one change covers both. Developer directive: shrink
+the instrument strip 2 rows shorter, leave 1 row of blank gap, then add the hint row — with
+`NATIVE_HEIGHT` held fixed at 1080 (not a fluid design constant like panel sizes) and `CANVAS_HEIGHT`
+unchanged, so the 2 rows (44px) the strip gives up reappear below it as the gap (22px) + hint row
+(22px). `STRIP_HEIGHT` 236->192; new `HINT_GAP_HEIGHT`/`HINT_BAR_HEIGHT` constants (22px each) and
+`FONT_SIZE_HINT` (15px). `Renderer.__init__` now derives `scaled_strip_h` directly from `STRIP_HEIGHT`
+(previously the residual `scaled_h - scaled_canvas_h - scaled_topbar_h`, which silently absorbed
+whatever space was left) and adds a `_hint_bar_surf` subsurface below `_strip_surf`, sized as the
+remaining residual so integer scale-rounding can never leave a stray gap/overlap at the very bottom.
+The hint line is context-sensitive, mirroring the menu screens' existing `footer_hint` pattern: a new
+`_build_shortcut_hint()` reads `Renderer`'s own existing selection/input-arm state (`_selected_label`
+via `_get_selected_unit()`/`_get_selected_line()`/`_get_selected_bus()`, `_input_active`,
+`_setpoint_active`, `_adjust_active`, `_setpoint_adjust_active`) — no new plumbing needed — and
+returns one of six fixed lines: global hints (nothing selected), unit-selected, line-selected,
+bus-selected, MW/MVAr-adjust-armed, or typing-an-exact-value. `_draw_hint_bar()` only refills/redraws
+when the text actually changes (same dirty-check spirit as the panel cache), keyed off a
+`_hint_bar_text` sentinel. Verified headless (`SDL_VIDEODRIVER=dummy`, direct `Renderer` construction
++ PNG render): strip/hint-bar geometry lands exactly as designed (`strip_surf` y=844 h=192,
+`hint_bar_surf` y=1058 h=22, ending exactly at 1080); visually confirmed no panel content is clipped
+at the new 192px strip height; confirmed all six hint-text variants switch correctly by toggling each
+selection/arm state directly and re-ticking.
+- Edited: `src/simulation/constants.py` (`STRIP_HEIGHT` 236->192, new `HINT_GAP_HEIGHT`/
+  `HINT_BAR_HEIGHT`/`FONT_SIZE_HINT`), `src/display/renderer.py` (`__init__` subsurface geometry,
+  new `_hint_bar_surf`/`_hint_bar_text`, new `_build_shortcut_hint()`/`_draw_hint_bar()`, wired into
+  `tick()`'s panel-dirty/`native_changed` bookkeeping), `src/display/panels.py` (module docstring
+  updated to describe the new gap/hint region below the strip).
+- **Not done this session**: no live fullscreen manual playtest (this session's environment can't
+  launch a real window — verified via headless offscreen PNG render instead, same precedent as
+  Session 46/49); no `?`-screen or `CLAUDE.md` keybinding-table changes (the hint bar surfaces
+  existing bindings, it doesn't add new ones).
+
 **COMPLETE** — Session 96: three developer-driven changes. (1) Moved Power Balance out of the
 instrument strip into a new horizontal top bar above the canvas (`draw_topbar_panel()`,
 `TOPBAR_HEIGHT=60`, `CANVAS_HEIGHT` 844->784), freeing strip width so Forecast/GenMix each grew 10%

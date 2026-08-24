@@ -175,32 +175,6 @@ FREQ_TOLERANCE_MULT: float = 1.0  # Per-shift multiplier on F_ALERT_*/F_CRITICAL
 FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the frequency trend plot
 
 # ─────────────────────────────────────────────
-# DROOP / GOVERNOR
-# ─────────────────────────────────────────────
-# 4% droop setting (per-unit on machine base). Applied to ONLINE
-# non-AGC-eligible synchronous units only (COAL, NUCLEAR, HYDRO_ROR,
-# HYDRO_PUMP -- AGC_ELIGIBLE_TYPES units get their fast correction from
-# AGC instead, see FleetModel.apply_droop_response()'s eligibility skip)
-# as a primary frequency response that sits additively on top of
-# target_mw (never mutates it) and is smoothed both in the offset itself
-# (DROOP_SMOOTHING_TAU_S below) and via the unit's normal ramp rate.
-# Runs ahead of AGC each tick.
-DROOP_R: float = 0.04
-
-# Time constant (seconds, simulated) for low-pass-filtering the droop
-# offset toward its instantaneous frequency-implied value -- without
-# this, a raw per-tick delta_f reading (re-sampled every rendered frame)
-# produces a visibly jittery MW correction that reads as AGC rather than
-# governor sway. Larger = gentler/slower-tracking oscillation. Not
-# derived from any other constant -- retune against playtest.
-DROOP_SMOOTHING_TAU_S: float = 2.0
-
-# Per-shift override, mirroring AGC_ENABLED's plumbing (see gameplay/shifts
-# loader.py's 'droop_enabled' config key). Defaults False. Any shift_NN.py
-# can still set DROOP_ENABLED = True explicitly to opt back in.
-DROOP_ENABLED: bool = False
-
-# ─────────────────────────────────────────────
 # AUTOMATIC GENERATION CONTROL (AGC)
 # ─────────────────────────────────────────────
 AGC_ENABLED:       bool  = True  # Toggled at runtime via Ctrl+A; starts disabled
@@ -449,8 +423,14 @@ FREQ_DYNAMICS_SCALE: float = 0.005
 # ─────────────────────────────────────────────
 NATIVE_WIDTH:  int = 1920
 NATIVE_HEIGHT: int = 1080
-CANVAS_HEIGHT: int = 844        # Top portion — grid schematic
-STRIP_HEIGHT:  int = 236        # Bottom portion — instrument strip
+TOPBAR_HEIGHT: int = 60         # Top portion — power balance bar
+CANVAS_HEIGHT: int = 784        # Middle portion — grid schematic
+STRIP_HEIGHT:  int = 192        # Instrument strip — shrunk 2 rows (was 236) to make
+                                # room for HINT_GAP_HEIGHT + HINT_BAR_HEIGHT below it,
+                                # holding NATIVE_HEIGHT fixed at 1080
+                                # (60+784+192+22+22 = 1080)
+HINT_GAP_HEIGHT: int = 22       # Blank row between the strip and the shortcut hint bar
+HINT_BAR_HEIGHT: int = 22       # Bottom-most row — context-sensitive keyboard shortcut hint
 TARGET_FPS:           int   = 60
 SIM_TICK_INTERVAL_S:  float = 0.1    # Simulation advances at 10 Hz regardless of render FPS
 LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
@@ -458,12 +438,13 @@ LETTERBOX_COLOUR: tuple[int, int, int] = (0, 0, 0)
 FONT_PATH_MONO_REGULAR:  str = 'assets/fonts/TerminusTTF-4.49.3.ttf' #'assets/fonts/Px437_IBM_VGA_8x16.ttf'
 
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
-FONT_SIZE_LABEL:          int = 18      # bus/station labels on canvas
+FONT_SIZE_LABEL:          int = 17      # bus/station labels on canvas
 LABEL_PAD_PX:             int = 3       # px — gap between a label and the symbol it labels
 FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
-FONT_SIZE_PANEL:          int = 18      # standard instrument strip text
+FONT_SIZE_PANEL:          int = 17      # standard instrument strip text
+FONT_SIZE_HINT:           int = 15      # bottom-of-screen keyboard shortcut hint bar
 FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
-FONT_SIZE_CONTEXT:        int = 18      # unit context overlay text
+FONT_SIZE_CONTEXT:        int = 17      # unit context overlay text
 
 UNIT_BORDER_W_PX:          int = 3       # px — generation unit square border, normal
 UNIT_BORDER_W_SELECTED_PX: int = 4       # px — generation unit square border, selected
@@ -503,27 +484,23 @@ UNIT_MODE_BADGE_RADIUS_PX: int = 3   # px — AUTO/MANUAL dispatch-mode dot on a
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANEL LAYOUT
 # ─────────────────────────────────────────────
-# Reworked when FONT_SIZE_PANEL moved 15 -> 18: Dispatch grew to 900px to
-# fit DISPATCH_NUM_COLS (3) comfortably at the larger glyph width (300px/
-# column — see offset comment below), funded by shrinking Alarm 566->290
-# (its detail text word-wraps to whatever width it's given, _wrap_text(),
-# so it degrades gracefully rather than clipping). Forecast and GenMix keep
-# their previous widths, just repositioned immediately after Dispatch so
-# Alarm — now the tightest panel — sits last. Order left to right: Freq,
-# Power, Dispatch, Forecast, GenMix, Alarm. Panel widths still sum to
-# exactly NATIVE_WIDTH.
+# Power Balance moved out of the strip into the horizontal TOPBAR above the
+# canvas (see draw_topbar_panel()), freeing its 240px. Forecast and GenMix
+# each grew 10% (180->198, 110->121) and Alarm absorbs the rest (290->501)
+# — Alarm's detail text word-wraps to whatever width it's given
+# (_wrap_text()), so it's the natural panel to take the remainder. Order
+# left to right: Freq, Dispatch, Forecast, GenMix, Alarm. Panel widths
+# still sum to exactly NATIVE_WIDTH.
 PANEL_FREQ_X:     int = 0
 PANEL_FREQ_W:     int = 200
-PANEL_POWER_X:    int = 200
-PANEL_POWER_W:    int = 240
-PANEL_DISPATCH_X:  int = 440
+PANEL_DISPATCH_X:  int = 200
 PANEL_DISPATCH_W:  int = 900
-PANEL_FORECAST_X:  int = 1340
-PANEL_FORECAST_W:  int = 180
-PANEL_GENMIX_X:    int = 1520
-PANEL_GENMIX_W:    int = 110
-PANEL_ALARM_X:     int = 1630
-PANEL_ALARM_W:     int = 290
+PANEL_FORECAST_X:  int = 1100
+PANEL_FORECAST_W:  int = 198
+PANEL_GENMIX_X:    int = 1298
+PANEL_GENMIX_W:    int = 121
+PANEL_ALARM_X:     int = 1419
+PANEL_ALARM_W:     int = 501
 
 # Unit Dispatch panel always lays out this many columns, regardless of unit
 # count or panel height (previously auto-computed as

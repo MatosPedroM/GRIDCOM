@@ -330,7 +330,6 @@ def _make_sim_and_renderer(
     else:
         renderer.set_grid(grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
-    _const.DROOP_ENABLED = cfg['droop_enabled']
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
     _const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
     _const.LANDING_FREEZE_S = cfg.get('landing_freeze_s', _LANDING_FREEZE_S_DEFAULT)
@@ -406,7 +405,6 @@ def _make_designer_test(
                         display_size=display_surf.get_size())
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = True
-    _const.DROOP_ENABLED = True
     _const.FREQ_TOLERANCE_MULT = 1.0
     _const.AGC_ELIGIBLE_TYPES = _AGC_ELIGIBLE_TYPES_DEFAULT
     _const.AGC_SPEED_MULT = 1.0
@@ -465,7 +463,6 @@ def _make_shift_test(
                         display_size=display_surf.get_size())
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
-    _const.DROOP_ENABLED = cfg.get('droop_enabled', False)
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
     _const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
     _const.LANDING_FREEZE_S = cfg.get('landing_freeze_s', _LANDING_FREEZE_S_DEFAULT)
@@ -1507,6 +1504,35 @@ def main() -> None:
                     elif (event.key == pygame.K_PERIOD and not _rend._input_active
                           and not _rend._setpoint_active):
                         _rend.on_svc_adjust(_sim, +1)
+
+                    # W = active power (MW), Q = reactive power (AVR setpoint).
+                    # Mirrors the PLAYING loop's binding — see main.py's PLAYING
+                    # KEYDOWN handling for the full rationale.
+                    elif (event.key == pygame.K_w and not _const.EDITOR_MODE
+                          and not _rend._input_active and not _rend._setpoint_active
+                          and not ctrl):
+                        _rend.on_adjust_toggle()
+
+                    elif (event.key == pygame.K_q and not _const.EDITOR_MODE
+                          and not _rend._input_active and not ctrl):
+                        _rend.on_setpoint_adjust_toggle()
+
+                    elif (event.key == pygame.K_UP and not _const.EDITOR_MODE
+                          and _rend._setpoint_adjust_active):
+                        _rend.on_setpoint_adjust(_sim, +1, fast=ctrl)
+
+                    elif (event.key == pygame.K_DOWN and not _const.EDITOR_MODE
+                          and _rend._setpoint_adjust_active):
+                        _rend.on_setpoint_adjust(_sim, -1, fast=ctrl)
+
+                    elif (event.key == pygame.K_UP and not _const.EDITOR_MODE
+                          and _rend._adjust_active):
+                        _rend.on_target_adjust(_sim, +1, fast=ctrl)
+
+                    elif (event.key == pygame.K_DOWN and not _const.EDITOR_MODE
+                          and _rend._adjust_active):
+                        _rend.on_target_adjust(_sim, -1, fast=ctrl)
+
                     elif (event.key == pygame.K_v and not _rend._input_active
                           and not ctrl):
                         _rend.on_setpoint_toggle()

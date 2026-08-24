@@ -68,7 +68,7 @@ def make_sim(shift_number: int = 3) -> GridSimulation:
 def run_freq_reaction_window(speed: float = 1.0, max_real_s: float = 120.0) -> None:
     sim = make_sim(3)
 
-    # Run a couple of sim-minutes so AGC/droop/fleet state settles before the
+    # Run a couple of sim-minutes so AGC/fleet state settles before the
     # trip, rather than triggering from a cold start.
     while sim.get_state().sim_time_min < 2.0:
         sim.tick(REAL_DT * TIME_COMPRESSION * speed)

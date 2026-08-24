@@ -4,7 +4,7 @@ src/simulation/simulation.py
 Master simulation loop and SimulationState snapshot for GRIDCOM.
 
 GridSimulation orchestrates all physics modules each tick:
-  demand → fleet → frequency+droop+AGC → load flow → voltage → overloads
+  demand → fleet → frequency+AGC → load flow → voltage → overloads
   → cascade → islands → alarms → state snapshot
 
 SimulationState is the complete snapshot transferred to the renderer
@@ -544,7 +544,7 @@ class GridSimulation:
           2.  Update demand
           3.  Update renewable outputs → inject into fleet
           4.  Tick unit state machines (ramp, cold start)
-          5.  Frequency update (swing equation) + droop + AGC secondary response
+          5.  Frequency update (swing equation) + AGC secondary response
           6.  Build P/Q injection vectors
           7.  Solve DC load flow
           8.  Solve voltage
@@ -576,7 +576,7 @@ class GridSimulation:
         # seconds, decremented via tick_real_seconds(), independent of
         # dt_sim_seconds/speed) so demand/renewables/scripted-event timers
         # don't move until the player has had a moment to land. Frequency/
-        # AGC/droop and the sustained_s fail/blackout timers are held too
+        # AGC and the sustained_s fail/blackout timers are held too
         # (see the freeze_active checks below) — only load flow/voltage
         # keep resolving every tick, so the canvas still reflects the
         # handover state exactly rather than looking stale. A caller that
@@ -611,11 +611,10 @@ class GridSimulation:
         self._roll_random_deviations(dt_min)
 
         # 5. Frequency update (swing equation) — held during the landing
-        # freeze along with sim time above, so AGC/droop don't integrate
+        # freeze along with sim time above, so AGC doesn't integrate
         # against a static handover imbalance the player can't see or react
-        # to yet. Everything else in this block (droop, AGC) derives from
-        # frequency_hz, so gating the update alone is sufficient to freeze
-        # the whole chain.
+        # to yet. AGC derives from frequency_hz, so gating the update alone
+        # is sufficient to freeze the whole chain.
         if not freeze_active:
             self._frequency.update(
                 dt_sim_seconds=dt_sim_seconds,
@@ -624,16 +623,11 @@ class GridSimulation:
                 online_unit_types=self._fleet.online_unit_types(),
             )
 
-            # 5a. Governor droop — primary response, non-AGC-eligible synchronous units, ahead of AGC.
-            if _sim_const.DROOP_ENABLED:
-                delta_f = self._frequency.frequency_hz - F_NOMINAL
-                self._fleet.apply_droop_response(delta_f, dt_sim_seconds)
-
-            # 5b. AGC secondary frequency response
+            # 5a. AGC secondary frequency response
             if _sim_const.AGC_ENABLED:
                 self._apply_agc(dt_sim_seconds)
 
-        # 5c. Automatic reactive devices (shunt banks) act on the previous
+        # 5b. Automatic reactive devices (shunt banks) act on the previous
         # tick's solved voltage — one-tick lag, no algebraic loop with the solver.
         self._reactive.step_automatics(self._prev_bus_voltages, dt_sim_seconds)
 
@@ -931,33 +925,18 @@ class GridSimulation:
 
     def seed_default_reactive_devices(self, substation_types: dict[str, str]) -> None:
         """
-        Seed automatic shunt banks and one manual SVC at runtime, driven by
-        each load bus's substation type — used by DESIGNER_TEST sessions
-        that have no authored device layout in their grid JSON. Industrial
-        buses get an automatic shunt bank (heaviest reactive load); a manual
-        SVC is placed at the weakest bus with no nearby generation, if one
-        can be identified.
+        Disabled by design: automatic shunt banks and the manual SVC used to
+        be seeded here (driven by each load bus's substation type), but that
+        let a device auto-correct reactive deficits the player was meant to
+        fix by hand via a generation unit's Q (AVR) setpoint. Reactive
+        compensation is now entirely a manual generator-setpoint lever — see
+        GridSimulation.set_unit_q_target(). No-op, kept as a no-arg-shape
+        stub so call sites need no changes.
 
         Args:
             substation_types: {bus_label: 'INDUSTRIAL'|'RESIDENTIAL'|'MIXED'}
         """
-        from simulation.reactive_devices import ShuntBank, SVC
-
-        load_bus_labels = {b.label for b in self._grid.get_active_buses()
-                            if b.bus_type == 'LOAD'}
-        gen_bus_labels = {u.bus_label for u in self._grid.get_active_units()}
-
-        for bus_label, sub_type in substation_types.items():
-            if bus_label not in load_bus_labels:
-                continue
-            if sub_type == 'INDUSTRIAL':
-                self._reactive.add_shunt_bank(ShuntBank(bus=bus_label))
-
-        # Manual SVC at a load bus with no on-bus generation — a region that
-        # can only be supported by a device, not nearby generator setpoints.
-        candidates = sorted(load_bus_labels - gen_bus_labels)
-        if candidates:
-            self._reactive.add_svc(SVC(bus=candidates[0]))
+        return
 
     def resize_shunt_bank(self, bus_label: str, max_steps: int | None = None,
                           mvar_per_step: float | None = None,

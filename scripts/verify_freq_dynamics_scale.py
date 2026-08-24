@@ -57,7 +57,6 @@ def make_shift10_sim() -> GridSimulation:
     grid = DesignerGrid(buses, lines, units)
 
     _sim_const.AGC_ENABLED = cfg['agc_enabled']
-    _sim_const.DROOP_ENABLED = cfg['droop_enabled']
     _sim_const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
     _sim_const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
     _sim_const.LANDING_FREEZE_S = 0.0  # skip freeze; this harness measures from T+0

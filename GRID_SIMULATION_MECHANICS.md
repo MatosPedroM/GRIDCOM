@@ -68,23 +68,7 @@ System H is the generation-weighted average of all synchronized units:
 H_system = Σ(Hᵢ × Sᵢ) / S_online
 ```
 
-### 3.3 Frequency Droop Response
-
-Synchronized generators respond automatically to frequency deviations through governor droop. This is the first line of defense — it happens without player intervention:
-
-```
-ΔP_governor = (Δf / f₀) × (1/R) × P_rated
-
-Where:
-  R = droop setting (typically 0.04 = 4%)
-  ΔP_governor = automatic MW response
-```
-
-Droop response is bounded by unit headroom (how much capacity is available above current dispatch). A unit at full output has zero droop response regardless of its droop setting.
-
-**Gameplay implication:** running units at high loading reduces the system's ability to self-correct. Spinning reserve is not just a cost — it is a physical buffer.
-
-### 3.4 Frequency Thresholds and Automatic Actions
+### 3.3 Frequency Thresholds and Automatic Actions
 
 | Frequency (Hz) | Condition        | Automatic Action                        |
 |----------------|------------------|-----------------------------------------|
@@ -370,7 +354,6 @@ SHUTDOWN     → shutdown sequence in progress (duration = ~10 minutes)
 Only SYNCHRONIZED units contribute to:
 - Available generation
 - System inertia (H calculation)
-- Droop response (governor action)
 - Reactive capability (voltage control)
 
 ### 6.3 Minimum Up/Down Times
@@ -549,11 +532,11 @@ def simulation_tick(dt):
     total_load = demand + losses_estimate()
     imbalance = total_generation - total_load
 
-    # 4. Update frequency (swing equation + droop response)
+    # 4. Update frequency (swing equation)
     H_system = compute_system_inertia()
     df = f_nominal * imbalance / (2 * H_system * S_base)
     frequency += df * dt
-    apply_droop_response(frequency_deviation)
+    apply_agc_response(frequency_deviation)
     check_frequency_thresholds()
 
     # 5. Solve DC load flow (MW flows and angles)
@@ -633,7 +616,6 @@ The simulation engine does not change between levels. The **autopilot layer** fi
 |---------------------|-----------------|------------------------------------|
 | noise_sigma         | 2% of peak      | More frequent real-time imbalances |
 | trip_delay          | 60 seconds      | More time to prevent cascade       |
-| droop_R             | 4%              | Stronger automatic frequency response |
 | collapse_gain       | 0.5             | Faster voltage collapse in danger zone |
 | load_shed_steps     | 5%, 10%, 15%    | How much load shedding buys before blackout |
 | H_thermal_avg       | 5.0 seconds     | Higher = more stable frequency     |

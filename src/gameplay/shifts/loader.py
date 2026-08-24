@@ -43,11 +43,6 @@ def load_shift_config(shift_number: int) -> dict:
         maintenance_units   set[str]                  — units locked on planned maintenance
         maintenance_lines   set[str]                  — lines that start the shift electrically open
         agc_enabled         bool                      — whether AGC is active at shift start
-        droop_enabled       bool                      — whether governor droop is active at shift
-                                                          start (default False — see constants.py
-                                                          DROOP_ENABLED; set DROOP_ENABLED = True in
-                                                          a shift_NN.py to opt a shift into universal
-                                                          governor droop on top of AGC)
         freq_tolerance_mult float                     — multiplier on F_ALERT_*/F_CRITICAL_*'s
                                                           deltas from nominal (default 1.0 — see
                                                           constants.py FREQ_TOLERANCE_MULT; set > 1.0
@@ -148,7 +143,6 @@ def load_shift_config(shift_number: int) -> dict:
         'maintenance_units':       getattr(mod, 'MAINTENANCE_UNITS',       set()),
         'maintenance_lines':       getattr(mod, 'MAINTENANCE_LINES',       set()),
         'agc_enabled':             getattr(mod, 'AGC_ENABLED',             False),
-        'droop_enabled':           getattr(mod, 'DROOP_ENABLED',           False),
         'freq_tolerance_mult':     getattr(mod, 'FREQ_TOLERANCE_MULT',     1.0),
         'agc_speed_mult':          getattr(mod, 'AGC_SPEED_MULT',          1.0),
         'landing_freeze_s':        getattr(mod, 'LANDING_FREEZE_S',        _LANDING_FREEZE_S_DEFAULT),

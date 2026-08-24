@@ -10,6 +10,111 @@
 
 ## Current Status
 
+**COMPLETE** — Session 96: three developer-driven changes. (1) Moved Power Balance out of the
+instrument strip into a new horizontal top bar above the canvas (`draw_topbar_panel()`,
+`TOPBAR_HEIGHT=60`, `CANVAS_HEIGHT` 844->784), freeing strip width so Forecast/GenMix each grew 10%
+and Alarm absorbed the rest (290->501, undoing the cramped state Session 95 left it in). The bar
+started as two label/value rows per field, then was restacked per developer feedback into one
+aligned table — row 1 = every field's label, row 2 = every field's value directly beneath it — with
+the regulation-band bar graphic dropped since it didn't fit a strict 2-row layout. Canvas-space
+mouse hit-testing (`on_click`, `on_scroll`'s strip-boundary check, `on_mouse_move/down/up`'s
+forwarding into `GridEditor`) needed a real fix, not just a cosmetic one: it assumed the canvas
+subsurface started at native Y=0, no longer true with the top bar above it — added
+`Renderer._to_canvas_local()` to translate native-space mouse positions before any canvas-local
+hit-test/drag math. Confirmed (developer's explicit call, not a bug) that bus/station `canvas_y`
+positions in `data/topology.py`/`data/fleet.py` are fixed pixel coordinates authored against the
+old 844px canvas and were not rescaled — checked both Shift 5 and Shift 10 (smallest/largest grids,
+covering the deepest authored `canvas_y`/station values) and found no visible clipping in practice.
+(2) Recentered the REG MIN/NOW/MAX regulation-band readout around its own midpoint per a worked
+example from the developer (2x50MW hydro online, 5MW tech min each: `center=(min+max)/2`,
+`REG DN=min-center`, `REG UP=max-center`, `REG NOW=current-center` — confirmed exactly against two
+hand-worked cases, -45/-5/+45 and -45/+35/+45) and relabelled the columns REG DN/NOW/UP. Purely a
+`draw_topbar_panel()` (panels.py) change — `SimulationState.agc_current_mw/agc_min_mw/agc_max_mw`
+keep their existing absolute-total meaning; nothing else reads them. (3) Removed the governor droop
+mechanic entirely per explicit developer request — only AGC now automatically changes unit output;
+non-AGC-eligible types (COAL, NUCLEAR, HYDRO_ROR, HYDRO_PUMP) have no automatic frequency-correcting
+response at all going forward (confirmed as the intended end state, not a gap to fill). Deleted
+`UnitModel.apply_droop_delta()`, `UnitModel._droop_offset_mw` (including its live read inside
+`_tick_online()`'s `chase_mw` ramp math — not just its writers), `FleetModel.apply_droop_response()`,
+and the `DROOP_ENABLED`-gated call site in `GridSimulation.tick()`; removed the now-unused
+`DROOP_R`/`DROOP_SMOOTHING_TAU_S`/`DROOP_ENABLED` constants. The `droop_enabled` per-shift config
+field turned out to be plumbed through five layers (`shift_NN.py` optional constant -> loader.py ->
+shift_io.py's `ShiftDefinition` dataclass/JSON schema/campaign-shift AST splicer -> main.py ->
+`constants.DROOP_ENABLED`) despite no shift ever setting it non-default and the Shift Builder UI
+having no control for it at all (unlike sibling `agc_enabled`, which has both a dataclass field and
+a UI toggle) — removed all 11 shift_io.py sites plus loader.py/main.py/the two `scripts/verify_*.py`
+dev tools, confirmed no on-disk shift JSON references the field. Also removed the "DROOP ON/OFF"
+debug-HUD line (renderer.py) and its now-dead `p46` layout constant, and updated `GRID_SIMULATION_
+MECHANICS.md` (deleted §3.3 Frequency Droop Response, renumbered 3.4->3.3, dropped the
+tick-pseudocode/parameter-table droop lines) and `DOMAIN_GLOSSARY.md` (deleted both "Droop Response"
+entries, reworded the Spinning Reserve/Cold Start Time entries that referenced droop) to match.
+Left `GAMEPLAY_ANALYSIS.md`/`GRIDCOM_ROADMAP_v2.md`/`FUN_FACTOR_BRAINSTORM.md` untouched (archival
+planning docs, one already stale even before this change) and `GRIDCOM_INTRO_STORY.md`'s one
+narrative sentence about droop untouched (flavor text, developer's explicit call) per developer
+direction. `test_frequency_model()`'s "Droop response" print labels were kept but reworded — that
+test verifies the swing equation has no implicit governor response baked in, not the mechanic being
+removed — the two tests that directly exercised `apply_droop_delta`/`apply_droop_response` were
+deleted. `pytest tests/test_simulation.py` — all passing after edits (see below for exact count).
+- Edited: `src/display/panels.py` (`draw_power_panel()` replaced by `draw_topbar_panel()`, later
+  restacked to the label-row/value-row table; REG DN/NOW/UP recentering math), `src/display/
+  renderer.py` (new `_topbar_surf`, `'topbar'` panel-cache entry, `_to_canvas_local()`, click/scroll/
+  drag coordinate fixes; DROOP debug-HUD block removed), `src/simulation/constants.py` (`TOPBAR_
+  HEIGHT` added, `CANVAS_HEIGHT` 844->784, `PANEL_*_X/W` reworked; DROOP_R/DROOP_SMOOTHING_TAU_S/
+  DROOP_ENABLED removed), `src/simulation/units.py` (droop methods/attribute/import removed,
+  `_tick_online()`'s chase_mw edited), `src/simulation/simulation.py` (droop call site removed,
+  docstrings/comments updated), `src/simulation/frequency.py` (docstring/comment wording), `src/
+  gameplay/shifts/loader.py`, `src/main.py`, `src/data/shift_io.py` (11 sites), `scripts/verify_freq_
+  dynamics_scale.py`, `scripts/verify_reaction_window.py` (droop config plumbing/comments removed),
+  `tests/test_simulation.py` (two droop test blocks deleted, `test_frequency_model()` labels
+  reworded), `CLAUDE.md` (stale frequency.py repo-map line fixed), `GRID_SIMULATION_MECHANICS.md`,
+  `DOMAIN_GLOSSARY.md` (droop sections/mentions removed or reworded).
+- **Not done this session**: no in-game manual playtest at real display scale for the restacked top
+  bar or the recentered regulation-band readout — flagged as the natural next step, same as Session
+  95's note. The pre-existing Unit Dispatch vertical row-budget gap (more units than rows fit per
+  column, no scroll) remains unaddressed, per the developer's earlier explicit deferral.
+
+**COMPLETE** — Session 95: two display-only changes, developer-driven. (1) Matched instrument-strip
+and unit/bus/line context-overlay text to the grid canvas label size: `FONT_SIZE_PANEL`/
+`FONT_SIZE_CONTEXT` 15->18 (constants.py), which forced the Unit Dispatch table's column count down
+then back up (3->2->3) as the real fix — its `DISPATCH_STATUS_X_OFFSET`/`DISPATCH_VALUE_X_OFFSET`
+were re-measured against real JetBrainsMono glyph widths at the new size (not naively rescaled, which
+undershot and caused visible text overlap first pass), and `PANEL_DISPATCH_W` grew 624->900 to fit
+3 comfortably, funded by narrowing Alarm to 290 (in turn widened again by change (2) below). Alarm's
+main message line is not word-wrapped (pre-existing — only its `detail` line is), so it clips sooner
+at a narrower width; flagged to the developer as an accepted, deferred follow-up rather than fixed
+here. (2) Moved the Power Balance panel out of the instrument strip entirely into a new horizontal
+`draw_topbar_panel()` bar above the canvas (`TOPBAR_HEIGHT=60`, two rows: GEN/LOAD/BAL/LOAD VAR/
+SPIN RES/INERTIA/LOSSES, then REG BAND + REG MIN/NOW/MAX + the existing regulation-band bar graphic,
+all self-measured `LABEL value` pairs via `font.get_rect()` — no hardcoded offsets to mistune at a
+different font size). `CANVAS_HEIGHT` shrank 844->784 to make room (60+784+236=1080 still exact);
+Forecast/GenMix widened 10% (180->198, 110->121) and Alarm absorbed the rest (290->501) with Power's
+freed strip width. Renderer geometry (`renderer.py`) gained a third `_topbar_surf` subsurface above
+`_canvas_surf`, and canvas-space mouse hit-testing (`on_click`, `on_scroll`'s strip-boundary check,
+and `on_mouse_move/down/up`'s forwarding into `GridEditor`) was fixed to translate native-space
+positions into canvas-local space via a new `_to_canvas_local()` helper — previously hardcoded to
+assume the canvas started at native Y=0, which is no longer true with the top bar above it; this was
+a real, must-fix correctness bug independent of the developer's explicit choice to accept the
+canvas-shrink's other consequence (bus/station `canvas_y` positions in `data/topology.py`/
+`data/fleet.py` are fixed pixel coordinates authored against the old 844px canvas, up to y=800 for
+one station — not rescaled here, per the developer's call not to worry about it). Render-checked
+`draw_topbar_panel()` standalone (synthetic freetype font, offscreen surface) and the full renderer
+end-to-end for both Shift 5 and Shift 10 (smallest/largest grids, covering the deepest authored
+`canvas_y`/station values) — no clipping observed in practice at 784px for either. `pytest
+tests/test_simulation.py` — 10/10 pass, unchanged (no simulation-side code touched).
+- Edited: `src/simulation/constants.py` (`FONT_SIZE_PANEL`/`FONT_SIZE_CONTEXT` 15->18;
+  `CONTEXT_OVERLAY_W/ROW_H/HDR_H` scaled up; `TOPBAR_HEIGHT` added; `CANVAS_HEIGHT` 844->784;
+  `PANEL_*_X/W` reworked, `PANEL_POWER_X/W` removed; `DISPATCH_NUM_COLS`/`DISPATCH_STATUS_X_OFFSET`/
+  `DISPATCH_VALUE_X_OFFSET` retuned), `src/display/panels.py` (`_ROW_H` 18->22; Alarm's hardcoded
+  `pri_x`/`time_x`/`msg_x` offsets re-measured; `draw_power_panel()` replaced by `draw_topbar_panel()`),
+  `src/display/renderer.py` (new `_topbar_surf`, `'topbar'` panel-cache entry reusing the old
+  `power_key` dirty-key tuple, `_to_canvas_local()` helper, click/scroll/drag coordinate fixes,
+  updated imports and module-docstring layer list).
+- **Not done this session**: no in-game manual playtest at real display scale (all verification
+  headless/synthetic-surface, matching this project's established pattern) — real on-screen readability
+  of the widened Alarm panel and the new top bar's two-row layout are easiest to judge by eye and
+  flagged as the natural next step. The pre-existing Unit Dispatch vertical row-budget gap (more units
+  than rows fit per column, no scroll) was also flagged but explicitly deferred by the developer.
+
 **COMPLETE** — Session 94: reverted Session 93's half-hourly (48-column) Phase 1 planning grid back
 to hourly (24 columns, 0.0-23.0) — developer's call after trying it: "too clunky and doesn't really
 add much to the game." Because Session 93's implementation was built parametrically on one constant

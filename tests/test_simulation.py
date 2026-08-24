@@ -632,57 +632,6 @@ def test_unit_model() -> bool:
             print(f"  Renewable unit: FAIL -- {e}")
             all_passed = False
 
-        # ── Droop offset sits on top of target_mw, never mutates it ───────
-        try:
-            spec = get_unit('RVSD-1')   # COAL — not AGC-eligible
-            um = UnitModel(spec, initial_mw=200.0)
-            um.set_target(220.0)
-            assert um.target_mw == 220.0, \
-                f"set_target should set target_mw to 220.0, got {um.target_mw}"
-
-            offset = um.apply_droop_delta(50.0, dt_sim_seconds=1.0)
-            assert um.target_mw == 220.0, \
-                f"apply_droop_delta must not move target_mw, got {um.target_mw}"
-            assert offset > 0.0, \
-                f"Expected a positive smoothed offset after one tick, got {offset}"
-            assert offset < 50.0, \
-                f"First-tick offset should be smoothed (less than the full " \
-                f"50.0 MW request), got {offset}"
-
-            # current_mw must not snap instantly to target + full delta —
-            # it's still ramp-limited by _tick_online(), unaffected by the
-            # instantaneous droop offset alone.
-            pre_tick_mw = um.current_mw
-            um._tick_online(dt_sim_seconds=1.0)
-            ramp_mw_per_sec = (spec.ramp_pct_per_min / 100.0) * spec.rated_mw / 60.0
-            assert um.current_mw <= pre_tick_mw + ramp_mw_per_sec + 0.01, \
-                f"current_mw moved more than one tick's ramp budget: " \
-                f"{pre_tick_mw:.2f} -> {um.current_mw:.2f} (ramp budget " \
-                f"{ramp_mw_per_sec:.2f} MW/s)"
-
-            print(f"  Droop offset ({offset:.2f} MW) leaves target_mw=220.0 "
-                  f"untouched, current_mw ramp-limited -- PASS")
-        except AssertionError as e:
-            print(f"  Droop offset vs target_mw: FAIL -- {e}")
-            all_passed = False
-
-        # ── Droop skips AGC-eligible unit types ────────────────────────────
-        try:
-            g5 = Grid(5)   # Shift 5: CCGT (ASHG) and COAL (RVSD) both active
-            schedule = {'RVSD-1': 200.0, 'ASHG-1': 250.0}
-            fleet = FleetModel(g5, initial_schedule=schedule)
-
-            assignments = fleet.apply_droop_response(delta_f_hz=-0.1, dt_sim_seconds=1.0)
-            assert 'RVSD-1' in assignments, \
-                "COAL unit (non-AGC-eligible) should receive a droop offset"
-            assert 'ASHG-1' not in assignments, \
-                "CCGT unit (AGC-eligible) should be skipped by droop"
-
-            print(f"  Droop response: COAL included, CCGT skipped -- PASS")
-        except AssertionError as e:
-            print(f"  Droop AGC-eligibility skip: FAIL -- {e}")
-            all_passed = False
-
         # ── FleetModel aggregates ─────────────────────────────────────────
         # Grid(3) used: HART-1/2 are at STHW which is only active from Shift 3.
         try:
@@ -734,11 +683,12 @@ def test_unit_model() -> bool:
 
 def test_frequency_model() -> bool:
     """
-    Verify FrequencyModel drives frequency deviation and applies droop correctly.
+    Verify FrequencyModel drives frequency deviation correctly.
 
     Checks:
       - Imbalance drives frequency deviation in the correct direction
-      - Droop response opposes the deviation
+      - Constant imbalance produces a constant df/dt (honest swing equation,
+        no implicit governor response baked in)
       - Frequency is clamped to [F_MIN, F_MAX]
     """
     print("test_frequency_model...")
@@ -822,11 +772,11 @@ def test_frequency_model() -> bool:
                 f"Honest swing equation: df/dt should be constant under steady imbalance: "
                 f"early={early_rate:.5f} Hz/tick late={late_rate:.5f} Hz/tick"
             )
-            print(f"  Droop response: PASS — constant df/dt={early_rate:.5f} Hz/tick "
-                  f"(honest swing equation, no phantom droop)")
+            print(f"  Constant df/dt (no implicit governor response): PASS — "
+                  f"{early_rate:.5f} Hz/tick (honest swing equation)")
 
         except AssertionError as e:
-            print(f"  Droop response: FAIL — {e}")
+            print(f"  Constant df/dt (no implicit governor response): FAIL — {e}")
             all_passed = False
 
         # ── Frequency clamped to [F_MIN, F_MAX] ────────────────────────────

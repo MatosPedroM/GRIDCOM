@@ -126,8 +126,8 @@ Hydro: 100%/min (near-instant). Coal: 3%/min (slow). Nuclear: 1%/min (very slow)
 **Spinning Reserve (MW)**
 Headroom available from online, synchronised units — the difference between their
 current output and their rated output. In GRIDCOM: spinning reserve = Σ(rated_mw -
-current_mw) for all ONLINE units. This is the buffer available for automatic
-frequency response (droop). Zero spinning reserve = no ability to respond to
+current_mw) for all ONLINE units. This is the buffer available for AGC's automatic
+frequency response. Zero spinning reserve = no ability to respond to
 frequency events.
 
 **Inertia Constant H (seconds)**
@@ -136,16 +136,10 @@ its rated power. Higher H = more energy stored = slower frequency response to
 imbalance. In GRIDCOM: system H is the generation-weighted average of all ONLINE
 units. Solar and wind contribute zero inertia.
 
-**Droop Response (governor)**
-The automatic, proportional response of a synchronised generator to frequency
-deviation. Happens without player action. In GRIDCOM: each ONLINE unit increases
-output by ΔP = (Δf/f₀) × (1/R) × P_rated, bounded by available headroom.
-R = 0.04 (4% droop setting).
-
 **Cold Start Time (simulated minutes)**
 Time required for an OFFLINE unit to reach ONLINE status after a start command.
 In GRIDCOM: unit enters STARTING state, counts down cold_start_min, then enters
-ONLINE. During STARTING: contributes no power, no inertia, no droop response.
+ONLINE. During STARTING: contributes no power, no inertia, no AGC response.
 
 ---
 
@@ -325,12 +319,6 @@ H_system = Σ(Hᵢ × S_ratedᵢ) / S_online
 Where S_rated is in MVA (= rated_mw for this simulation).
 S_online = total MW capacity of all ONLINE units.
 Only ONLINE units contribute to inertia.
-
-**Droop Response**
-Applied to each ONLINE unit automatically (no player action):
-ΔP_governor = (Δf / F_NOMINAL) × (1/DROOP_R) × rated_mw
-Clamped to available headroom: min(ΔP_governor, rated_mw - current_mw)
-Applied immediately — not subject to ramp rate (governor response is fast).
 
 ---
 

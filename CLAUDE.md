@@ -47,7 +47,7 @@ gridcom/
     │   ├── grid.py              ← Grid object, topology loader
     │   ├── loadflow.py          ← DC load flow solver (numpy only)
     │   ├── voltage.py           ← decoupled voltage solver
-    │   ├── frequency.py         ← swing equation, droop response
+    │   ├── frequency.py         ← swing equation
     │   ├── units.py             ← generation unit state machine
     │   ├── demand.py            ← demand model, forecast, noise
     │   ├── renewables.py        ← wind and solar models

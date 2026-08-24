@@ -44,10 +44,11 @@ from display.palette import (
     COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID, COL_TEXT_DIM,
     COL_FPS_TEXT, COL_150KV,
     COL_TEXT_BODY, COL_TEXT_SCREEN_HDR, COL_MENU_CURSOR, COL_MENU_DISABLED,
+    COL_PANEL_BORDER, COL_TEXT_PRIMARY,
 )
 import simulation.constants as _sim_const
 from simulation.constants import (
-    TOPBAR_HEIGHT, CANVAS_HEIGHT, STRIP_HEIGHT,
+    TITLE_BAR_HEIGHT, TOPBAR_HEIGHT, CANVAS_HEIGHT, STRIP_HEIGHT,
     HINT_GAP_HEIGHT, HINT_BAR_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
     FONT_PATH_MONO_REGULAR,
@@ -100,12 +101,18 @@ class Renderer:
         self._scale          = min(disp_w / NATIVE_WIDTH, disp_h / NATIVE_HEIGHT)
         scaled_w             = int(NATIVE_WIDTH  * self._scale)
         scaled_h             = int(NATIVE_HEIGHT * self._scale)
+        scaled_title_h       = int(TITLE_BAR_HEIGHT * self._scale)
         scaled_topbar_h      = int(TOPBAR_HEIGHT * self._scale)
         scaled_canvas_h      = int(CANVAS_HEIGHT * self._scale)
         scaled_strip_h       = int(STRIP_HEIGHT * self._scale)
         scaled_hint_gap_h    = int(HINT_GAP_HEIGHT * self._scale)
-        scaled_hint_bar_h    = scaled_h - scaled_topbar_h - scaled_canvas_h - scaled_strip_h - scaled_hint_gap_h
-        self._scaled_topbar_h = scaled_topbar_h
+        scaled_hint_bar_h    = (scaled_h - scaled_title_h - scaled_topbar_h - scaled_canvas_h
+                                 - scaled_strip_h - scaled_hint_gap_h)
+        # _scaled_topbar_h doubles as "canvas's absolute y-offset from native
+        # (0,0)" for hit-testing (_to_canvas_local(), on_scroll()) — title
+        # bar sits above the topbar, so it's folded into this offset rather
+        # than tracked as a separate variable every consumer would need.
+        self._scaled_topbar_h = scaled_title_h + scaled_topbar_h
         self._scaled_canvas_h = scaled_canvas_h
         offset_x             = (disp_w - scaled_w) // 2
         offset_y             = (disp_h - scaled_h) // 2
@@ -118,24 +125,28 @@ class Renderer:
         self._native        = pygame.Surface((scaled_w, scaled_h)).convert()
         self._display_dirty = True   # force first-frame blit to display
 
-        # Top bar region: top scaled_topbar_h rows
+        # Title region: top-most scaled_title_h rows — shift description
+        self._title_surf = self._native.subsurface(
+            pygame.Rect(0, 0, scaled_w, scaled_title_h)
+        )
+        # Top bar region: scaled_topbar_h rows below the title
         self._topbar_surf = self._native.subsurface(
-            pygame.Rect(0, 0, scaled_w, scaled_topbar_h)
+            pygame.Rect(0, scaled_title_h, scaled_w, scaled_topbar_h)
         )
         # Canvas region: scaled_canvas_h rows below the top bar
         self._canvas_surf = self._native.subsurface(
-            pygame.Rect(0, scaled_topbar_h, scaled_w, scaled_canvas_h)
+            pygame.Rect(0, self._scaled_topbar_h, scaled_w, scaled_canvas_h)
         )
         # Strip region: scaled_strip_h rows below the canvas
         self._strip_surf = self._native.subsurface(
-            pygame.Rect(0, scaled_topbar_h + scaled_canvas_h, scaled_w, scaled_strip_h)
+            pygame.Rect(0, self._scaled_topbar_h + scaled_canvas_h, scaled_w, scaled_strip_h)
         )
         # Shortcut hint bar: bottom-most rows, separated from the strip by a
         # blank scaled_hint_gap_h gap (left unpainted — native background colour)
         self._hint_bar_surf = self._native.subsurface(
             pygame.Rect(
                 0,
-                scaled_topbar_h + scaled_canvas_h + scaled_strip_h + scaled_hint_gap_h,
+                self._scaled_topbar_h + scaled_canvas_h + scaled_strip_h + scaled_hint_gap_h,
                 scaled_w, scaled_hint_bar_h,
             )
         )
@@ -153,6 +164,18 @@ class Renderer:
         self._shift_title: str = (
             f'SHIFT {shift}  —  {_difficulty_label.upper()}'
             if _difficulty_label else f'SHIFT {shift}'
+        )
+        # Drawn once — the title never changes after construction, unlike
+        # every other region of the screen — into its own dedicated row
+        # above the topbar (was previously drawn every frame overlapping
+        # the canvas's top pixels).
+        _fso = int(FONT_SIZE_OVERLAY * self._scale)
+        _tw, _ = self._font.get_rect(self._shift_title, size=_fso)[2:4]
+        _cx = (self._title_surf.get_width() - _tw) // 2
+        self._font.render_to(
+            self._title_surf,
+            (_cx, int(4 * self._scale)),
+            self._shift_title, COL_TEXT_PRIMARY, size=_fso,
         )
 
         # Grid reference for dispatch panel (set by main via set_grid)
@@ -966,13 +989,25 @@ class Renderer:
             self._canvas.draw_overload_countdowns(self._canvas_surf, state, font_scale=self._scale)
             native_changed = True
 
+        # ── Grid display zone framing — a green line along the bottom edge
+        # of the canvas (the boundary with the instrument strip below), so
+        # the grid schematic reads as a clearly bounded zone. The top edge
+        # is framed by the topbar's own bottom border instead (drawn flush
+        # under its content in draw_topbar_panel(), not at the topbar/
+        # canvas boundary — see Session 106). Drawn every frame since the
+        # canvas itself is blitted fresh every frame regardless of its own
+        # redraw-to-cache state. ──
+        canvas_w, canvas_h = self._canvas_surf.get_size()
+        pygame.draw.line(self._canvas_surf, COL_PANEL_BORDER,
+                         (0, canvas_h - 1), (canvas_w, canvas_h - 1), 1)
+        native_changed = True
+
         if _perf:
             _t1 = time.perf_counter()
             self._perf_last_ms['triangles'] = (_t1 - _t0) * 1000.0
             _t0 = _t1
 
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
-        paused = (speed_mult == 0.0)
 
         # Sample frequency/load-variation history once per rendered frame
         # (display-only concern — simulation.py holds no history of its own,
@@ -992,8 +1027,6 @@ class Renderer:
         freq_key = (
             round(state.frequency_hz, 2) if state else None,
             state.frequency_trend        if state else None,
-            int(state.sim_hour * 60)     if state else None,
-            paused,
             len(self._freq_history),
             round(self._freq_history[0], 2) if self._freq_history else None,
         )
@@ -1005,11 +1038,14 @@ class Renderer:
             round(state.system_inertia_h, 1)  if state else None,
             round(state.losses_mw)            if state else None,
             round(self._load_rate_history[-1], 2) if self._load_rate_history else None,
+            int(state.sim_hour * 60)          if state else None,
+            speed_mult,
         )
         dispatch_key = (
             ''.join(v[:1] for _, v in sorted(state.unit_states.items())) if state else None,
             round(sum(state.unit_outputs_mw.values()))                    if state else None,
             round(sum(state.unit_start_progress.values()) * 100)          if state else None,
+            state.unit_agc_enabled                                        if state else None,
         )
         forecast_key = (
             len(state.demand_forecast_mw) if state else 0,
@@ -1039,13 +1075,14 @@ class Renderer:
         if freq_key != self._panel_keys['freq']:
             draw_frequency_panel(
                 self._panel_cache['freq'], self._font, self._blink_on, state,
-                paused=paused, freq_history=self._freq_history, font_scale=_fs)
+                freq_history=self._freq_history, font_scale=_fs)
             self._panel_keys['freq'] = freq_key
             panel_changed = True
 
         if topbar_key != self._panel_keys['topbar']:
             draw_topbar_panel(self._panel_cache['topbar'], self._font, state,
-                              load_rate_history=self._load_rate_history, font_scale=_fs)
+                              load_rate_history=self._load_rate_history,
+                              speed_mult=speed_mult, font_scale=_fs)
             self._panel_keys['topbar'] = topbar_key
             self._topbar_surf.blit(self._panel_cache['topbar'], (0, 0))
             native_changed = True
@@ -1084,6 +1121,13 @@ class Renderer:
             self._strip_surf.blit(self._panel_cache['forecast'], (int(PANEL_FORECAST_X * _sc), 0))
             self._strip_surf.blit(self._panel_cache['genmix'],   (int(PANEL_GENMIX_X   * _sc), 0))
             self._strip_surf.blit(self._panel_cache['alarm'],    (int(PANEL_ALARM_X    * _sc), 0))
+            # Grid display zone framing: the strip's own bottom edge (its top
+            # edge is the canvas's own bottom border, drawn every frame as
+            # part of canvas compositing above) — completes the green frame
+            # around the grid schematic/instrument-strip block as a whole.
+            strip_w, strip_h = self._strip_surf.get_size()
+            pygame.draw.line(self._strip_surf, COL_PANEL_BORDER,
+                             (0, strip_h - 1), (strip_w, strip_h - 1), 1)
             native_changed = True
 
         prev_hint_text = self._hint_bar_text
@@ -1166,17 +1210,6 @@ class Renderer:
                 fps_str, COL_FPS_TEXT, size=fso,
             )
             native_changed = True
-
-        # ── Shift title (top-centre of canvas) ───────────────────────────────
-        fso = int(FONT_SIZE_OVERLAY * self._scale)
-        tw, _ = self._font.get_rect(self._shift_title, size=fso)[2:4]
-        cx = (self._canvas_surf.get_width() - tw) // 2
-        self._font.render_to(
-            self._canvas_surf,
-            (cx, int(6 * self._scale)),
-            self._shift_title, COL_TEXT_DIM, size=fso,
-        )
-        native_changed = True
 
         # ── Debug overlay ──────────────────────────────────────────────────────
         if _sim_const.DEBUG_DISPLAY:

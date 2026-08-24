@@ -27,8 +27,7 @@ from display.palette import (
     COL_TEXT_HEADING, COL_TEXT_GOOD, COL_TEXT_WARN, COL_TEXT_CRIT,
     COL_FREQ_NOMINAL, COL_FREQ_ALERT, COL_FREQ_CRITICAL,
     COL_METER_BG, COL_METER_TICK, COL_FORECAST_CUR_BG,
-    COL_UNIT_ONLINE, COL_UNIT_STARTING, COL_UNIT_OFFLINE,
-    COL_UNIT_TRIPPED, COL_UNIT_SHUTDOWN,
+    COL_UNIT_ONLINE,
     COL_ALARM_CRIT, COL_ALARM_WARN, COL_ALARM_INFO, COL_ALARM_TUTOR, COL_ALARM_ACK,
     COL_UNIT_COAL, COL_UNIT_CCGT, COL_UNIT_NUCLEAR,
     COL_UNIT_HYDRO, COL_UNIT_WIND, COL_UNIT_SOLAR,
@@ -38,6 +37,7 @@ from simulation.constants import (
     FONT_SIZE_PANEL, FONT_SIZE_PANEL_LARGE,
     F_ALERT_LOW, F_ALERT_HIGH, F_CRITICAL_LOW, F_CRITICAL_HIGH,
     DISPATCH_NUM_COLS, DISPATCH_STATUS_X_OFFSET, DISPATCH_VALUE_X_OFFSET,
+    SPEED_PAUSE, SPEED_SLOW, SPEED_NORMAL, SPEED_FAST, SPEED_VERY_FAST,
 )
 
 
@@ -46,7 +46,6 @@ from simulation.constants import (
 _HEADER_H:  int = 20    # px — panel header row height
 _PAD:       int = 6     # px — horizontal text padding
 _ROW_H:     int = 22    # px — unit/alarm row height
-_BAR_H:     int = 8     # px — progress/loading bar height
 
 
 def _fill_panel(surf: pygame.Surface) -> None:
@@ -74,15 +73,6 @@ def _row_y(row: int, font_scale: float = 1.0) -> int:
     return hh + row * rh + max(1, int(2 * font_scale))
 
 
-def _bar(surf: pygame.Surface, x: int, y: int, w: int, fill_frac: float,
-         col_fill: tuple, col_bg: tuple = COL_METER_BG,
-         bar_h: int = _BAR_H) -> None:
-    pygame.draw.rect(surf, col_bg,    pygame.Rect(x, y, w, bar_h))
-    filled = max(0, min(w, int(w * fill_frac)))
-    if filled > 0:
-        pygame.draw.rect(surf, col_fill, pygame.Rect(x, y, filled, bar_h))
-
-
 # ── Panel 1 — Frequency ────────────────────────────────────────────────────────
 
 def draw_frequency_panel(
@@ -90,16 +80,21 @@ def draw_frequency_panel(
     font:         pygame.freetype.Font,
     blink_on:     bool,
     state=None,
-    paused:       bool  = False,
     freq_history=None,
     font_scale:   float = 1.0,
 ) -> None:
-    """Frequency panel: large Hz readout, analog bar (48-53 Hz range),
-    trend/clock line, and a vertical frequency history plot (time top-to-
-    bottom, newest sample nearest the bar), full panel width."""
+    """Frequency panel: large Hz readout and a vertical frequency history
+    plot (time top-to-bottom, newest sample nearest the top), full panel
+    width. The trend line (RISING/FALLING/STABLE) and the horizontal
+    48-53 Hz analog bar were both removed — the vertical plot already
+    shows the same range over time, so it sits directly under the Hz
+    readout and extends down to fill the rest of the panel. The plot's
+    frequency-to-x mapping is centred on 50 Hz (F_NOMINAL), so the 50 Hz
+    gridline sits at the panel's horizontal midpoint rather than off to
+    one side. The clock/speed readout lives in the topbar
+    (draw_topbar_panel), not here."""
 
-    freq_hz: float = state.frequency_hz    if state else 49.85
-    trend:   str   = state.frequency_trend if state else 'FALLING'
+    freq_hz: float = state.frequency_hz if state else 49.85
 
     _fill_panel(surf)
     _right_border(surf)
@@ -108,11 +103,9 @@ def draw_frequency_panel(
     fs  = font_scale
     w   = surf.get_width()
     h   = surf.get_height()
-    sp  = int(FONT_SIZE_PANEL       * fs)
     sl  = int(FONT_SIZE_PANEL_LARGE * fs)
     hh  = int(_HEADER_H * fs)
     pad = int(_PAD      * fs)
-    bh  = max(2, int(_BAR_H * fs))
 
     def _freq_col(f: float) -> tuple:
         if f < 49.0 or f > 51.0:
@@ -123,51 +116,24 @@ def draw_frequency_panel(
 
     col = _freq_col(freq_hz)
 
-    hz_str = f'{freq_hz:.2f} Hz'
+    hz_str = f'{freq_hz:.2f}'
     rect = font.get_rect(hz_str, size=sl)
     tx = (w - rect.width) // 2
-    font.render_to(surf, (tx, hh + max(1, int(6 * fs))), hz_str, col, size=sl)
+    hz_y = hh + max(1, int(6 * fs))
+    font.render_to(surf, (tx, hz_y), hz_str, col, size=sl)
 
-    bar_y = hh + int(48 * fs)
     bar_x = pad
     bar_w = w - pad * 2
 
+    # Centred on 50 Hz (F_NOMINAL): 47.5-52.5 Hz, same 5 Hz span as
+    # before but symmetric around nominal instead of offset, so the 50 Hz
+    # gridline lands at the panel's horizontal midpoint (bar_x + bar_w/2).
     def _fill_frac(f: float) -> float:
-        return (f - 48.0) / 5.0
+        return (f - 47.5) / 5.0
 
-    _bar(surf, bar_x, bar_y, bar_w, _fill_frac(freq_hz), col, bar_h=bh)
-
-    cx = bar_x + bar_w // 2
-    pygame.draw.line(surf, COL_METER_TICK,
-                     (cx, bar_y - max(1, int(3 * fs))),
-                     (cx, bar_y + bh + max(1, int(2 * fs))), 1)
-
-    label_y = bar_y + bh + max(1, int(4 * fs))
-    for hz_val, label in [(48.0, '48'), (50.5, '50.5'), (53.0, '53')]:
-        lx = bar_x + int(_fill_frac(hz_val) * bar_w)
-        rect = font.get_rect(label, size=sp)
-        lx = max(bar_x, min(bar_x + bar_w - rect.width, lx - rect.width // 2))
-        font.render_to(surf, (lx, label_y), label, COL_TEXT_DIM, size=sp)
-
-    # Trend + clock share a single row to leave more vertical room for the plot below.
-    status_y = label_y + max(8, int(14 * fs))
-    trend_col = COL_TEXT_DIM if trend == 'STABLE' else col
-    t_str = '▲ RISING' if trend == 'RISING' else ('▼ FALLING' if trend == 'FALLING' else '— STABLE')
-    font.render_to(surf, (pad, status_y), t_str, trend_col, size=sp)
-
-    if state is not None:
-        hr = int(state.sim_hour) % 24
-        mn = int((state.sim_hour % 1.0) * 60)
-        clock_str = f'{hr:02d}:{mn:02d}'
-        if paused:
-            clock_str += '  PAUSED'
-        clock_col = COL_TEXT_WARN if paused else COL_TEXT_SECONDARY
-        crect = font.get_rect(clock_str, size=sp)
-        font.render_to(surf, (w - pad - crect.width, status_y), clock_str, clock_col, size=sp)
-
-    # ── Frequency history — vertical strip chart, newest sample nearest the bar,
-    # older samples toward the bottom of the panel. ──
-    plot_top    = status_y + max(10, int(18 * fs))
+    # ── Frequency history — vertical strip chart, newest sample nearest
+    # the Hz readout, older samples toward the bottom of the panel. ──
+    plot_top    = hz_y + rect.height + max(4, int(8 * fs))
     plot_bottom = h - pad
     plot_h      = plot_bottom - plot_top
     if freq_history and plot_h > 4:
@@ -190,8 +156,16 @@ def draw_frequency_panel(
 
 # ── Panel 2 — Power Balance ────────────────────────────────────────────────────
 
-_TOPBAR_ROW_H: int = 26   # px — topbar row height (two rows, no header row to share space with)
 _TOPBAR_GAP:   int = 22   # px — horizontal gap between topbar label/value pairs
+
+
+_SPEED_LABELS: dict[float, str] = {
+    SPEED_PAUSE:     'PAUSE',
+    SPEED_SLOW:      'x0.25',
+    SPEED_NORMAL:    'x1',
+    SPEED_FAST:      'x3',
+    SPEED_VERY_FAST: 'x10',
+}
 
 
 def draw_topbar_panel(
@@ -199,11 +173,18 @@ def draw_topbar_panel(
     font:       pygame.freetype.Font,
     state=None,
     load_rate_history=None,
+    speed_mult: float = SPEED_NORMAL,
     font_scale: float = 1.0,
 ) -> None:
-    """Power balance bar: one aligned table, row 1 = every field's label,
-    row 2 = every field's value directly beneath it. Spans the full native
-    width above the canvas."""
+    """Power balance bar plus clock/speed readout: one aligned table,
+    row 1 = every field's label, row 2 = every field's value directly
+    beneath it. Power Balance fields flow left to right; CLOCK and SPEED
+    are right-aligned to the panel edge, the same corner the clock used
+    to occupy in the Frequency panel. Spans the full native width above
+    the canvas. Framed top and bottom by a green line each — the top
+    line sits at the panel's outer edge (below the shift title row
+    above it), the bottom line sits flush under the value row rather
+    than the panel's outer edge."""
 
     gen_mw    = state.total_generation_mw  if state else 3420.0
     load_mw   = state.total_load_mw        if state else 3380.0
@@ -222,7 +203,7 @@ def draw_topbar_panel(
     fs   = font_scale
     sp   = int(FONT_SIZE_PANEL * fs)
     pad  = int(_PAD * fs)
-    rh   = int(_TOPBAR_ROW_H * fs)
+    rh   = int(_ROW_H * fs)   # matches the strip panels' row spacing (was a separate, larger topbar-only value)
     gap  = int(_TOPBAR_GAP * fs)
 
     has_agc = agc_max > 0.0
@@ -269,38 +250,65 @@ def draw_topbar_panel(
         font.render_to(surf, (x, row2_y), val, col, size=sp)
         x += col_w + gap
 
+    # Clock/speed: right-aligned to the panel edge, same corner the clock
+    # used to occupy in the Frequency panel before it moved here.
+    paused = speed_mult <= SPEED_PAUSE
+    if state is not None:
+        hr = int(state.sim_hour) % 24
+        mn = int((state.sim_hour % 1.0) * 60)
+        clock_str = f'{hr:02d}:{mn:02d}'
+    else:
+        clock_str = '--:--'
+    speed_str = _SPEED_LABELS.get(speed_mult, f'x{speed_mult:g}')
+    speed_col = COL_TEXT_WARN if paused else COL_TEXT_GOOD
+
+    w = surf.get_width()
+    clock_rect = font.get_rect(clock_str, size=sp)
+    speed_rect = font.get_rect(speed_str, size=sp)
+    right_x = w - pad
+    font.render_to(surf, (right_x - clock_rect.width, row1_y), clock_str, COL_TEXT_PRIMARY, size=sp)
+    font.render_to(surf, (right_x - speed_rect.width, row2_y), speed_str, speed_col, size=sp)
+
+    # Grid display zone framing: a green strip along the top edge of the
+    # topbar, mirroring the bottom border below — the topbar reads as a
+    # clearly bounded panel on both edges, not just the bottom.
+    pygame.draw.line(surf, COL_PANEL_BORDER, (0, 0), (w, 0), 1)
+
+    # Grid display zone framing: a table-style bottom border flush under
+    # the value row, not the topbar surface's outer edge (TOPBAR_HEIGHT
+    # leaves leftover blank space below the value row, same reasoning as
+    # the strip panels' row layout).
+    sep_y = row2_y + rh - 1
+    pygame.draw.line(surf, COL_PANEL_BORDER, (0, sep_y), (w, sep_y), 1)
+
 
 # ── Panel 3 — Unit Dispatch ────────────────────────────────────────────────────
 
-_STATE_COL: dict[str, tuple] = {
-    'ONLINE':   COL_UNIT_ONLINE,
-    'STARTING': COL_UNIT_STARTING,
-    'OFFLINE':  COL_UNIT_OFFLINE,
-    'TRIPPED':  COL_UNIT_TRIPPED,
-    'SHUTDOWN': COL_UNIT_SHUTDOWN,
-}
-
 _STATE_ABBREV: dict[str, str] = {
-    'ONLINE':   'ONL',
     'STARTING': 'STA',
     'OFFLINE':  'OFF',
     'TRIPPED':  'TRP',
     'SHUTDOWN': 'SDN',
 }
 
+# States that count as "out" — the whole row (label, abbreviation, values)
+# renders red instead of green. STARTING is not "out": a unit actively
+# coming online is still progressing toward service.
+_OUT_STATES: frozenset[str] = frozenset({'OFFLINE', 'TRIPPED', 'SHUTDOWN'})
+
 # (label, state, output_mw, rated_mw, start_pct, mode, target_mw,
-#  q_actual_mvar, q_target_mvar)
-_FALLBACK_UNITS: list[tuple[str, str, float, float, float, str | None, float, float, float]] = [
-    ('HART-1', 'ONLINE',   680.0, 700.0, 0.0, None,  700.0,  120.0,  120.0),
-    ('HART-2', 'ONLINE',   300.0, 700.0, 0.0, None,  300.0,   80.0,   80.0),
-    ('RVSD-1', 'ONLINE',   900.0, 900.0, 0.0, None,  900.0,  150.0,  150.0),
-    ('RVSD-2', 'OFFLINE',    0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0),
-    ('RVSD-3', 'STARTING',   0.0, 900.0, 45.0, None,   0.0,    0.0,    0.0),
-    ('THNF-1', 'TRIPPED',    0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0),
-    ('THNF-2', 'SHUTDOWN',   0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0),
-    ('ASHG-1', 'ONLINE',   280.0, 400.0, 0.0, None,  245.0,   45.0,   50.0),
-    ('ASHG-2', 'ONLINE',   400.0, 400.0, 0.0, None,  400.0,   90.0,   90.0),
-    ('DUND-1', 'ONLINE',    65.0,  65.0, 0.0, None,   65.0,   10.0,   10.0),
+#  q_actual_mvar, q_target_mvar, agc_enabled)
+_FALLBACK_UNITS: list[tuple[str, str, float, float, float, str | None, float, float, float, bool]] = [
+    ('HART-1', 'ONLINE',   680.0, 700.0, 0.0, None,  700.0,  120.0,  120.0, False),
+    ('HART-2', 'ONLINE',   300.0, 700.0, 0.0, None,  300.0,   80.0,   80.0, False),
+    ('RVSD-1', 'ONLINE',   900.0, 900.0, 0.0, None,  900.0,  150.0,  150.0, False),
+    ('RVSD-2', 'OFFLINE',    0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0, False),
+    ('RVSD-3', 'STARTING',   0.0, 900.0, 45.0, None,   0.0,    0.0,    0.0, False),
+    ('THNF-1', 'TRIPPED',    0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0, False),
+    ('THNF-2', 'SHUTDOWN',   0.0, 900.0, 0.0, None,    0.0,    0.0,    0.0, False),
+    ('ASHG-1', 'ONLINE',   280.0, 400.0, 0.0, None,  245.0,   45.0,   50.0, True),
+    ('ASHG-2', 'ONLINE',   400.0, 400.0, 0.0, None,  400.0,   90.0,   90.0, True),
+    ('DUND-1', 'ONLINE',    65.0,  65.0, 0.0, None,   65.0,   10.0,   10.0, True),
 ]
 
 
@@ -313,18 +321,35 @@ def draw_dispatch_panel(
     font_scale: float = 1.0,
 ) -> None:
     """
-    Unit dispatch panel: full unit fleet as a multi-column grid, one row
-    per unit. Row format (ONLINE units): 'LBL  STA  238(245) 45(50) A' —
-    actual MW (target MW in parens), actual MVAr (target MVAr in parens),
-    then an A/M dispatch-mode flag. Actual and target are shown side by
-    side deliberately, not just current output, so a unit whose real
-    output has drifted or been derated away from what was commanded is
-    visible fleet-wide at a glance, not only in its own context panel —
-    see constants.py's UNIT DEVIATION section.
+    Unit dispatch panel: unit fleet as a fixed-size multi-column grid
+    (DISPATCH_NUM_COLS columns, row count capped by panel height), one
+    row per unit, sorted alphabetically by label and filling column by
+    column (column 1 fills top-to-bottom before column 2 starts, etc.)
+    rather than round-robin across columns. Each column starts with a
+    'UNIT ST MW MVA' header row before its unit rows (abbreviated further
+    than the data fields themselves — 'STAT'/'MVAr' are too wide to fit
+    without overlapping the next field at this column width). Columns/
+    rows never grow to fit a larger fleet — if the fleet exceeds
+    capacity, the last slot shows a '+N MORE' indicator instead of a unit
+    row. Row format (ONLINE units): 'LBL  ONL 1000 300' — actual MW
+    (4-digit-wide), actual MVAr (3-digit-wide), both right-aligned (so
+    the largest unit in the fleet, 1000 MW, never shifts columns out of
+    alignment with smaller units) — worst-case 4-digit-MW rows run tight
+    against or past the column separator at DISPATCH_NUM_COLS=4, a known
+    and accepted tradeoff (see constants.py). The status abbreviation
+    encodes
+    dispatch mode for ONLINE units — 'AGC' if AGC-participating (takes
+    priority), else 'MAN' for MANUAL dispatch, else 'ONL' — while
+    OFFLINE/TRIPPED/SHUTDOWN/STARTING keep their own abbreviations
+    (OFF/TRP/SDN/STA). The whole row (label, abbreviation, values) renders
+    green for ONLINE/STARTING units, red for units that are "out"
+    (OFFLINE/TRIPPED/SHUTDOWN) — a drifting/derated unit no longer gets
+    its own amber highlight, since colour now encodes in/out-of-service
+    status instead. Setpoint (target) values still aren't printed.
     """
 
     if state is not None and grid is not None:
-        units: list[tuple[str, str, float, float, float, str | None, float, float, float]] = []
+        units: list[tuple[str, str, float, float, float, str | None, float, float, float, bool]] = []
         for unit in grid.get_active_units():
             lbl    = unit.label
             ust    = state.unit_states.get(lbl, 'OFFLINE')
@@ -335,9 +360,12 @@ def draw_dispatch_panel(
             target = state.unit_targets_mw.get(lbl, 0.0)
             q_act  = state.unit_q_injections_mvar.get(lbl, 0.0)
             q_tgt  = state.unit_q_target_mvar.get(lbl, 0.0)
-            units.append((lbl, ust, out, unit.rated_mw, spct, mode, target, q_act, q_tgt))
+            agc    = lbl in state.unit_agc_enabled
+            units.append((lbl, ust, out, unit.rated_mw, spct, mode, target, q_act, q_tgt, agc))
     else:
         units = _FALLBACK_UNITS
+
+    units = sorted(units, key=lambda u: u[0])
 
     _fill_panel(surf)
     _right_border(surf)
@@ -352,57 +380,67 @@ def draw_dispatch_panel(
     w = surf.get_width()
     h = surf.get_height()
 
-    total        = len(units)
-    num_cols     = DISPATCH_NUM_COLS
-    rows_per_col = max(1, -(-total // num_cols))  # ceil division
-    col_w        = w // num_cols
+    total          = len(units)
+    num_cols       = DISPATCH_NUM_COLS
+    rows_per_col   = max(1, (h - hh) // rh)  # fixed by panel height, not unit count
+    col_w          = w // num_cols
+    # Row 0 of every column is the 'UNIT STAT MW MVAr' header, not a unit —
+    # unit rows get whatever's left.
+    unit_rows_per_col = max(0, rows_per_col - 1)
+    capacity           = num_cols * unit_rows_per_col
+
+    # Fixed columns/rows (developer directive) means a large fleet can
+    # exceed what's visible. Reserve the last slot for a '+N MORE'
+    # indicator rather than silently dropping units off the bottom.
+    truncated = total > capacity
+    visible   = units[:max(0, capacity - 1)] if truncated else units
 
     lbl_x_off  = 0
     sta_x_off  = int(DISPATCH_STATUS_X_OFFSET * fs)
-    val_x_off  = int(DISPATCH_VALUE_X_OFFSET * fs)   # start of the MW/MVAr/mode value block
+    val_x_off  = int(DISPATCH_VALUE_X_OFFSET * fs)   # start of the MW/MVAr value block
 
-    for i, (lbl, ust, out, rated, spct, mode, target, q_act, q_tgt) in enumerate(units):
-        col_i = i // rows_per_col
-        row_i = i % rows_per_col
+    for c in range(num_cols):
+        cx = c * col_w
+        y  = _row_y(0, fs)
+        font.render_to(surf, (cx + pad + lbl_x_off, y), 'UNIT', COL_TEXT_SECONDARY, size=sp)
+        font.render_to(surf, (cx + pad + sta_x_off, y), 'ST', COL_TEXT_SECONDARY, size=sp)
+        font.render_to(surf, (cx + pad + val_x_off, y), 'MW MVA', COL_TEXT_SECONDARY, size=sp)
+
+    for i, (lbl, ust, out, rated, spct, mode, target, q_act, q_tgt, agc) in enumerate(visible):
+        col_i = i // unit_rows_per_col
+        row_i = i % unit_rows_per_col + 1  # +1: row 0 is the header
         cx    = col_i * col_w
         y     = _row_y(row_i, fs)
 
-        col  = _STATE_COL.get(ust, COL_TEXT_DIM)
-        abbr = _STATE_ABBREV.get(ust, '???')
+        if ust == 'ONLINE':
+            abbr = 'AGC' if agc else ('MAN' if mode == 'MANUAL' else 'ONL')
+        else:
+            abbr = _STATE_ABBREV.get(ust, '???')
 
-        col_end = cx + col_w - pad
+        row_col = COL_TEXT_CRIT if ust in _OUT_STATES else COL_UNIT_ONLINE
 
-        font.render_to(surf, (cx + pad + lbl_x_off, y), lbl, COL_TEXT_PRIMARY, size=sp)
-        font.render_to(surf, (cx + pad + sta_x_off, y), abbr, col, size=sp)
-
-        mode_char = '' if mode is None else ('A' if mode == 'AUTO' else 'M')
-        mode_col  = COL_UNIT_ONLINE if mode == 'AUTO' else COL_ALARM_WARN
+        font.render_to(surf, (cx + pad + lbl_x_off, y), lbl, row_col, size=sp)
+        font.render_to(surf, (cx + pad + sta_x_off, y), abbr, row_col, size=sp)
 
         if ust == 'STARTING':
             val_str = f'{spct:.0f}%'
-            val_col = COL_UNIT_STARTING
         elif ust == 'ONLINE':
-            # Deviation tell: actual value != commanded target (drift), or
-            # actual pinned below a lower derated ceiling — either way the
-            # parenthesised target differs from the leading actual number.
-            # Highlighted amber (matching the existing WARN alarm colour)
-            # whenever MW actual and target diverge beyond a tiny rounding
-            # tolerance, so a drifting/derated unit stands out fleet-wide
-            # without needing to open its context panel.
-            deviating = abs(out - target) > 0.5
-            mw_col    = COL_ALARM_WARN if deviating else COL_TEXT_PRIMARY
-            val_str   = f'{out:.0f}({target:.0f}) {q_act:.0f}({q_tgt:.0f})'
-            val_col   = mw_col
+            val_str = f'{out:4.0f} {q_act:3.0f}'
         else:
             val_str = ''
-            val_col = COL_TEXT_DIM
 
-        val_x = cx + pad + val_x_off
         if val_str:
-            font.render_to(surf, (val_x, y), val_str, val_col, size=sp)
-        if mode_char:
-            mode_rect = font.get_rect(mode_char, size=sp)
-            font.render_to(surf, (col_end - mode_rect.width, y), mode_char, mode_col, size=sp)
+            val_x = cx + pad + val_x_off
+            font.render_to(surf, (val_x, y), val_str, row_col, size=sp)
+
+    if truncated:
+        hidden   = total - len(visible)
+        more_str = f'+{hidden} MORE'
+        col_i    = num_cols - 1
+        row_i    = rows_per_col - 1
+        cx       = col_i * col_w
+        y        = _row_y(row_i, fs)
+        font.render_to(surf, (cx + pad, y), more_str, COL_TEXT_DIM, size=sp)
 
     # Column separators
     for c in range(1, num_cols):

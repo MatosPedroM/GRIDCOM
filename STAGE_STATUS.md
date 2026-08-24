@@ -10,6 +10,337 @@
 
 ## Current Status
 
+**COMPLETE** — Session 108: added a green line to the top edge of the topbar (Power Balance panel),
+mirroring the bottom border already there (Session 106) — the topbar is now framed on both edges,
+not just the bottom. One-line addition in `draw_topbar_panel()`: `pygame.draw.line(surf,
+COL_PANEL_BORDER, (0, 0), (w, 0), 1)` at the very top of the panel surface (right below the shift
+title row above it), alongside the existing bottom-border line (which stays flush under the value
+row, unchanged).
+- Edited: `src/display/panels.py` (`draw_topbar_panel()` new top border line + docstring update).
+- **Verified**: full-frame headless render (`SDL_VIDEODRIVER=dummy`, real `Renderer` class) — saved
+  to PNG and visually inspected: green line now sits directly below "SHIFT 5" and above the GEN/
+  LOAD/BAL/... row, topbar fully framed top and bottom. `python -m pytest tests/` — 29/29 pass.
+  `py_compile` on the edited file.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window).
+
+**COMPLETE** — Session 108b: removed the "Hz" unit suffix from the Frequency panel's large readout
+— `draw_frequency_panel()`'s `hz_str` changed from `f'{freq_hz:.2f} Hz'` to `f'{freq_hz:.2f}'`, so
+it now shows just e.g. '49.92' rather than '49.92 Hz'. Also resolves the Hz-readout text-overflow
+tradeoff flagged and explicitly accepted two sessions ago (Session 103, when `PANEL_FREQ_W` shrank
+to 130px): the full string with units measured ~140px wide, wider than the panel; without units it
+measures ~86px, comfortably inside the panel with room to spare — no longer clipping.
+- Edited: `src/display/panels.py` (`draw_frequency_panel()`'s `hz_str` format).
+- **Verified**: headless render (`SDL_VIDEODRIVER=dummy`, real JetBrainsMono font) of the Frequency
+  panel alone — saved to PNG and visually inspected: '49.92' centred cleanly, no clipping. Confirmed
+  new worst-case width (~86px) via direct glyph measurement. `python -m pytest tests/` — 29/29
+  pass. `py_compile` on the edited file.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window).
+
+**COMPLETE** — Session 107: moved the shift description ("SHIFT 5", etc.) off the canvas (where it
+was drawn every frame overlapping the canvas's top pixels, in `COL_TEXT_DIM`) into its own new
+dedicated row at the very top of the screen, above the topbar, coloured white (`COL_TEXT_PRIMARY`).
+New `TITLE_BAR_HEIGHT=22` constant and `_title_surf` subsurface (top-most rows, before `_topbar_surf`
+now sits at `_title_surf`'s bottom edge instead of native y=0). `CANVAS_HEIGHT` shrank 784->762 (by
+exactly `TITLE_BAR_HEIGHT`) to hold `NATIVE_HEIGHT` fixed at 1080, per developer's explicit choice
+between shrinking the canvas or the topbar — canvas was picked. Layout is now
+`22+60+762+192+22+22=1080`. Screen top-to-bottom order: shift title, topbar (2 rows), canvas, strip
+(5 panels), hint gap, hint bar — matching the developer's explicit ASCII layout.
+- **One-time draw, not per-frame**: unlike every other region, the title text never changes after
+  `Renderer.__init__` (it's derived once from the `shift` constructor arg), so it's drawn once
+  directly into `_title_surf` in `__init__` rather than every `tick()` call like the old canvas-
+  overlay version was. Confirmed nothing else in `tick()` fills/clears `_native` wholesale (the
+  three `_native.fill()` calls in the codebase all belong to other screen-drawing methods, not
+  `tick()`), so the one-time draw persists correctly frame to frame.
+- **Hit-testing preserved**: `self._scaled_topbar_h` already served double duty as "canvas's
+  absolute y-offset from native (0,0)" for `_to_canvas_local()` and `on_scroll()`'s strip-boundary
+  check — folded `scaled_title_h` into that same variable (now `title_h + topbar_h`) rather than
+  introducing a separate offset every call site would need to add in, so no hit-testing call sites
+  needed touching. Verified directly: `_to_canvas_local()` at native y = title+topbar+5 correctly
+  returns canvas-local y=5.
+- Edited: `src/simulation/constants.py` (new `TITLE_BAR_HEIGHT`, `CANVAS_HEIGHT` 784->762, updated
+  layout-sum comment), `src/display/renderer.py` (new `_title_surf` subsurface and one-time title
+  draw in `__init__`, `_scaled_topbar_h` now folds in the title height, removed old per-frame
+  canvas-overlay title draw, `COL_TEXT_PRIMARY` import added).
+- **Verified**: full-frame headless render (`SDL_VIDEODRIVER=dummy`, real `Renderer` class) — saved
+  to PNG and visually inspected: white "SHIFT 5" sits on its own row above the Power Balance topbar,
+  in the requested order. Direct geometry check confirmed all five region heights and the
+  hit-testing offset match expected values exactly. `python -m pytest tests/` — 29/29 pass.
+  `py_compile` on both edited files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window); mouse click/scroll hit-testing verified only via direct coordinate-math checks, not an
+  actual simulated click through the full input pipeline.
+
+**COMPLETE** — Session 106: corrected which panel's bottom border gets the "flush under content"
+treatment — developer clarified Session 105 moved the wrong one. It's the TOP panel (topbar: Power
+Balance/clock/speed) whose bottom border should move up to sit flush under its content, not the
+BOTTOM panel (instrument strip), which keeps its border at the outer screen edge as originally
+drawn in Session 104. Reverted the strip's bottom border back to `strip_h - 1` (outer edge); removed
+the now-unused `strip_row_content_bottom_y()` helper added last session (didn't cleanly apply to the
+topbar's different row layout anyway — no `_HEADER_H`, just `row1_y`/`row2_y`). Added the topbar's
+own bottom border directly inside `draw_topbar_panel()` at `row2_y + rh - 1` (flush under the value
+row, matching the same "one row-height of margin below the last content row" logic used elsewhere),
+so it's covered by the topbar's own `topbar_key` cache invalidation — no new dirty-tracking needed.
+Removed the old canvas-top-edge line in `renderer.py` (was drawn at the topbar/canvas boundary,
+now redundant/replaced by the topbar's own border further up); canvas's bottom-edge line (the
+canvas/strip boundary) is unchanged.
+- Edited: `src/display/panels.py` (`strip_row_content_bottom_y()` removed, new bottom-border line
+  added at the end of `draw_topbar_panel()`), `src/display/renderer.py` (removed now-unused import,
+  removed canvas-top-edge line, reverted strip-bottom-edge line to outer edge).
+- **Verified**: full-frame headless render (`SDL_VIDEODRIVER=dummy`, real `Renderer` class) — saved
+  to PNG and visually inspected: topbar's green bottom border now sits right under the Power
+  Balance row with a visible gap before the canvas starts; strip's bottom border is back at the
+  screen's outer edge; canvas/strip boundary line unchanged. `python -m pytest tests/` — 29/29
+  pass. `py_compile` on both edited files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window).
+
+**COMPLETE** — Session 105: two developer-directed fixes to Session 104's topbar/strip framing.
+(1) **Topbar line spacing**: the topbar (Power Balance/clock/speed) had its own `_TOPBAR_ROW_H=26`
+constant for label-row-to-value-row spacing, distinct from the strip panels' `_ROW_H=22` — visibly
+inconsistent line spacing between the upper and lower panel blocks. Removed `_TOPBAR_ROW_H` entirely
+and reused `_ROW_H` in `draw_topbar_panel()` so both blocks now share identical row spacing.
+(2) **Strip bottom border**: the green line added last session at the strip's outer bottom edge
+looked disconnected from the actual table content — `STRIP_HEIGHT` (192px) doesn't divide evenly
+into `_HEADER_H + N*_ROW_H`, leaving an 18px gap below the last real content row (7 rows fit,
+174px used of 192px), so the line sat in that blank gap rather than flush under the last row like a
+table's bottom border. Added a new public helper `strip_row_content_bottom_y(panel_height,
+font_scale)` in `panels.py` (reuses the same `_HEADER_H`/`_ROW_H` math as the existing private
+`_row_y()`, computing where the last full content row's bottom edge actually falls) and switched
+`renderer.py`'s strip-bottom-line draw call to use it instead of `strip_h - 1`.
+- Edited: `src/display/panels.py` (`_TOPBAR_ROW_H` removed, `draw_topbar_panel()`'s `rh` now reuses
+  `_ROW_H`, new `strip_row_content_bottom_y()` helper), `src/display/renderer.py` (import the new
+  helper, strip-bottom border line repositioned).
+- **Verified**: full-frame headless render (`SDL_VIDEODRIVER=dummy`, real `Renderer` class) — saved
+  to PNG and visually inspected: topbar row spacing now visually matches the strip panels below it;
+  bottom green line sits flush under the last Alarms row ('SOL ---%') instead of in the blank space
+  beneath it. `python -m pytest tests/` — 29/29 pass. `py_compile` on both edited files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window).
+
+**COMPLETE** — Session 104: added green framing lines (`COL_PANEL_BORDER`, the existing SCADA-style
+panel-border green) around the grid canvas/instrument-strip block, per developer request to clearly
+define the "grid display zone." Three 1px lines, drawn in `renderer.py`'s `tick()` rather than in
+`panels.py`, since they span the full native width and cross panel boundaries: (1) canvas top edge
+(the boundary with the topbar above), (2) canvas bottom edge (the boundary with the instrument
+strip below), (3) the strip's own bottom edge. Lines (1)/(2) are drawn directly onto
+`self._canvas_surf` every frame, right after `draw_load_triangles()`/`draw_overload_countdowns()`
+— the canvas subsurface is blitted fresh from its cache every frame regardless of the cache's own
+hit/miss state (see `GridCanvas.draw()`), so a line drawn there each frame is never stale or
+clobbered by independent panel caching. Line (3) is drawn onto `self._strip_surf` inside the
+existing `if panel_changed:` block, right after the 5 strip-panel blits — same trigger condition as
+the panel content itself, so no new dirty-tracking was needed for any of the three lines.
+- Edited: `src/display/renderer.py` (`COL_PANEL_BORDER` import added; two `pygame.draw.line()`
+  calls after canvas content drawing; one after strip panel blits).
+- **Verified**: full-frame headless render (`SDL_VIDEODRIVER=dummy`, real `Renderer` class end to
+  end, not just individual panel functions) — saved to PNG and visually inspected: canvas is
+  cleanly framed top and bottom by green lines, strip has its own bottom border, no gaps or
+  misalignment against the topbar/canvas/strip boundaries. `python -m pytest tests/` — 29/29 pass.
+  `py_compile` on the edited file.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window).
+
+**COMPLETE** — Session 103: further Frequency panel simplification, with its freed width going to
+Unit Dispatch this time (not Alarm). `PANEL_FREQ_W` shrank 20% (162->130), freed 32px going
+directly to `PANEL_DISPATCH_W` (656->688, 172px columns now, up from 164px — eases some of last
+session's known tight-fit). Removed the RISING/FALLING/STABLE trend line entirely from
+`draw_frequency_panel()` (was between the Hz readout and the plot) and collapsed the gap it left —
+the plot now starts right under the Hz readout with a small fixed gap instead of a trend-row-sized
+one. Recentred the plot's frequency-to-x mapping on 50 Hz (`F_NOMINAL`): `_fill_frac()` changed
+from `(f - 48.0) / 5.0` to `(f - 47.5) / 5.0` — same 5 Hz span as before, but now symmetric around
+50 Hz instead of offset toward 50.5, so the 50 Hz gridline lands exactly at the panel's horizontal
+midpoint (verified arithmetically: bar_x=6, bar_w=118 at 130px width -> 50Hz gridline x=65 ==
+130/2). Clarified two ambiguous points from the developer's request via back-and-forth: "the row
+that separates the frequency value and the horizontal plot" turned out to mean the trend row's
+blank vertical gap (there was no separate divider line in the code), and "vertically centered...
+with the 50 Hz line" meant the 50Hz *gridline* horizontally centered in the panel, not the plot's
+own top-to-bottom position.
+- **Known tradeoff surfaced, developer accepted as-is**: at the narrower 130px width, the large Hz
+  readout text (`FONT_SIZE_PANEL_LARGE=30`, e.g. '49.92 Hz' ~140px) is now wider than the panel
+  itself and will clip/overflow at any frequency value — flagged to the developer, who chose to
+  leave it clipping rather than shrink `FONT_SIZE_PANEL_LARGE` (used only by this readout, so a
+  future fix is isolated and low-risk if revisited).
+- Edited: `src/simulation/constants.py` (`PANEL_FREQ_W`/`PANEL_FREQ_X`/`PANEL_DISPATCH_W` and
+  downstream X-offsets, comment), `src/display/panels.py` (`draw_frequency_panel()`: removed trend
+  line and `state.frequency_trend` read, recentred `_fill_frac()`, tightened Hz-readout-to-plot
+  gap, docstring).
+- **Verified**: headless render (`SDL_VIDEODRIVER=dummy`, real JetBrainsMono font) of the Frequency
+  panel alone and the full instrument strip together — saved to PNG and visually inspected; trend
+  row confirmed gone, plot sits directly under the Hz readout, Dispatch panel visibly wider.
+  Confirmed panel widths still sum to exactly 1920 (`NATIVE_WIDTH`) and the 50Hz gridline's x
+  position arithmetically. `python -m pytest tests/` — 29/29 pass. `py_compile` on both edited
+  files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window). Hz-readout text overflow at the narrower width is a known, developer-accepted tradeoff,
+  not addressed.
+
+**COMPLETE** — Session 102: two developer-directed changes, Frequency panel simplification and a
+larger Unit Dispatch color/layout rework, iterated live against rendered screenshots.
+(1) **Frequency panel**: removed the horizontal analog bar (48-53 Hz fill bar, centre tick, and
+48/50.5/53 tick labels) entirely — the vertical history plot below it already shows the same range
+over time, so it now starts right after the trend line and extends upward to fill the freed space.
+Dead `_bar()` helper and `_BAR_H` constant removed (nothing else used them). `PANEL_FREQ_W` shrank
+another 10% (180->162), freed width going to Alarm, continuing the established pattern.
+(2) **Unit Dispatch rework**: (a) width shrank another 10% (729->656), also going to Alarm
+(`PANEL_ALARM_W` 672->763 total this session); (b) `DISPATCH_NUM_COLS` 3->4; (c) each column now
+has a `UNIT ST MW MVA` header row (abbreviated further than the data fields — 'STAT'/'MVAr' were
+too wide to fit without overlapping at this column width) consuming one row-slot per column before
+unit rows start, so `+N MORE` truncation capacity is now `num_cols * (rows_per_col - 1)` — verified
+against a synthetic 47-unit fleet (4 cols x 6 unit rows = 24 slots, correctly shows '+24 MORE');
+(d) status abbreviation now encodes dispatch mode for ONLINE units instead of always showing 'ONL':
+'AGC' if AGC-participating (state.unit_agc_enabled, takes priority), else 'MAN' for MANUAL, else
+'ONL' — OFFLINE/TRIPPED/SHUTDOWN/STARTING keep OFF/TRP/SDN/STA unchanged; this replaces the
+trailing A/M/G flag letter added two sessions ago, which is now removed entirely; (e) the whole row
+(label, abbreviation, MW/MVAr values) renders green (`COL_UNIT_ONLINE`) for ONLINE/STARTING, red
+(`COL_TEXT_CRIT`) for "out" units (OFFLINE/TRIPPED/SHUTDOWN) — replaces the old per-state
+`_STATE_COL` lookup and the amber deviation highlight (`abs(out-target)>0.5`), which is gone; a
+drifting/derated unit no longer gets its own highlight since colour now encodes in/out-of-service
+status instead. `_STATE_COL` and four now-dead `COL_UNIT_*` imports (STARTING/OFFLINE/TRIPPED/
+SHUTDOWN) removed. MVAr value format tightened 4-digit->3-digit (`f'{q_act:3.0f}'`, fleet-wide max
+is 300) to help the value block fit.
+- **Column-width reality check (iterated live)**: at 4 columns (164px each) label+status+value
+  measured ~166-175px worst case against only ~152px usable — could not be resolved by the initial
+  1px font drop alone (FONT_SIZE_PANEL 17->16 measured almost no glyph-width change). Per developer
+  direction, accepted the tight fit rather than shrinking the font further or dropping MVAr from the
+  row: `DISPATCH_STATUS_X_OFFSET`/`DISPATCH_VALUE_X_OFFSET` retuned (66/102 -> 64/97) so label/status
+  never collide (verified — this was a real bug in an early iteration, fixed), while the value block
+  for large (4-digit MW) units is knowingly allowed to run tight against or past the next column's
+  separator. `FONT_SIZE_PANEL` (used by every strip panel, not just Dispatch) 17->16 per developer
+  instruction.
+- Edited: `src/display/panels.py` (`draw_frequency_panel()` bar removal + docstring, `_bar()`/
+  `_BAR_H` deleted, dead `COL_UNIT_*` imports removed, `_STATE_COL` deleted, `draw_dispatch_panel()`
+  header-row/abbreviation/color rewrite + docstring), `src/simulation/constants.py` (panel width/X
+  constants, `FONT_SIZE_PANEL` 17->16, `DISPATCH_NUM_COLS` 3->4, Dispatch offset retuning +
+  comments).
+- **Verified**: headless render (`SDL_VIDEODRIVER=dummy`, real JetBrainsMono font) of both panels
+  individually and the full instrument strip together (all 5 panels side by side, no gaps/overlaps
+  between panel boundaries) — saved to PNG and visually inspected at each iteration, including a
+  mixed-state 15-unit fleet (AGC/MAN/ONL/OFF/TRP/STA/SDN all represented) and the 47-unit truncation
+  case. Confirmed panel widths still sum to exactly 1920 (`NATIVE_WIDTH`). `python -m pytest tests/`
+  — 29/29 pass. `py_compile` on both edited files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window). The 4-digit-MW worst-case value overflow at 4 columns is a known, developer-accepted
+  tradeoff, not further addressed.
+
+**COMPLETE** — Session 101: Unit Dispatch MW/MVAr values now right-aligned in fixed 4-digit-wide
+fields (`f'{out:4.0f} {q_act:4.0f}'`, was `f'{out:.0f} {q_act:.0f}'`), so digits stay column-aligned
+across rows regardless of unit size instead of the value block shifting width row to row (e.g. a
+10 MW unit's '10' lines up on the same ones/tens/hundreds place as a 1000 MW unit's '1000', both
+right-justified in a 4-char field). Fleet-wide max is 1000 MW (3-4 digit) — the fixed-width string
+('NNNN NNNN', ~88px worst case) still fits comfortably inside the 129px available after
+`DISPATCH_VALUE_X_OFFSET` in the current 243px columns, no offset retuning needed.
+- Edited: `src/display/panels.py` (`draw_dispatch_panel()`'s `val_str` format spec and docstring),
+  `src/simulation/constants.py` (Dispatch offset comment, worst-case width note).
+- **Verified**: headless render (`SDL_VIDEODRIVER=dummy`, real JetBrainsMono font) with a
+  10/200/1000 MW mixed fleet — saved to PNG and visually confirmed all three values right-align
+  with matching digit columns. `python -m pytest tests/` — 29/29 pass. `py_compile` on both edited
+  files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window).
+
+**COMPLETE** — Session 100: simplified Session 99's AGC marker per developer feedback — instead of
+a trailing '*' appended after the A/M mode flag (e.g. 'A*'), the flag itself becomes 'G' when the
+unit is AGC-participating, replacing A/M entirely rather than appending to it. `draw_dispatch_panel()`
+now picks exactly one trailing letter per row: 'G' if `agc` (state.unit_agc_enabled) is true — takes
+priority regardless of the unit's actual AUTO/MANUAL dispatch mode — else 'A'/'M' from `mode`, else
+blank. `FleetModel.get_agc_enabled_units()`/`SimulationState.unit_agc_enabled` (added Session 99)
+are unchanged; only `panels.py` row rendering and its docstring, plus a `constants.py` comment,
+were updated.
+- Edited: `src/display/panels.py` (`draw_dispatch_panel()`'s flag-letter logic and docstring),
+  `src/simulation/constants.py` (Dispatch offset comment).
+- **Verified**: headless render (`SDL_VIDEODRIVER=dummy`, real JetBrainsMono font) with a mixed
+  fleet (some AGC-enabled with AUTO mode, some AGC-enabled with MANUAL mode, some neither) — saved
+  to PNG and visually confirmed AGC-enabled units show 'G' regardless of their underlying dispatch
+  mode, non-AGC units show 'A'/'M' as before. `python -m pytest tests/` — 29/29 pass. `py_compile`
+  on both edited files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window).
+
+**COMPLETE** — Session 99: four developer-directed Unit Dispatch/instrument-strip changes.
+(1) **Clock/speed moved to topbar**: the clock and a new PAUSE/x0.25/x1/x3/x10 speed label moved
+out of the Frequency panel into `draw_topbar_panel()`, right-aligned to the panel's right edge (the
+same corner the clock occupied in Frequency). New `_SPEED_LABELS` dict in `panels.py` maps
+`SPEED_PAUSE/SLOW/NORMAL/FAST/VERY_FAST` to display strings — no such mapping existed before (only
+a "PAUSED" suffix on the old clock text, which is now gone from Frequency entirely along with its
+`paused` parameter). `draw_topbar_panel()` gained a `speed_mult` param; `renderer.py`'s dead local
+`paused` var (no longer consumed anywhere) was removed, and `topbar_key`'s dirty-key tuple gained
+`sim_hour`/`speed_mult` so the clock actually updates every tick instead of only when Power Balance
+fields change.
+(2) **Panel width rebalance**: `PANEL_FREQ_W` -10% (200->180), `PANEL_DISPATCH_W` -10% (810->729,
+independent of Session 98's earlier -10%), `PANEL_FORECAST_W` +10% (198->218), `PANEL_GENMIX_W`
+unchanged (121), remainder to `PANEL_ALARM_W` (591->672) per the established pattern (Alarm's
+detail text word-wraps to whatever width it's given). All five widths still sum to exactly
+`NATIVE_WIDTH` (1920), verified directly. X-offsets for Dispatch/Forecast/GenMix/Alarm recomputed
+to stay contiguous.
+(3) **AGC '*' marker**: Unit Dispatch rows now show a trailing `*` after the A/M mode flag (e.g.
+`'238 45 A*'`) for units currently AGC-participating. No such per-unit live flag existed anywhere
+— added `FleetModel.get_agc_enabled_units()` (`units.py`, mirrors the eligibility filter already
+used by `apply_agc_signal()`/`agc_regulation_state()`: type in `AGC_ELIGIBLE_TYPES`, not in
+`_agc_excluded_units`, and currently ONLINE) and a new `SimulationState.unit_agc_enabled: frozenset`
+field populated from it. Developer confirmed this should be the fully dynamic "enabled right now"
+reading (can flicker as units start/stop/trip), not static type-eligibility or Phase 1 enrollment
+intent. `dispatch_key`'s dirty-key tuple gained `state.unit_agc_enabled` so marker changes actually
+trigger a redraw.
+(4) **Fixed real column-fill bug at full fleet size**: `draw_dispatch_panel()`'s row math
+(`rows_per_col = ceil(unit_count / DISPATCH_NUM_COLS)`, unbounded by panel height — a
+Session-90-era design) was verified only against a 24-unit fleet at the time; against the real
+40-47 unit Shifts 3-10 fleets, `rows_per_col` (10-16) far exceeds the ~7 rows that actually fit the
+192px-tall panel, so most units silently rendered off the bottom of the panel, invisible — this is
+what the developer flagged as "something is not correct." Fixed by capping `rows_per_col` at what
+actually fits (`(h - hh) // rh`) instead of deriving it from unit count; `DISPATCH_NUM_COLS` stays a
+fixed developer-tunable constant (explicitly not auto-grown or made to shrink row height to fit
+more units — developer directive: "keep it fixed to 3 columns... for now"). When the fleet exceeds
+`num_cols * rows_per_col` capacity, the last visible slot renders `'+N MORE'` instead of a unit row
+(developer directive: truncation must be visible, not silent). Units are now sorted alphabetically
+by label before layout (`units = sorted(units, key=lambda u: u[0])`) — this was actually already
+correct from Session 98 (added then, not new this session) but is the fill order the developer's
+ASCII diagram this session confirmed as intended: column 1 fills rows 1..N top-to-bottom before
+column 2 starts, which the existing `col_i = i // rows_per_col` math already did — the visible bug
+was the missing row cap, not the fill order itself.
+- Edited: `src/display/panels.py` (`draw_frequency_panel()` dropped `paused` param and clock
+  rendering; new `_SPEED_LABELS`, `draw_topbar_panel()` clock/speed rendering and `speed_mult`
+  param; `draw_dispatch_panel()` row-cap/`+N MORE`/`*`-marker logic, `_FALLBACK_UNITS` gained an
+  `agc_enabled` 10th field), `src/simulation/constants.py` (panel width/X constants, Dispatch
+  offset comments), `src/simulation/units.py` (`FleetModel.get_agc_enabled_units()`),
+  `src/simulation/simulation.py` (`SimulationState.unit_agc_enabled` field + population),
+  `src/display/renderer.py` (removed dead `paused` local, updated `draw_frequency_panel`/
+  `draw_topbar_panel` call sites, `freq_key`/`topbar_key`/`dispatch_key` dirty-key tuples).
+- **Verified**: headless render (`SDL_VIDEODRIVER=dummy`, real JetBrainsMono font) of
+  `draw_dispatch_panel()` against a synthetic 47-unit fleet — confirmed 3 columns x 7 rows (21
+  slots), alphabetical order, AGC `*` markers on the intended units, and a `'+27 MORE'` indicator in
+  the last slot, saved to PNG and visually inspected. `draw_topbar_panel()` similarly rendered and
+  inspected — clock (`06:15`) and speed (`x3`, green) render right-aligned, clearly separated from
+  REG UP. Confirmed panel widths still sum to exactly 1920. `py_compile` on all edited files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window). The `+N MORE` count is currently unclickable/inert — no scroll or expand affordance was
+  requested or added.
+
+**COMPLETE** — Session 98: simplified the Unit Dispatch panel per developer directive — rows no
+longer print setpoint (target) MW/MVAr values, only actuals. Row format changed from
+`'LBL STA 238(245) 45(50) A'` to `'LBL STA 238 45 A'`; the amber deviation highlight on the MW
+figure (`abs(out - target) > 0.5`) is unchanged, so a unit whose actual output has drifted from its
+commanded target is still visible fleet-wide by colour alone, just without the printed target
+number. Panel narrowed 10% (`PANEL_DISPATCH_W` 900->810) as directed; the freed 90px went to Alarm
+(`PANEL_ALARM_W` 501->591, `PANEL_ALARM_X` 1419->1329) since its detail text already word-wraps to
+whatever width it's given (`_wrap_text()`), making it the natural panel to absorb extra space.
+Forecast/GenMix X-offsets shifted left to close the gap (`PANEL_FORECAST_X` 1100->1010,
+`PANEL_GENMIX_X` 1298->1208); all five panel widths still sum to exactly `NATIVE_WIDTH` (1920),
+verified directly. `DISPATCH_STATUS_X_OFFSET`/`DISPATCH_VALUE_X_OFFSET` left at their existing
+values (66/102) — still comfortably fit the much shorter value string within the new 270px columns
+(810px / `DISPATCH_NUM_COLS=3`). Follow-up developer directive: fleet units are now sorted
+alphabetically by label before layout (`units = sorted(units, key=lambda u: u[0])` in
+`draw_dispatch_panel()`); column fill order was already column-by-column
+(`col_i = i // rows_per_col`, `row_i = i % rows_per_col` — column 1 fills top-to-bottom before
+column 2 starts), not round-robin, so only the ordering feeding into that math needed to change.
+- Edited: `src/simulation/constants.py` (INSTRUMENT STRIP PANEL LAYOUT block: `PANEL_DISPATCH_W`,
+  `PANEL_FORECAST_X`, `PANEL_GENMIX_X`, `PANEL_ALARM_X`, `PANEL_ALARM_W`, plus updated comments),
+  `src/display/panels.py` (`draw_dispatch_panel()` docstring, `val_str` in the `ONLINE` branch, and
+  the alphabetical `sorted()` call on `units`).
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window); verified via panel-width arithmetic and `py_compile` only — developer should confirm the
+  narrower Dispatch panel and wider Alarm panel visually before considering this final.
+
 **COMPLETE** — Session 97: added a bottom-of-screen keyboard-shortcut hint bar to the Phase 2
 real-time gameplay screen and Grid Designer's Test Grid mode (`GameState.DESIGNER_TEST`) — both
 render through the same `Renderer.tick()`, so one change covers both. Developer directive: shrink

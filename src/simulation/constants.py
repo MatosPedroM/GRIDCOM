@@ -423,12 +423,17 @@ FREQ_DYNAMICS_SCALE: float = 0.005
 # ─────────────────────────────────────────────
 NATIVE_WIDTH:  int = 1920
 NATIVE_HEIGHT: int = 1080
-TOPBAR_HEIGHT: int = 60         # Top portion — power balance bar
-CANVAS_HEIGHT: int = 784        # Middle portion — grid schematic
+TITLE_BAR_HEIGHT: int = 22      # Top-most row — shift description, moved up out of the
+                                # canvas (was drawn overlapping the canvas's top pixels)
+                                # into its own dedicated row above the topbar
+TOPBAR_HEIGHT: int = 60         # Power balance bar — below the title row
+CANVAS_HEIGHT: int = 762        # Middle portion — grid schematic — shrunk 22px (TITLE_BAR_HEIGHT)
+                                # to make room for the new title row, holding NATIVE_HEIGHT
+                                # fixed at 1080
 STRIP_HEIGHT:  int = 192        # Instrument strip — shrunk 2 rows (was 236) to make
                                 # room for HINT_GAP_HEIGHT + HINT_BAR_HEIGHT below it,
                                 # holding NATIVE_HEIGHT fixed at 1080
-                                # (60+784+192+22+22 = 1080)
+                                # (22+60+762+192+22+22 = 1080)
 HINT_GAP_HEIGHT: int = 22       # Blank row between the strip and the shortcut hint bar
 HINT_BAR_HEIGHT: int = 22       # Bottom-most row — context-sensitive keyboard shortcut hint
 TARGET_FPS:           int   = 60
@@ -441,7 +446,7 @@ FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or belo
 FONT_SIZE_LABEL:          int = 17      # bus/station labels on canvas
 LABEL_PAD_PX:             int = 3       # px — gap between a label and the symbol it labels
 FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
-FONT_SIZE_PANEL:          int = 17      # standard instrument strip text
+FONT_SIZE_PANEL:          int = 16      # standard instrument strip text
 FONT_SIZE_HINT:           int = 15      # bottom-of-screen keyboard shortcut hint bar
 FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
 FONT_SIZE_CONTEXT:        int = 17      # unit context overlay text
@@ -484,37 +489,65 @@ UNIT_MODE_BADGE_RADIUS_PX: int = 3   # px — AUTO/MANUAL dispatch-mode dot on a
 # ─────────────────────────────────────────────
 # INSTRUMENT STRIP PANEL LAYOUT
 # ─────────────────────────────────────────────
-# Power Balance moved out of the strip into the horizontal TOPBAR above the
-# canvas (see draw_topbar_panel()), freeing its 240px. Forecast and GenMix
-# each grew 10% (180->198, 110->121) and Alarm absorbs the rest (290->501)
-# — Alarm's detail text word-wraps to whatever width it's given
-# (_wrap_text()), so it's the natural panel to take the remainder. Order
-# left to right: Freq, Dispatch, Forecast, GenMix, Alarm. Panel widths
-# still sum to exactly NATIVE_WIDTH.
+# Power Balance and the clock/speed readout both moved out of the strip:
+# Power Balance into the horizontal TOPBAR above the canvas
+# (see draw_topbar_panel()), clock/speed alongside it (see
+# draw_topbar_panel()'s CLOCK/SPEED columns). Freq shrank 20% (162->130,
+# its trend line and horizontal analog bar were both removed, leaving
+# just the Hz readout and the vertical history plot) — unlike prior
+# rounds, this freed width (32px) went directly to Dispatch (656->688)
+# rather than to Alarm, per developer directive, which also helps
+# Dispatch's known tight 4-column fit (see DISPATCH_STATUS_X_OFFSET/
+# DISPATCH_VALUE_X_OFFSET below). Forecast (218), GenMix (121), and Alarm
+# (763) unchanged this round. Order left to right: Freq, Dispatch,
+# Forecast, GenMix, Alarm. Panel widths still sum to exactly
+# NATIVE_WIDTH.
 PANEL_FREQ_X:     int = 0
-PANEL_FREQ_W:     int = 200
-PANEL_DISPATCH_X:  int = 200
-PANEL_DISPATCH_W:  int = 900
-PANEL_FORECAST_X:  int = 1100
-PANEL_FORECAST_W:  int = 198
-PANEL_GENMIX_X:    int = 1298
+PANEL_FREQ_W:     int = 130
+PANEL_DISPATCH_X:  int = 130
+PANEL_DISPATCH_W:  int = 688
+PANEL_FORECAST_X:  int = 818
+PANEL_FORECAST_W:  int = 218
+PANEL_GENMIX_X:    int = 1036
 PANEL_GENMIX_W:    int = 121
-PANEL_ALARM_X:     int = 1419
-PANEL_ALARM_W:     int = 501
+PANEL_ALARM_X:     int = 1157
+PANEL_ALARM_W:     int = 763
 
 # Unit Dispatch panel always lays out this many columns, regardless of unit
 # count or panel height (previously auto-computed as
 # ceil(unit_count / rows_that_fit_vertically) — see draw_dispatch_panel()).
-DISPATCH_NUM_COLS: int = 3
+DISPATCH_NUM_COLS: int = 4
 
 # Within-row x-offsets (px, pre-font_scale), unit label at 0. Measured
-# against JetBrainsMono at FONT_SIZE_PANEL=18: longest label (e.g. 'RVSD-1')
-# ~60px, status abbreviation ~30px, typical value string 'NNN(NNN) NNN(NNN)'
-# ~170px (fleet-wide max is 700 MW / 300 MVAr, both 3-digit — see
-# data/fleet.py), mode flag ~10px. Fits every unit in the fleet with room to
-# spare at DISPATCH_NUM_COLS=3 (300px columns, PANEL_DISPATCH_W=900).
-DISPATCH_STATUS_X_OFFSET: int = 66   # unit label -> ONL/OFF/STR status abbreviation
-DISPATCH_VALUE_X_OFFSET:  int = 102  # unit label -> MW/MVAr/mode value block
+# against JetBrainsMono at FONT_SIZE_PANEL=16: longest label (e.g.
+# 'RVSD-1') ~59px, status abbreviation up to 3 letters always (ONL/MAN/
+# AGC/OFF/TRP/SDN/STA, see draw_dispatch_panel()) ~29px, value string
+# 'NNNN NNN' (~78px, e.g. '1000 300') — MW padded to 4 digits, MVAr to 3,
+# right-aligned (fleet-wide max is 1000 MW, 3-digit MVAr — see
+# data/fleet.py; setpoint/target values are no longer shown, only
+# actuals) so digits stay column-aligned across rows regardless of unit
+# size. At DISPATCH_NUM_COLS=4 (164px columns, PANEL_DISPATCH_W=656,
+# ~152px usable after padding), label+status+value together (~59+29+78 =
+# 166px worst case) exceed the column's usable width — deliberately
+# tight (developer directive: accept overlap rather than shrink the font
+# further or drop MVAr from the row). DISPATCH_STATUS_X_OFFSET is set
+# just past the longest label so label/status never collide; the value
+# block is the field that runs tight against or past the next column's
+# separator for large units, not label/status. A per-column header row
+# ('UNIT STAT MW MVAr', see draw_dispatch_panel()) reuses these same
+# offsets so it lines up with the data rows below it.
+DISPATCH_STATUS_X_OFFSET: int = 64   # unit label -> ONL/MAN/AGC/OFF/TRP/SDN/STA abbreviation
+DISPATCH_VALUE_X_OFFSET:  int = 97   # unit label -> MW/MVAr value block
+
+# Row count per column is capped by how many rows actually fit the panel's
+# fixed height (STRIP_HEIGHT/_HEADER_H/_ROW_H in panels.py), not by unit
+# count — DISPATCH_NUM_COLS stays fixed regardless of fleet size (developer
+# directive: don't grow columns or shrink row height to fit every unit).
+# One row-slot per column is reserved for the 'UNIT STAT MW MVAr' header
+# (see draw_dispatch_panel()) before unit rows start. When the fleet
+# exceeds the remaining num_cols * (rows_that_fit - 1) capacity, the last
+# visible row slot is reserved for a '+N MORE' indicator instead of a unit
+# row, so a truncated list never looks like a silent bug.
 
 # ─────────────────────────────────────────────
 # SIMULATION SPEED MULTIPLIERS

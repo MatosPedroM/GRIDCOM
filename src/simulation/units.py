@@ -892,3 +892,18 @@ class FleetModel:
     def get_maintenance_units(self) -> frozenset[str]:
         """Return frozenset of unit labels currently flagged as on maintenance."""
         return frozenset(lbl for lbl, m in self._units.items() if m.is_maintenance)
+
+    def get_agc_enabled_units(self) -> frozenset[str]:
+        """
+        Return frozenset of unit labels currently AGC-participating: eligible
+        type, not excluded, and ONLINE right now. Mirrors the eligibility
+        filter in apply_agc_signal()/agc_regulation_state() exactly, so it
+        reflects live AGC participation rather than static type eligibility
+        or Phase 1 enrollment intent.
+        """
+        return frozenset(
+            lbl for lbl, m in self._units.items()
+            if m.state == 'ONLINE'
+            and m._spec.unit_type in _sim_const.AGC_ELIGIBLE_TYPES
+            and lbl not in self._agc_excluded_units
+        )

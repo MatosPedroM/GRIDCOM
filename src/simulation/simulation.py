@@ -194,6 +194,7 @@ class SimulationState:
     unit_q_reserve_mvar:     dict   # {unit_label: float} headroom to q_max (0 if not ONLINE)
     unit_dispatch_modes:     dict   # {unit_label: 'AUTO'|'MANUAL'}
     unit_has_schedule:       frozenset   # labels covered by this shift's Phase 1 hourly schedule
+    unit_agc_enabled:        frozenset   # labels currently AGC-participating (eligible + not excluded + ONLINE)
     reservoir_levels:        dict
     pumped_storage_modes:    dict
 
@@ -2110,6 +2111,7 @@ class GridSimulation:
             unit_q_reserve_mvar=snap['q_reserve_mvar'],
             unit_dispatch_modes=snap['dispatch_mode'],
             unit_has_schedule=frozenset(self._hourly_schedule) if self._hourly_schedule else frozenset(),
+            unit_agc_enabled=self._fleet.get_agc_enabled_units(),
             reservoir_levels={},
             pumped_storage_modes={},
 

@@ -7,12 +7,12 @@
       "name": "Riverside",
       "voltage_kv": 400.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 360,
-      "canvas_y": 305,
+      "canvas_x": 400,
+      "canvas_y": 285,
       "active_from_shift": 1,
       "is_slack": true,
       "peak_load_mw": 0.0,
-      "label_anchor": "left",
+      "label_anchor": "right",
       "substation_type": "MIXED"
     },
     {
@@ -20,8 +20,21 @@
       "name": "Ashcombe",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 465,
-      "canvas_y": 445,
+      "canvas_x": 400,
+      "canvas_y": 395,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 0.0,
+      "label_anchor": "bottom",
+      "substation_type": "MIXED"
+    },
+    {
+      "label": "GREY",
+      "name": "Greymoor",
+      "voltage_kv": 150.0,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 295,
+      "canvas_y": 395,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
@@ -29,121 +42,82 @@
       "substation_type": "MIXED"
     },
     {
-      "label": "GREY",
-      "name": "Greymoor",
+      "label": "OAKE",
+      "name": "Oakendale",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 360,
-      "canvas_y": 515,
+      "canvas_x": 520,
+      "canvas_y": 395,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "left",
+      "label_anchor": "right",
       "substation_type": "MIXED"
     },
     {
       "label": "SUTT",
       "name": "Sutterleigh",
       "voltage_kv": 150.0,
-      "bus_type": "LOAD",
-      "canvas_x": 360,
-      "canvas_y": 585,
+      "bus_type": "TRANSMISSION",
+      "canvas_x": 520,
+      "canvas_y": 510,
       "active_from_shift": 1,
       "is_slack": false,
-      "peak_load_mw": 150.0,
+      "peak_load_mw": 0.0,
       "label_anchor": "right",
-      "substation_type": "RESIDENTIAL"
+      "substation_type": "MIXED"
     },
     {
       "label": "RAVE",
       "name": "Ravensmere",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 465,
-      "canvas_y": 515,
+      "canvas_x": 245,
+      "canvas_y": 495,
       "active_from_shift": 1,
       "is_slack": false,
-      "peak_load_mw": 200.0,
-      "label_anchor": "right",
-      "substation_type": "INDUSTRIAL"
+      "peak_load_mw": 50.0,
+      "label_anchor": "bottom",
+      "substation_type": "MIXED"
     },
     {
       "label": "HOLL",
       "name": "Hollowgate",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 540,
-      "canvas_y": 445,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 100.0,
-      "label_anchor": "right",
-      "substation_type": "MIXED"
-    },
-    {
-      "label": "WREN",
-      "name": "Wrenfield",
-      "voltage_kv": 400.0,
-      "bus_type": "TRANSMISSION",
-      "canvas_x": 680,
-      "canvas_y": 305,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 0.0,
-      "label_anchor": "right",
-      "substation_type": "MIXED"
-    },
-    {
-      "label": "BATH",
-      "name": "Batherton",
-      "voltage_kv": 220.0,
-      "bus_type": "TRANSMISSION",
-      "canvas_x": 680,
-      "canvas_y": 480,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 0.0,
-      "label_anchor": "left",
-      "substation_type": "MIXED"
-    },
-    {
-      "label": "CLOV",
-      "name": "Cloverstead",
-      "voltage_kv": 220.0,
-      "bus_type": "TRANSMISSION",
-      "canvas_x": 745,
-      "canvas_y": 390,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 0.0,
-      "label_anchor": "right",
-      "substation_type": "MIXED"
-    },
-    {
-      "label": "NETT",
-      "name": "Nettlecross",
-      "voltage_kv": 150.0,
-      "bus_type": "LOAD",
-      "canvas_x": 750,
-      "canvas_y": 480,
-      "active_from_shift": 1,
-      "is_slack": false,
-      "peak_load_mw": 50.0,
-      "label_anchor": "right",
-      "substation_type": "INDUSTRIAL"
-    },
-    {
-      "label": "SHEL",
-      "name": "Sheldwick",
-      "voltage_kv": 150.0,
-      "bus_type": "LOAD",
-      "canvas_x": 680,
-      "canvas_y": 550,
+      "canvas_x": 465,
+      "canvas_y": 580,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 100.0,
       "label_anchor": "bottom",
-      "substation_type": "MIXED"
+      "substation_type": "RESIDENTIAL"
+    },
+    {
+      "label": "WREN",
+      "name": "Wrenfield",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 580,
+      "canvas_y": 580,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 75.0,
+      "label_anchor": "bottom",
+      "substation_type": "RESIDENTIAL"
+    },
+    {
+      "label": "BATH",
+      "name": "Batherton",
+      "voltage_kv": 150.0,
+      "bus_type": "LOAD",
+      "canvas_x": 385,
+      "canvas_y": 495,
+      "active_from_shift": 1,
+      "is_slack": false,
+      "peak_load_mw": 150.0,
+      "label_anchor": "bottom",
+      "substation_type": "INDUSTRIAL"
     }
   ],
   "lines": [
@@ -151,302 +125,195 @@
       "label": "L01",
       "from_bus": "RIVE",
       "to_bus": "ASHC",
-      "reactance_pu": 0.1645,
+      "reactance_pu": 0.2784,
       "rating_mw": 400.0,
       "voltage_kv": 220.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "S",
-        1
-      ],
-      "to_port_override": [
-        "W",
-        0
-      ],
-      "length_km": 22.8
-    },
-    {
-      "label": "L02",
-      "from_bus": "RIVE",
-      "to_bus": "GREY",
-      "reactance_pu": 0.6454,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": [
-        "N",
-        0
-      ],
-      "length_km": 89.2
-    },
-    {
-      "label": "L03",
-      "from_bus": "GREY",
-      "to_bus": "SUTT",
-      "reactance_pu": 0.49,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
       "to_port_override": null,
-      "length_km": 31.5
+      "length_km": 38.5
     },
     {
-      "label": "L05",
+      "label": "L02",
+      "from_bus": "RIVE",
+      "to_bus": "ASHC",
+      "reactance_pu": 0.2784,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null,
+      "length_km": 38.5
+    },
+    {
+      "label": "L03",
       "from_bus": "ASHC",
-      "to_bus": "HOLL",
+      "to_bus": "GREY",
       "reactance_pu": 0.5717,
       "rating_mw": 175.0,
       "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": [
-        "E",
-        0
-      ],
-      "to_port_override": [
-        "W",
-        0
-      ],
+      "from_port_override": null,
+      "to_port_override": null,
       "length_km": 36.8
-    },
-    {
-      "label": "L06",
-      "from_bus": "ASHC",
-      "to_bus": "RAVE",
-      "reactance_pu": 1.0073,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "S",
-        0
-      ],
-      "to_port_override": [
-        "N",
-        0
-      ],
-      "length_km": 64.8
-    },
-    {
-      "label": "L07",
-      "from_bus": "GREY",
-      "to_bus": "RAVE",
-      "reactance_pu": 1.0617,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "E",
-        0
-      ],
-      "to_port_override": [
-        "W",
-        1
-      ],
-      "length_km": 68.2
     },
     {
       "label": "L04",
       "from_bus": "ASHC",
-      "to_bus": "RAVE",
-      "reactance_pu": 0.3811,
+      "to_bus": "GREY",
+      "reactance_pu": 0.5717,
       "rating_mw": 175.0,
       "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": [
-        "S",
-        1
-      ],
-      "to_port_override": [
-        "N",
-        1
-      ],
-      "length_km": 24.5
+      "from_port_override": null,
+      "to_port_override": null,
+      "length_km": 36.8
+    },
+    {
+      "label": "L05",
+      "from_bus": "ASHC",
+      "to_bus": "OAKE",
+      "reactance_pu": 0.3037,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null,
+      "length_km": 42.0
+    },
+    {
+      "label": "L06",
+      "from_bus": "ASHC",
+      "to_bus": "OAKE",
+      "reactance_pu": 0.3037,
+      "rating_mw": 400.0,
+      "voltage_kv": 220.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null,
+      "length_km": 42.0
+    },
+    {
+      "label": "L07",
+      "from_bus": "OAKE",
+      "to_bus": "SUTT",
+      "reactance_pu": 0.6261,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null,
+      "length_km": 40.2
     },
     {
       "label": "L08",
-      "from_bus": "GREY",
-      "to_bus": "ASHC",
-      "reactance_pu": 0.4429,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
+      "from_bus": "OAKE",
+      "to_bus": "SUTT",
+      "reactance_pu": 0.6261,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": [
-        "N",
-        1
-      ],
-      "to_port_override": [
-        "W",
-        1
-      ],
-      "length_km": 61.2
+      "from_port_override": null,
+      "to_port_override": null,
+      "length_km": 40.2
     },
     {
       "label": "L09",
-      "from_bus": "RIVE",
-      "to_bus": "WREN",
-      "reactance_pu": 0.2067,
-      "rating_mw": 2250.0,
-      "voltage_kv": 400.0,
+      "from_bus": "SUTT",
+      "to_bus": "HOLL",
+      "reactance_pu": 0.6806,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
-      "to_port_override": null,
-      "length_km": 94.5
+      "to_port_override": [
+        "E",
+        0
+      ],
+      "length_km": 43.8
     },
     {
       "label": "L10",
-      "from_bus": "WREN",
-      "to_bus": "CLOV",
-      "reactance_pu": 0.2025,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
+      "from_bus": "SUTT",
+      "to_bus": "WREN",
+      "reactance_pu": 0.7078,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": [
-        "S",
-        1
-      ],
+      "from_port_override": null,
       "to_port_override": [
         "W",
         0
       ],
-      "length_km": 28.0
+      "length_km": 45.5
     },
     {
       "label": "L11",
-      "from_bus": "BATH",
-      "to_bus": "WREN",
-      "reactance_pu": 0.2404,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
+      "from_bus": "GREY",
+      "to_bus": "RAVE",
+      "reactance_pu": 0.8167,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": [
-        "N",
-        0
-      ],
+      "from_port_override": null,
       "to_port_override": [
-        "S",
+        "E",
         0
       ],
-      "length_km": 33.2
+      "length_km": 52.5
     },
     {
       "label": "L12",
-      "from_bus": "CLOV",
-      "to_bus": "NETT",
-      "reactance_pu": 0.4356,
+      "from_bus": "GREY",
+      "to_bus": "BATH",
+      "reactance_pu": 0.9256,
       "rating_mw": 175.0,
       "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "S",
-        1
-      ],
-      "to_port_override": null,
-      "length_km": 28.0
-    },
-    {
-      "label": "L13",
-      "from_bus": "BATH",
-      "to_bus": "SHEL",
-      "reactance_pu": 0.5989,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": [
-        "N",
-        1
-      ],
-      "length_km": 38.5
-    },
-    {
-      "label": "L14",
-      "from_bus": "BATH",
-      "to_bus": "NETT",
-      "reactance_pu": 0.8984,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "E",
-        1
-      ],
-      "to_port_override": null,
-      "length_km": 57.7
-    },
-    {
-      "label": "L15",
-      "from_bus": "BATH",
-      "to_bus": "SHEL",
-      "reactance_pu": 0.3811,
-      "rating_mw": 175.0,
-      "voltage_kv": 150.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null,
-      "length_km": 24.5
-    },
-    {
-      "label": "L16",
-      "from_bus": "RIVE",
-      "to_bus": "WREN",
-      "reactance_pu": 0.2449,
-      "rating_mw": 2250.0,
-      "voltage_kv": 400.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": null,
-      "length_km": 112.0
-    },
-    {
-      "label": "L17",
-      "from_bus": "BATH",
-      "to_bus": "CLOV",
-      "reactance_pu": 0.3923,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
       "from_port_override": null,
       "to_port_override": [
         "W",
-        1
+        0
       ],
-      "length_km": 54.2
+      "length_km": 59.5
+    },
+    {
+      "label": "L13",
+      "from_bus": "SUTT",
+      "to_bus": "BATH",
+      "reactance_pu": 1.1434,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": null,
+      "to_port_override": null,
+      "length_km": 73.5
     }
   ],
   "units": [
@@ -465,7 +332,7 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "Riverside Coal Unit 1",
-      "station_x": 360,
+      "station_x": 400,
       "station_y": 255,
       "start_mw": -1.0,
       "in_service": true,
@@ -475,33 +342,9 @@
       "station_name": "Riverside"
     },
     {
-      "label": "RIVE-2",
-      "station_label": "RIVE",
-      "bus_label": "RIVE",
-      "unit_type": "COAL",
-      "rated_mw": 300.0,
-      "min_mw": 105.0,
-      "ramp_pct_per_min": 3.0,
-      "inertia_h": 5.0,
-      "cold_start_min": 240.0,
-      "q_max_mvar": 150.0,
-      "q_min_mvar": -50.0,
-      "can_pump": false,
-      "active_from_shift": 1,
-      "description": "Riverside Coal Unit 2",
-      "station_x": 360,
-      "station_y": 255,
-      "start_mw": -1.0,
-      "in_service": true,
-      "label_anchor": "right",
-      "min_up_time_h": 6.0,
-      "min_down_time_h": 8.0,
-      "station_name": "Riverside"
-    },
-    {
-      "label": "ASHC-1",
-      "station_label": "ASHC",
-      "bus_label": "ASHC",
+      "label": "OAKE-1",
+      "station_label": "OAKE",
+      "bus_label": "OAKE",
       "unit_type": "HYDRO",
       "rated_mw": 50.0,
       "min_mw": 5.0,
@@ -512,20 +355,20 @@
       "q_min_mvar": -8.0,
       "can_pump": false,
       "active_from_shift": 1,
-      "description": "Ashcombe Hydro Unit 1",
-      "station_x": 465,
-      "station_y": 385,
+      "description": "Oakendale Hydro Unit 1",
+      "station_x": 520,
+      "station_y": 360,
       "start_mw": -1.0,
       "in_service": true,
       "label_anchor": "right",
       "min_up_time_h": 0.0,
       "min_down_time_h": 0.0,
-      "station_name": "Ashcombe"
+      "station_name": "Oakendale"
     },
     {
-      "label": "ASHC-2",
-      "station_label": "ASHC",
-      "bus_label": "ASHC",
+      "label": "OAKE-2",
+      "station_label": "OAKE",
+      "bus_label": "OAKE",
       "unit_type": "HYDRO",
       "rated_mw": 50.0,
       "min_mw": 5.0,
@@ -536,15 +379,15 @@
       "q_min_mvar": -8.0,
       "can_pump": false,
       "active_from_shift": 1,
-      "description": "Ashcombe Hydro Unit 2",
-      "station_x": 465,
-      "station_y": 385,
+      "description": "Oakendale Hydro Unit 2",
+      "station_x": 520,
+      "station_y": 360,
       "start_mw": -1.0,
       "in_service": true,
       "label_anchor": "right",
       "min_up_time_h": 0.0,
       "min_down_time_h": 0.0,
-      "station_name": "Ashcombe"
+      "station_name": "Oakendale"
     }
   ]
 }

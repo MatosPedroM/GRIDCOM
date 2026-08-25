@@ -26,7 +26,7 @@ import pygame
 import pygame.freetype
 
 from data.topology import Bus, Line
-from display.palette import (
+from config.palette import (
     COL_BACKGROUND,
     COL_TEXT_PRIMARY,
 )
@@ -39,14 +39,14 @@ from display.symbols import (
     get_port_point,
     _draw_dashed_line,
 )
-from display.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC, COL_LOAD_CRIT
+from config.palette import COL_LINE_TRIPPED, COL_LINE_HYDRAULIC, COL_LOAD_CRIT
 from display.geometry import point_segment_dist
 from data.layout_override import get_label_anchor
-from simulation.constants import (
+from config.constants import (
     CANVAS_HEIGHT, FONT_SIZE_LABEL, LABEL_PAD_PX, NATIVE_WIDTH,
     DEVICE_GLYPH_OFFSET_PX, FONT_SIZE_OVERLAY, TRIP_DELAY_S, TIME_COMPRESSION,
 )
-import simulation.constants as _sim_const
+import config.constants as _sim_const
 from utils.helpers import resource_path
 
 

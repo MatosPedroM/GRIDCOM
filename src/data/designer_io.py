@@ -2,7 +2,9 @@
 src/data/designer_io.py
 
 Load / save the Grid Designer JSON file (assets/designer_grid.json).
-Also holds the label pools used when auto-assigning names during placement.
+Auto-assigned name/default pools used during placement (SUBSTATION_NAME_POOL,
+UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS) live in config/constants.py — see
+label_from_name() below and next_bus_name() for how they're consumed.
 
 JSON schema version 1:
   {
@@ -29,12 +31,12 @@ JSON schema version 1:
 
   substation_type: 'MIXED' (default) | 'INDUSTRIAL' | 'RESIDENTIAL' — only
   meaningful for LOAD buses; drives per-bus power factor / reactive load and
-  automatic-shunt-bank eligibility (see simulation.constants.SUBSTATION_TYPE_PF,
+  automatic-shunt-bank eligibility (see config.constants.SUBSTATION_TYPE_PF,
   GridSimulation.seed_default_reactive_devices()). TRANSMISSION buses carry
   the field (dataclass default) but it has no effect for them.
 
   length_km: physical span in km — the basis reactance_pu is derived from
-  (see simulation.constants.reactance_pu_per_km() / display.designer's
+  (see config.constants.reactance_pu_per_km() / display.designer's
   reactance_pu_per_km() helper). None only for legacy data predating this
   field.
 """
@@ -45,6 +47,8 @@ import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 
+from config.constants import SUBSTATION_NAME_POOL
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FILE PATHS
@@ -53,103 +57,6 @@ from dataclasses import dataclass, field, asdict
 _ASSETS_DIR = Path(__file__).parent.parent / 'assets'
 DESIGNER_JSON_PATH  = _ASSETS_DIR / 'designer_grid.json'  # legacy single-file path
 DESIGNER_GRIDS_DIR  = _ASSETS_DIR / 'designer_grids'
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# NAME POOL
-#
-# Human-readable substation/place names, auto-assigned when a new bus is
-# placed. The 4-letter code (label) for both buses and generation stations
-# is mechanically derived from the chosen name — see label_from_name()
-# below — so there is a single source of truth for identity, not a
-# separate flat code pool. A generation station has no name pool of its
-# own: it simply takes the name of the bus it is connected to.
-#
-# Must not reuse: topology.py's hand-authored bus names (Westham, Midbury,
-# Southwick, Centrefield, Northgate, Eastmoor, Ashford, Fairfield, Wrentham,
-# Dunmore, Dunmore Lower, Redstone, Kelmore Lower, Ardenbridge, Millhaven,
-# Weirfield, Ardenmouth, Coalton, Barrow Lower, Cairn Wind, Stanton Solar,
-# Stanton, Brackley, Brentford, Brentwell, Brentmoor, Feldon, Colnbrook,
-# Colnhurst, Colnstead, Hallowmere, Pemberton, Thistledown, Elmscroft,
-# Farringstone, Rushbourne, Ottermead, Bramleigh, Hartsdene, Rowancroft,
-# Wychmoor) or fleet.py's station name-roots (Riverside, Thornfield, Ashford,
-# Wrentham, Hartwell, Barrow, Kelmore, Dunmore, Cairn, Brackley, Stanton,
-# Feldon, Ardenbridge, Millhaven, Weirfield, Ardenmouth, Brentford, Brentwell,
-# Brentmoor, Colnbrook, Colnhurst, Colnstead) — see CLAUDE.md "Naming
-# Conventions" and topology.py/fleet.py for the authoritative campaign list.
-# ─────────────────────────────────────────────────────────────────────────────
-
-SUBSTATION_NAME_POOL: tuple[str, ...] = (
-    'Riverside',    'Ashcombe',     'Greymoor',     'Oakendale',    'Sutterleigh',
-    'Ravensmere',   'Hollowgate',   'Wrenfield',    'Batherton',    'Cloverstead',
-    'Nettlecross',  'Sheldwick',    'Warrengate',   'Foxholt',      'Larkspur Cross',
-    'Thornbury',    'Applecroft',   'Marchden',     'Yewbarrow',    'Cranmere',
-    'Pikestead',    'Longacre',     'Underwold',    'Farleigh',     'Studcombe',
-    'Hazelbourne',  'Whinmoor',     'Alderthorpe',  'Buryhurst',    'Kestrelford',
-    'Netherwick',   'Odcombe',      'Sparrowdene',  'Elmshaw',      'Priorsgate',
-    'Merryhurst',   'Bracknell End','Ferngate',     'Southmere',    'Highbourne',
-    'Gorsecombe',   'Wexfield',     'Ledgemoor',    'Hartswell',    'Stourbridge Fen',
-    'Chalkdown',    'Rivenholt',    'Downside',     'Aldergate',    'Marrowfield',
-    'Cobbleford',   'Wintermoor',   'Faulkhurst',   'Reedcroft',    'Ashendene',
-    'Barnstead',    'Cinderleigh',  'Draycombe',    'Emberholt',    'Fenwold',
-    'Grimsdyke',    'Hollyford',    'Iverbourne',   'Juniperleigh', 'Kirkstead',
-    'Lambhurst',    'Mossgate',     'Norbrook',     'Oxendene',     'Pennywold',
-    'Quernmore',    'Ridgeholt',    'Silverdale',   'Tallowcross',  'Ulverwick',
-    'Vinecombe',    'Waltham Fen',  'Yarnfield',    'Zennorwick',   'Ambercroft',
-    'Blackthorn End','Cragwell',    'Dunstable Row','Elderholt',    'Fallowmere',
-    'Grovehaven',   'Hartledene',   'Ivythorpe',    'Jackdaw Cross','Knollside',
-    'Larchmoor',    'Mistover',     'Newfold',      'Oatlands',     'Peverell',
-    'Quarrymoor',   'Rushgate',     'Stonewick',    'Thistlecombe', 'Woolhurst',
-)
-
-# Default unit parameters by type
-UNIT_DEFAULTS: dict[str, dict] = {
-    'COAL':       {'rated_mw': 300.0, 'min_mw': 105.0, 'ramp_pct_per_min': 3.0,
-                   'inertia_h': 5.0, 'cold_start_min': 240.0,
-                   'q_max_mvar': 150.0, 'q_min_mvar': -50.0,
-                   'min_up_time_h': 6.0, 'min_down_time_h': 8.0},
-    'CCGT':       {'rated_mw': 400.0, 'min_mw': 100.0, 'ramp_pct_per_min': 8.0,
-                   'inertia_h': 4.0, 'cold_start_min': 60.0,
-                   'q_max_mvar': 180.0, 'q_min_mvar': -60.0,
-                   'min_up_time_h': 2.0, 'min_down_time_h': 2.0},
-    'NUCLEAR':    {'rated_mw': 700.0, 'min_mw': 420.0, 'ramp_pct_per_min': 1.0,
-                   'inertia_h': 6.0, 'cold_start_min': 480.0,
-                   'q_max_mvar': 300.0, 'q_min_mvar': -100.0,
-                   'min_up_time_h': 24.0, 'min_down_time_h': 24.0},
-    'HYDRO':      {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
-                   'inertia_h': 3.0, 'cold_start_min': 5.0,
-                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
-                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'HYDRO_ROR':  {'rated_mw': 30.0,  'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
-                   'inertia_h': 3.0, 'cold_start_min': 5.0,
-                   'q_max_mvar': 15.0, 'q_min_mvar': -5.0,
-                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'HYDRO_PUMP': {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
-                   'inertia_h': 3.0, 'cold_start_min': 8.0,
-                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
-                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'WIND':       {'rated_mw': 300.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
-                   'inertia_h': 0.0, 'cold_start_min': 0.0,
-                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
-                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'SOLAR':      {'rated_mw': 400.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
-                   'inertia_h': 0.0, 'cold_start_min': 0.0,
-                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
-                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-}
-
-# Size variants for the plain HYDRO palette entry (not HYDRO_ROR/HYDRO_PUMP,
-# which are already distinct fixed-size types). Only rated_mw/min_mw/
-# q_max_mvar/q_min_mvar vary by size — ramp_pct_per_min, inertia_h,
-# cold_start_min, min_up_time_h, min_down_time_h are shared, taken from
-# UNIT_DEFAULTS['HYDRO']. LARGE matches UNIT_DEFAULTS['HYDRO'] exactly, so
-# an untouched HYDRO placement (default size) is unchanged from before this
-# was added.
-HYDRO_SIZE_DEFAULTS: dict[str, dict] = {
-    'SMALL':  {'rated_mw': 50.0,  'min_mw': 5.0,  'q_max_mvar': 24.0,  'q_min_mvar': -8.0},
-    'MEDIUM': {'rated_mw': 150.0, 'min_mw': 15.0, 'q_max_mvar': 72.0,  'q_min_mvar': -24.0},
-    'LARGE':  {'rated_mw': 250.0, 'min_mw': 25.0, 'q_max_mvar': 120.0, 'q_min_mvar': -40.0},
-}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -193,7 +100,7 @@ class DesignerLine:
     from_port_override: tuple[str, int] | None = None
     to_port_override:   tuple[str, int] | None = None
     # Physical span in km — the basis reactance_pu is derived from (see
-    # simulation.constants.reactance_pu_per_km()). None only for legacy/
+    # config.constants.reactance_pu_per_km()). None only for legacy/
     # hand-edited files predating this field; never solved on directly.
     length_km:          float | None = None
 

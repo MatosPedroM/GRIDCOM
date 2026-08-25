@@ -42,8 +42,10 @@ gridcom/
 ├── gridcom.spec                 ← PyInstaller spec
 └── src/
     ├── main.py                  ← entry point, pygame init, main loop
-    ├── simulation/
+    ├── config/
     │   ├── constants.py         ← ALL constants live here — nowhere else
+    │   └── palette.py           ← ALL colour constants live here — nowhere else
+    ├── simulation/
     │   ├── grid.py              ← Grid object, topology loader
     │   ├── loadflow.py          ← DC load flow solver (numpy only)
     │   ├── voltage.py           ← decoupled voltage solver
@@ -61,7 +63,6 @@ gridcom/
     │   ├── animation.py         ← flow markers, blink system
     │   ├── panels.py            ← instrument strip panels
     │   ├── context.py           ← context panels, selection
-    │   ├── palette.py           ← ALL colour constants live here — nowhere else
     │   └── debug.py             ← simulation debug + display debug overlays
     ├── gameplay/
     │   ├── campaign.py          ← shift structure, state machine, save/load
@@ -99,10 +100,10 @@ gridcom/
 These rules are non-negotiable. Violating them creates bugs that are hard to trace.
 
 **Rule 1 — Constants only in constants.py**
-Every numeric value, threshold, timing, or configuration parameter lives in `src/simulation/constants.py`. No hardcoded numbers anywhere else in the codebase. Import from constants: `from simulation.constants import F_NOMINAL, TRIP_DELAY_S`.
+Every numeric value, threshold, timing, or configuration parameter lives in `src/config/constants.py`. No hardcoded numbers anywhere else in the codebase. Import from constants: `from config.constants import F_NOMINAL, TRIP_DELAY_S`.
 
 **Rule 2 — Colours only in palette.py**
-Every RGB tuple lives in `src/display/palette.py`. No colour values appear anywhere else. Import: `from display.palette import COL_400KV, COL_ALARM_CRIT`.
+Every RGB tuple lives in `src/config/palette.py`. No colour values appear anywhere else. Import: `from config.palette import COL_400KV, COL_ALARM_CRIT`.
 
 **Rule 3 — Asset paths always via resource_path()**
 Every font, sound, or asset file is loaded using `resource_path()` from `src/utils/helpers.py`. Never use hardcoded absolute paths or relative paths directly. This is required for PyInstaller builds to work.
@@ -348,7 +349,7 @@ Two independent debug modes, both default False in constants.py:
 - Frame time and FPS in top-right corner
 - Current speed multiplier
 
-Enable by setting `DEBUG_SIMULATION = True` or `DEBUG_DISPLAY = True` in `src/simulation/constants.py`.
+Enable by setting `DEBUG_SIMULATION = True` or `DEBUG_DISPLAY = True` in `src/config/constants.py`.
 
 ---
 

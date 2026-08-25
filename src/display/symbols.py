@@ -15,7 +15,7 @@ import math
 
 import pygame
 
-from simulation.constants import (
+from config.constants import (
     FONT_SIZE_OVERLAY,
     LOAD_TRIANGLE_PCT_1, LOAD_TRIANGLE_PCT_2, LOAD_TRIANGLE_PCT_3,
     LOAD_TRIANGLE_SIZE, LOAD_TRIANGLE_SPACING,
@@ -24,7 +24,7 @@ from simulation.constants import (
     DEVICE_GLYPH_SIZE_PX, DEVICE_GLYPH_OFFSET_PX,
     UNIT_MODE_BADGE_RADIUS_PX,
 )
-from display.palette import (
+from config.palette import (
     COL_BACKGROUND,
     COL_BUS_BLACKED, COL_BUS_SELECTED,
     COL_VVIEW_400KV, COL_VVIEW_220KV, COL_VVIEW_150KV, COL_VVIEW_60KV,
@@ -617,7 +617,7 @@ def draw_transmission_line(
         scale:        Display scale factor applied to line widths.
         voltage_view: If True, colour by voltage tier instead of loading.
     """
-    from display.palette import (
+    from config.palette import (
         COL_LINE_ENERGISED,
         COL_LINE_TRIPPED, COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT,
     )

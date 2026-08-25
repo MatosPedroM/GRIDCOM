@@ -24,9 +24,9 @@ from typing import Callable
 import pygame
 import pygame.freetype
 
-from display.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_CRIT
+from config.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_CRIT
 from gameplay.phase1 import PlanningModel
-from simulation.constants import (
+from config.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
     FONT_PATH_MONO_REGULAR,
     PLANNING_FONT_SIZE, PLANNING_FONT_SIZE_LARGE,

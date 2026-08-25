@@ -23,7 +23,7 @@ from __future__ import annotations
 import importlib
 
 from data.profiles import DEMAND_PROFILE_NORMALISED
-from simulation.constants import LANDING_FREEZE_S as _LANDING_FREEZE_S_DEFAULT
+from config.constants import LANDING_FREEZE_S as _LANDING_FREEZE_S_DEFAULT
 
 
 def load_shift_config(shift_number: int) -> dict:

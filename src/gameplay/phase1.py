@@ -24,7 +24,7 @@ from data.designer_io import load_designer_grid_named
 from data.fleet import GenerationUnit
 from data.profiles import get_substation_demand_specs
 from gameplay.shifts.loader import load_shift_config
-from simulation.constants import (
+from config.constants import (
     TECH_MIN_FRAC_HYDRO,
     TECH_MIN_FRAC_HYDRO_ROR,
     TECH_MIN_FRAC_HYDRO_PUMP,
@@ -49,7 +49,7 @@ from simulation.constants import (
 from simulation.demand import DemandModel
 from simulation.designer_grid import DesignerGrid
 from simulation.renewables import RenewablesModel
-from simulation.constants import AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT
+from config.constants import AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT
 
 # Non-dispatchable (forecast-driven, not player-scheduled) unit types.
 _RENEWABLE_TYPES: frozenset[str] = frozenset({'WIND', 'SOLAR'})

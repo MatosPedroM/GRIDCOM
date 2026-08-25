@@ -39,7 +39,7 @@ import pygame
 import pygame.freetype
 
 from display.renderer import Renderer
-from display.palette import COL_TEXT_BODY, COL_TEXT_SCREEN_HDR, COL_ALARM_CRIT
+from config.palette import COL_TEXT_BODY, COL_TEXT_SCREEN_HDR, COL_ALARM_CRIT
 from display.menus import (
     build_splash_lines,
     build_main_menu_items,
@@ -56,7 +56,7 @@ from data.profiles import DEMAND_PROFILE_NORMALISED
 from gameplay.scoring import count_unit_trips, grade_campaign, grade_shift
 from gameplay.shifts.loader import load_shift_config
 from simulation.simulation import GridSimulation
-from simulation.constants import (
+from config.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
     TARGET_FPS, SIM_TICK_INTERVAL_S,
     TIME_COMPRESSION,
@@ -65,7 +65,7 @@ from simulation.constants import (
     AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT,
     LANDING_FREEZE_S as _LANDING_FREEZE_S_DEFAULT,
 )
-import simulation.constants as _const
+import config.constants as _const
 
 
 # ─── Game state ──────────────────────────────────────────────────────────────

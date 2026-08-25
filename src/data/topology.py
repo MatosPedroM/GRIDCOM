@@ -68,7 +68,7 @@ class Line:
                            line-rotate feature.
         to_port_override:  Same as from_port_override, for the to_bus end.
         length_km:         Physical span in km — the basis reactance_pu is
-                           derived from (see simulation.constants.
+                           derived from (see config.constants.
                            reactance_pu_per_km()). None only for legacy data
                            predating this field; never solved on directly.
     """

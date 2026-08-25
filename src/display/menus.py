@@ -8,7 +8,7 @@ All functions return data only — no rendering logic lives here.
 Rendering is handled by Renderer.tick_menu_screen() and Renderer.tick_text_screen().
 """
 
-from display.palette import (
+from config.palette import (
     COL_TEXT_BODY,
     COL_TEXT_SCREEN_HDR,
 )

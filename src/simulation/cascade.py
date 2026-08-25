@@ -20,7 +20,7 @@ See SIMULATION_API.md — SimulationState.islands / blackout_zones.
 
 from collections import deque
 
-from simulation.constants import (
+from config.constants import (
     TRIP_DELAY_S, OVERLOAD_CRIT_PCT,
     OVERLOAD_SEVERITY_REF_PCT, OVERLOAD_SEVERITY_MAX_MULT, OVERLOAD_DECAY_RATE,
 )

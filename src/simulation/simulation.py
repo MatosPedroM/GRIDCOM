@@ -28,7 +28,7 @@ import os
 import numpy as np
 from dataclasses import dataclass
 
-from simulation.constants import (
+from config.constants import (
     F_NOMINAL,
     F_MIN, F_MAX,
     F_ALERT_LOW, F_ALERT_HIGH,
@@ -49,7 +49,7 @@ from simulation.constants import (
     LINE_CHARGING_MVAR_PER_KM_400KV,
     LOAD_SHED_STEP_FRACTION,
 )
-import simulation.constants as _sim_const
+import config.constants as _sim_const
 from simulation.designer_grid import DesignerGrid
 from simulation.loadflow import DCLoadFlow
 from simulation.voltage import VoltageModel

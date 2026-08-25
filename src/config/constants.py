@@ -1,5 +1,5 @@
 """
-src/simulation/constants.py
+src/config/constants.py
 
 All constants for the GRIDCOM simulation and display.
 Every numeric value, threshold, timing, and configuration parameter lives here.
@@ -97,6 +97,101 @@ SUBSTATION_TYPE_PF: dict = {
     'INDUSTRIAL': PF_INDUSTRIAL,
     'RESIDENTIAL': PF_RESIDENTIAL,
     'MIXED': PF_MIXED,
+}
+
+# ─────────────────────────────────────────────
+# GRID DESIGNER — AUTO-PLACEMENT DEFAULTS
+# ─────────────────────────────────────────────
+# Human-readable substation/place names, auto-assigned when a new bus is
+# placed in the Grid Designer. The 4-letter code (label) for both buses and
+# generation stations is mechanically derived from the chosen name — see
+# data/designer_io.py's label_from_name() — so there is a single source of
+# truth for identity, not a separate flat code pool. A generation station has
+# no name pool of its own: it simply takes the name of the bus it is
+# connected to.
+#
+# Must not reuse: topology.py's hand-authored bus names (Westham, Midbury,
+# Southwick, Centrefield, Northgate, Eastmoor, Ashford, Fairfield, Wrentham,
+# Dunmore, Dunmore Lower, Redstone, Kelmore Lower, Ardenbridge, Millhaven,
+# Weirfield, Ardenmouth, Coalton, Barrow Lower, Cairn Wind, Stanton Solar,
+# Stanton, Brackley, Brentford, Brentwell, Brentmoor, Feldon, Colnbrook,
+# Colnhurst, Colnstead, Hallowmere, Pemberton, Thistledown, Elmscroft,
+# Farringstone, Rushbourne, Ottermead, Bramleigh, Hartsdene, Rowancroft,
+# Wychmoor) or fleet.py's station name-roots (Riverside, Thornfield, Ashford,
+# Wrentham, Hartwell, Barrow, Kelmore, Dunmore, Cairn, Brackley, Stanton,
+# Feldon, Ardenbridge, Millhaven, Weirfield, Ardenmouth, Brentford, Brentwell,
+# Brentmoor, Colnbrook, Colnhurst, Colnstead) — see CLAUDE.md "Naming
+# Conventions" and topology.py/fleet.py for the authoritative campaign list.
+SUBSTATION_NAME_POOL: tuple[str, ...] = (
+    'Ashcombe',    'Riverside',     'Greymoor',     'Oakendale',    'Sutterleigh',
+    'Ravensmere',   'Hollowgate',   'Wrenfield',    'Batherton',    'Cloverstead',
+    'Nettlecross',  'Sheldwick',    'Warrengate',   'Foxholt',      'Larkspur Cross',
+    'Thornbury',    'Applecroft',   'Marchden',     'Yewbarrow',    'Cranmere',
+    'Pikestead',    'Longacre',     'Underwold',    'Farleigh',     'Studcombe',
+    'Hazelbourne',  'Whinmoor',     'Alderthorpe',  'Buryhurst',    'Kestrelford',
+    'Netherwick',   'Odcombe',      'Sparrowdene',  'Elmshaw',      'Priorsgate',
+    'Merryhurst',   'Bracknell End','Ferngate',     'Southmere',    'Highbourne',
+    'Gorsecombe',   'Wexfield',     'Ledgemoor',    'Hartswell',    'Stourbridge Fen',
+    'Chalkdown',    'Rivenholt',    'Downside',     'Aldergate',    'Marrowfield',
+    'Cobbleford',   'Wintermoor',   'Faulkhurst',   'Reedcroft',    'Ashendene',
+    'Barnstead',    'Cinderleigh',  'Draycombe',    'Emberholt',    'Fenwold',
+    'Grimsdyke',    'Hollyford',    'Iverbourne',   'Juniperleigh', 'Kirkstead',
+    'Lambhurst',    'Mossgate',     'Norbrook',     'Oxendene',     'Pennywold',
+    'Quernmore',    'Ridgeholt',    'Silverdale',   'Tallowcross',  'Ulverwick',
+    'Vinecombe',    'Waltham Fen',  'Yarnfield',    'Zennorwick',   'Ambercroft',
+    'Blackthorn End','Cragwell',    'Dunstable Row','Elderholt',    'Fallowmere',
+    'Grovehaven',   'Hartledene',   'Ivythorpe',    'Jackdaw Cross','Knollside',
+    'Larchmoor',    'Mistover',     'Newfold',      'Oatlands',     'Peverell',
+    'Quarrymoor',   'Rushgate',     'Stonewick',    'Thistlecombe', 'Woolhurst',
+)
+
+# Default unit parameters by type
+UNIT_DEFAULTS: dict[str, dict] = {
+    'COAL':       {'rated_mw': 300.0, 'min_mw': 105.0, 'ramp_pct_per_min': 3.0,
+                   'inertia_h': 5.0, 'cold_start_min': 240.0,
+                   'q_max_mvar': 150.0, 'q_min_mvar': -50.0,
+                   'min_up_time_h': 6.0, 'min_down_time_h': 8.0},
+    'CCGT':       {'rated_mw': 400.0, 'min_mw': 100.0, 'ramp_pct_per_min': 8.0,
+                   'inertia_h': 4.0, 'cold_start_min': 60.0,
+                   'q_max_mvar': 180.0, 'q_min_mvar': -60.0,
+                   'min_up_time_h': 2.0, 'min_down_time_h': 2.0},
+    'NUCLEAR':    {'rated_mw': 700.0, 'min_mw': 420.0, 'ramp_pct_per_min': 1.0,
+                   'inertia_h': 6.0, 'cold_start_min': 480.0,
+                   'q_max_mvar': 300.0, 'q_min_mvar': -100.0,
+                   'min_up_time_h': 24.0, 'min_down_time_h': 24.0},
+    'HYDRO':      {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
+                   'inertia_h': 3.0, 'cold_start_min': 5.0,
+                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
+    'HYDRO_ROR':  {'rated_mw': 30.0,  'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
+                   'inertia_h': 3.0, 'cold_start_min': 5.0,
+                   'q_max_mvar': 15.0, 'q_min_mvar': -5.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
+    'HYDRO_PUMP': {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
+                   'inertia_h': 3.0, 'cold_start_min': 8.0,
+                   'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
+    'WIND':       {'rated_mw': 300.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
+                   'inertia_h': 0.0, 'cold_start_min': 0.0,
+                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
+    'SOLAR':      {'rated_mw': 400.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
+                   'inertia_h': 0.0, 'cold_start_min': 0.0,
+                   'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
+                   'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
+}
+
+# Size variants for the plain HYDRO palette entry (not HYDRO_ROR/HYDRO_PUMP,
+# which are already distinct fixed-size types). Only rated_mw/min_mw/
+# q_max_mvar/q_min_mvar vary by size — ramp_pct_per_min, inertia_h,
+# cold_start_min, min_up_time_h, min_down_time_h are shared, taken from
+# UNIT_DEFAULTS['HYDRO']. LARGE matches UNIT_DEFAULTS['HYDRO'] exactly, so
+# an untouched HYDRO placement (default size) is unchanged from before this
+# was added.
+HYDRO_SIZE_DEFAULTS: dict[str, dict] = {
+    'SMALL':  {'rated_mw': 50.0,  'min_mw': 5.0,  'q_max_mvar': 24.0,  'q_min_mvar': -8.0},
+    'MEDIUM': {'rated_mw': 150.0, 'min_mw': 15.0, 'q_max_mvar': 72.0,  'q_min_mvar': -24.0},
+    'LARGE':  {'rated_mw': 250.0, 'min_mw': 25.0, 'q_max_mvar': 120.0, 'q_min_mvar': -40.0},
 }
 
 # Generator reactive-power target (MVAr) — player-editable, clamped per unit

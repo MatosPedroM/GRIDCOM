@@ -16,7 +16,7 @@ import math
 import pygame
 import pygame.freetype
 
-from display.palette import (
+from config.palette import (
     COL_PANEL_BG, COL_PANEL_BORDER,
     COL_TEXT_PRIMARY, COL_TEXT_VALUE, COL_TEXT_DIM, COL_TEXT_HEADING,
     COL_UNIT_ONLINE, COL_UNIT_STARTING, COL_UNIT_SHUTDOWN, COL_UNIT_OFFLINE,
@@ -25,7 +25,7 @@ from display.palette import (
     COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT, COL_LINE_TRIPPED,
     COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL, COL_SVC,
 )
-from simulation.constants import (
+from config.constants import (
     CONTEXT_OVERLAY_X, CONTEXT_OVERLAY_Y,
     CONTEXT_OVERLAY_W, CONTEXT_OVERLAY_PAD,
     CONTEXT_OVERLAY_ROW_H, CONTEXT_OVERLAY_HDR_H,

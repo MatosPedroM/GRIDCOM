@@ -25,7 +25,7 @@ from __future__ import annotations
 import pygame
 import pygame.freetype
 
-from display.palette import (
+from config.palette import (
     COL_BACKGROUND, COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
     COL_TEXT_VALUE, COL_TEXT_HEADING, COL_TEXT_WARN, COL_TEXT_CRIT,
     COL_TEXT_GOOD, COL_PANEL_BORDER,
@@ -38,7 +38,7 @@ from display.palette import (
     COL_DESIGNER_FIELD_ACTIVE, COL_DESIGNER_DELETE_CURSOR,
     COL_SELECTION,
 )
-from simulation.constants import DESIGNER_SIDEBAR_W, NATIVE_HEIGHT, DESIGNER_FONT_SIZE
+from config.constants import DESIGNER_SIDEBAR_W, NATIVE_HEIGHT, DESIGNER_FONT_SIZE
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -567,7 +567,7 @@ def _draw_analysis_panel(surf, font, font_bold, designer, y0: int) -> int:
     panel (drawn separately, below this) when an element is selected on
     canvas — not listed here, since 40+ units won't fit a sidebar column.
     """
-    from simulation.constants import DESIGNER_N1_OVERLOAD_PCT
+    from config.constants import DESIGNER_N1_OVERLOAD_PCT
 
     y = y0 + PAD
     _label(surf, font_bold, PAD, y, 'ANALYSIS MODE', COL_TEXT_HEADING)

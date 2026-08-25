@@ -21,7 +21,7 @@ from __future__ import annotations
 import pygame
 import pygame.freetype
 
-from display.palette import (
+from config.palette import (
     COL_PANEL_BG, COL_PANEL_BORDER,
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM, COL_TEXT_VALUE,
     COL_TEXT_HEADING, COL_TEXT_GOOD, COL_TEXT_WARN, COL_TEXT_CRIT,
@@ -33,7 +33,7 @@ from display.palette import (
     COL_UNIT_HYDRO, COL_UNIT_WIND, COL_UNIT_SOLAR,
     COL_FORECAST_DEMAND, COL_FORECAST_NETLOAD, COL_FORECAST_NETDEMAND,
 )
-from simulation.constants import (
+from config.constants import (
     FONT_SIZE_PANEL, FONT_SIZE_PANEL_LARGE,
     F_ALERT_LOW, F_ALERT_HIGH, F_CRITICAL_LOW, F_CRITICAL_HIGH,
     DISPATCH_NUM_COLS, DISPATCH_STATUS_X_OFFSET, DISPATCH_VALUE_X_OFFSET,

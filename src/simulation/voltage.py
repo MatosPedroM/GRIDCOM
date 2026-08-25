@@ -31,7 +31,7 @@ import logging
 
 import numpy as np
 
-from simulation.constants import (
+from config.constants import (
     S_BASE,
     VSHUNT_REG,
     PV_CORRECTION_MAX_ITERS,

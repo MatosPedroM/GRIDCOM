@@ -23,18 +23,17 @@ from typing import Callable
 import pygame
 import pygame.freetype
 
-import simulation.constants as _const
+import config.constants as _const
 from data.designer_io import (
     DesignerBus, DesignerLine, DesignerUnit,
     save_designer_grid_named, load_designer_grid_named,
     list_designer_grids,
     next_line_label,
     next_bus_name, label_from_name,
-    UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS,
     designer_buses_to_topology, designer_lines_to_topology, designer_units_to_fleet,
 )
 from display.geometry import point_segment_dist
-from display.palette import (
+from config.palette import (
     COL_BACKGROUND, COL_TEXT_PRIMARY,
     COL_TEXT_VALUE, COL_TEXT_WARN, COL_TEXT_CRIT,
     COL_400KV, COL_220KV, COL_150KV,
@@ -46,7 +45,7 @@ from display.palette import (
     COL_UNIT_HYDRO, COL_UNIT_WIND, COL_UNIT_SOLAR, COL_UNIT_HYDRO_PUMP,
 )
 from display.symbols import _draw_dashed_line
-from simulation.constants import (
+from config.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT, CANVAS_HEIGHT,
     FONT_PATH_MONO_REGULAR,
     DESIGNER_SIDEBAR_W, DESIGNER_CANVAS_W,
@@ -60,6 +59,7 @@ from simulation.constants import (
     OVERLOAD_WARN_PCT, OVERLOAD_CRIT_PCT,
     KM_PER_PX, REACTANCE_PU_PER_KM_150KV, REACTANCE_PU_PER_KM_220KV,
     REACTANCE_PU_PER_KM_400KV,
+    UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS,
 )
 from utils.helpers import resource_path
 

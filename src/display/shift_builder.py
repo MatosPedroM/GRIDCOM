@@ -29,13 +29,13 @@ from data.shift_io import (
     list_campaign_shift_numbers, CAMPAIGN_EDITABLE_FIELDS,
 )
 from data.designer_io import list_designer_grids, load_designer_grid_named
-from display.palette import (
+from config.palette import (
     COL_BACKGROUND, COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM,
     COL_TEXT_VALUE, COL_TEXT_HEADING, COL_TEXT_WARN, COL_TEXT_CRIT, COL_TEXT_GOOD,
     COL_PANEL_BORDER, COL_SELECTION,
     COL_DESIGNER_STATUS_OK, COL_DESIGNER_STATUS_INFO, COL_DESIGNER_FIELD_ACTIVE,
 )
-from simulation.constants import (
+from config.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
     FONT_PATH_MONO_REGULAR,
     SHIFT_BUILDER_FONT_SIZE, SHIFT_BUILDER_FONT_SIZE_LARGE,

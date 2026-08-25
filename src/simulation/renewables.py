@@ -25,7 +25,7 @@ import logging
 
 import numpy as np
 
-from simulation.constants import (
+from config.constants import (
     WIND_NOISE_STD_FRACTION,
     SOLAR_NOISE_STD_FRACTION,
     WIND_NOISE_RAMP_PCT_MIN,

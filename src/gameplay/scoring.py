@@ -31,7 +31,7 @@ model exists anywhere in the codebase, so there is nothing to score.
 
 from __future__ import annotations
 
-from simulation.constants import (
+from config.constants import (
     SCORE_FREQ_PCT_EXCELLENT, SCORE_FREQ_PCT_SATISFACTORY, SCORE_FREQ_PCT_MARGINAL,
     SCORE_LOADING_PCT_EXCELLENT, SCORE_LOADING_PCT_SATISFACTORY,
     SCORE_VOLTAGE_PU_EXCELLENT, SCORE_VOLTAGE_PU_SATISFACTORY,

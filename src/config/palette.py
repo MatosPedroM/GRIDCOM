@@ -1,5 +1,5 @@
 """
-src/display/palette.py
+src/config/palette.py
 
 All colour constants for the GRIDCOM display.
 Every RGB tuple in the codebase lives here — nowhere else.

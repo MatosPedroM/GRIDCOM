@@ -23,8 +23,8 @@ See GRID_SIMULATION_MECHANICS.md Section 5 for physics detail.
 
 import numpy as np
 
-import simulation.constants as _sim_const
-from simulation.constants import (
+import config.constants as _sim_const
+from config.constants import (
     F_NOMINAL,
     F_MIN,
     F_MAX,

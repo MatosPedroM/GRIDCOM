@@ -14,7 +14,7 @@ import logging
 
 import numpy as np
 
-from simulation.constants import S_BASE, YSHUNT_REG, DEBUG_SIMULATION
+from config.constants import S_BASE, YSHUNT_REG, DEBUG_SIMULATION
 from simulation.designer_grid import DesignerGrid
 
 # Type aliases

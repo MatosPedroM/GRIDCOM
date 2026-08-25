@@ -14,7 +14,7 @@ See DOMAIN_GLOSSARY.md — "Demand Model" for definitions.
 import logging
 import math
 
-from simulation.constants import (
+from config.constants import (
     LOSSES_FRACTION,
     DEBUG_SIMULATION,
     SUBSTATION_TYPE_PF,

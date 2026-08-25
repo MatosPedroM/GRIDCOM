@@ -18,7 +18,7 @@ for the design rationale.
 
 from dataclasses import dataclass, field
 
-from simulation.constants import (
+from config.constants import (
     SHUNT_BANK_MVAR_PER_STEP, SHUNT_BANK_MAX_STEPS,
     SHUNT_DEADBAND_LOW_PU, SHUNT_DEADBAND_HIGH_PU, SHUNT_SWITCH_DWELL_S,
     SVC_Q_MIN_MVAR, SVC_Q_MAX_MVAR,

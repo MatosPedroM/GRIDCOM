@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from simulation.loadflow import DCLoadFlow
 from simulation.cascade import CascadeModel
-from simulation.constants import DESIGNER_N1_OVERLOAD_PCT
+from config.constants import DESIGNER_N1_OVERLOAD_PCT
 
 
 @dataclass

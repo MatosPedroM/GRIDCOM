@@ -19,7 +19,7 @@ from __future__ import annotations
 import pygame
 import pygame.freetype
 
-from display.palette import (
+from config.palette import (
     COL_BACKGROUND, COL_PANEL_BORDER,
     COL_TEXT_PRIMARY, COL_TEXT_SECONDARY, COL_TEXT_DIM, COL_TEXT_VALUE,
     COL_TEXT_HEADING, COL_TEXT_WARN, COL_TEXT_CRIT, COL_TEXT_GOOD,
@@ -28,7 +28,7 @@ from display.palette import (
     COL_PLAN_OFFLINE, COL_PLAN_WINDOW_MARK,
 )
 from display.panels import FUEL_ORDER, FUEL_LABELS, FUEL_COLOURS
-from simulation.constants import (
+from config.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
     PLANNING_LEFT_MARGIN, PLANNING_TOP_MARGIN,
     PLANNING_LABEL_COL_W, PLANNING_HOUR_COL_W,

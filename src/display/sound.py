@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pygame
 
-from simulation.constants import (
+from config.constants import (
     SOUND_PATH_ALARM, SOUND_PATH_PING, SOUND_PATH_WARNING_PING,
     SOUND_VOLUME_ALARM, SOUND_VOLUME_PING, SOUND_VOLUME_WARNING_PING,
 )

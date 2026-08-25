@@ -41,7 +41,7 @@ from display.panels import (
     draw_dispatch_panel, draw_alarm_panel,
     draw_genmix_panel, draw_forecast_panel,
 )
-from display.palette import (
+from config.palette import (
     COL_BACKGROUND, COL_STRIP_BG, COL_DEBUG_TEXT, COL_DEBUG_GRID, COL_TEXT_DIM,
     COL_FPS_TEXT, COL_150KV,
     COL_TEXT_BODY, COL_TEXT_SCREEN_HDR, COL_MENU_CURSOR, COL_MENU_DISABLED,
@@ -50,8 +50,8 @@ from display.palette import (
     COL_UNIT_ONLINE, COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL,
     COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT, COL_LINE_TRIPPED,
 )
-import simulation.constants as _sim_const
-from simulation.constants import (
+import config.constants as _sim_const
+from config.constants import (
     TITLE_BAR_HEIGHT, TOPBAR_HEIGHT, CANVAS_HEIGHT, STRIP_HEIGHT,
     HINT_GAP_HEIGHT, HINT_BAR_HEIGHT,
     NATIVE_WIDTH, NATIVE_HEIGHT,
@@ -1688,7 +1688,7 @@ class Renderer:
             if self._click_timer > 0.0:
                 cx = int(self._click_pos[0] / sc)
                 cy = int(self._click_pos[1] / sc)
-                from display.palette import COL_DEBUG_CLICK
+                from config.palette import COL_DEBUG_CLICK
                 font.render_to(self._native, (p4, p18),
                                f'click {cx},{cy}', COL_DEBUG_CLICK, size=so)
             else:

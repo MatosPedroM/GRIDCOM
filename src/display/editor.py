@@ -25,11 +25,11 @@ from data.layout_override import (
     save_layout,
     get_label_anchor, set_label_anchor,
 )
-from display.palette import (
+from config.palette import (
     COL_TEXT_PRIMARY, COL_EDITOR_LABEL, COL_EDITOR_DIRTY, COL_EDITOR_CLEAN,
     COL_EDITOR_HIGHLIGHT,
 )
-from simulation.constants import FONT_SIZE_OVERLAY, CANVAS_HEIGHT
+from config.constants import FONT_SIZE_OVERLAY, CANVAS_HEIGHT
 
 _HIT_RADIUS: int = 14   # px — hit-test radius in physical pixel space
 _ANCHOR_CYCLE: tuple[str, ...] = ('top', 'right', 'bottom', 'left')

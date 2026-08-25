@@ -35,11 +35,11 @@ See DOMAIN_GLOSSARY.md for unit type definitions and ramp/inertia values.
 """
 
 import logging
-from simulation.constants import (
+from config.constants import (
     MIN_OUTPUT_FRACTION,
     DEBUG_SIMULATION,
 )
-import simulation.constants as _sim_const
+import config.constants as _sim_const
 from data.fleet import GenerationUnit
 
 # Unit types that are non-dispatchable (renewables — output set externally).

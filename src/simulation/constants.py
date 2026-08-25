@@ -252,9 +252,9 @@ OVERLOAD_DECAY_RATE: float = 2.0
 # ─────────────────────────────────────────────
 # RAMP RATES (% of rated MW per simulated minute)
 # ─────────────────────────────────────────────
-RAMP_COAL_PCT_MIN:    float = 3.0
-RAMP_CCGT_PCT_MIN:    float = 8.0
-RAMP_NUCLEAR_PCT_MIN: float = 1.0
+RAMP_COAL_PCT_MIN:    float = 1.333  # 4 MW/min for a 300MW unit
+RAMP_CCGT_PCT_MIN:    float = 3.75   # 15 MW/min for a 400MW unit
+RAMP_NUCLEAR_PCT_MIN: float = 0.5    # 3.5 MW/min for a 700MW unit
 RAMP_HYDRO_PCT_MIN:   float = 100.0  # Near-instant
 
 # ─────────────────────────────────────────────
@@ -416,7 +416,7 @@ LANDING_FREEZE_S: float = 5.0
 # recoverable by reaction speed alone -- its do-nothing/responsive-player
 # gap is a separate, structural AGC-headroom shortfall in the Phase 1
 # auto-scheduler, not a frequency-timing issue; deferred as a follow-up.
-FREQ_DYNAMICS_SCALE: float = 0.005
+FREQ_DYNAMICS_SCALE: float = 0.01 #0.005
 
 # ─────────────────────────────────────────────
 # DISPLAY / RENDERING
@@ -445,9 +445,9 @@ FONT_PATH_MONO_REGULAR:  str = 'assets/fonts/TerminusTTF-4.49.3.ttf' #'assets/fo
 FONT_ANTIALIAS_THRESHOLD: int = 11      # px — disable antialiasing at or below this size
 FONT_SIZE_LABEL:          int = 17      # bus/station labels on canvas
 LABEL_PAD_PX:             int = 3       # px — gap between a label and the symbol it labels
-FONT_SIZE_OVERLAY:        int = 15      # interconnector labels, debug overlay
+FONT_SIZE_OVERLAY:        int = 16      # interconnector labels, debug overlay
 FONT_SIZE_PANEL:          int = 16      # standard instrument strip text
-FONT_SIZE_HINT:           int = 15      # bottom-of-screen keyboard shortcut hint bar
+FONT_SIZE_HINT:           int = 16      # bottom-of-screen keyboard shortcut hint bar
 FONT_SIZE_PANEL_LARGE:    int = 30      # frequency Hz readout
 FONT_SIZE_CONTEXT:        int = 17      # unit context overlay text
 

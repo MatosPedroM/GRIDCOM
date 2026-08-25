@@ -592,24 +592,28 @@ class Renderer:
         current = state.bus_svc_mvar.get(bus.label, 0.0)
         sim.set_svc_setpoint(bus.label, current + direction * SVC_Q_STEP_MVAR)
 
+    def on_restore_load(self, sim) -> None:
+        """
+        Restore one LOAD_SHED_STEP_FRACTION block of load at the selected
+        bus (floored at 0% shed / 100% load). Mirrors on_shed_load() the
+        same way unit S/X (start/stop) are a matched pair — S increases
+        load, X decreases it. No-op unless a load substation is selected.
+        """
+        bus = self._get_selected_bus()
+        if bus is None:
+            return
+        sim.restore_load(bus.label, LOAD_SHED_STEP_FRACTION)
+
     def on_shed_load(self, sim) -> None:
         """
-        Shed one LOAD_SHED_STEP_FRACTION block of load at the selected bus.
-
-        Cumulative — repeat presses shed progressively more, up to 100%.
-        No-op unless a load substation is selected.
+        Shed one LOAD_SHED_STEP_FRACTION block of load at the selected bus
+        (capped at 100% shed / 0% load). No-op unless a load substation is
+        selected.
         """
         bus = self._get_selected_bus()
         if bus is None:
             return
         sim.shed_load(bus.label, LOAD_SHED_STEP_FRACTION)
-
-    def on_clear_shed(self, sim) -> None:
-        """Restore all shed load at the selected bus. No-op if none is shed."""
-        bus = self._get_selected_bus()
-        if bus is None:
-            return
-        sim.clear_shed(bus.label)
 
     def on_ack_alarm(self, sim) -> None:
         """Acknowledge the first unacknowledged alarm."""
@@ -895,7 +899,7 @@ class Renderer:
         if self._get_selected_line() is not None:
             return '[T/C]  Trip/Close    [TAB]  Cycle    [ESC]  Deselect'
         if self._get_selected_bus() is not None:
-            return ('[H]  Shed Load    [SHIFT+H]  Restore    [,/.]  SVC    '
+            return ('[S/X]  Restore/Shed Load    [,/.]  SVC    '
                      '[TAB]  Cycle    [ESC]  Deselect')
         return ('[TAB]  Select    [P]  Pause    [F12]  Speed    '
                 '[CTRL+A]  AGC    [A]  Ack    [SHIFT+A]  Ack All')

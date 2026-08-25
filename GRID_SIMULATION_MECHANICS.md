@@ -321,9 +321,9 @@ No unit can change output instantaneously. Ramp rates constrain how quickly disp
 
 | Unit Type     | Ramp Rate (% rated/min) | Cold Start Time |
 |---------------|-------------------------|-----------------|
-| Nuclear       | 1%                      | 8 hours         |
-| Coal          | 3%                      | 4 hours         |
-| CCGT          | 8%                      | 20 minutes      |
+| Nuclear       | 0.5%                    | 8 hours         |
+| Coal          | 1.333%                  | 4 hours         |
+| CCGT          | 3.75%                   | 20 minutes      |
 | Open Cycle GT | 15%                     | 10 minutes      |
 | Hydro         | 100%                    | 30 seconds      |
 | Battery       | 100%                    | Instantaneous   |

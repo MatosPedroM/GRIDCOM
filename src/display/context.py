@@ -366,7 +366,8 @@ def draw_bus_context(
 
     font.render_to(surf, (x + pad, _ry(3)), 'Q:', COL_TEXT_PRIMARY, size=sz)
     if state is not None:
-        q_mvar = state.bus_q_injection_mvar.get(bus.label)
+        q_mvar = (state.bus_load_q_mvar.get(bus.label) if is_load_bus
+                  else state.bus_q_injection_mvar.get(bus.label))
         q_str = f'{q_mvar:+.0f} MVAr' if q_mvar is not None else '--'
     else:
         q_str = '--'

@@ -22,6 +22,10 @@ See CLAUDE.md for station and unit naming conventions.
 
 from dataclasses import dataclass
 
+from simulation.constants import (
+    RAMP_COAL_PCT_MIN, RAMP_CCGT_PCT_MIN, RAMP_NUCLEAR_PCT_MIN, RAMP_HYDRO_PCT_MIN,
+)
+
 
 @dataclass(frozen=True)
 class GenerationUnit:
@@ -85,7 +89,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='DUND-1', station_label='DUND', bus_label='DUND',
         unit_type='HYDRO', rated_mw=65.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=28.0, q_min_mvar=-15.0,
         can_pump=False, active_from_shift=1,
         description='Dunmore Hydro Lower Unit 1 — 65MW downstream, 220kV.',
@@ -94,7 +98,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='DUND-2', station_label='DUND', bus_label='DUND',
         unit_type='HYDRO', rated_mw=65.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=28.0, q_min_mvar=-15.0,
         can_pump=False, active_from_shift=1,
         description='Dunmore Hydro Lower Unit 2 — 65MW downstream, 220kV.',
@@ -106,7 +110,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='RVSD-1', station_label='RVSD', bus_label='MDBY',
         unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-        ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+        ramp_pct_per_min=RAMP_COAL_PCT_MIN, inertia_h=5.0, cold_start_min=240.0,
         q_max_mvar=150.0, q_min_mvar=-80.0,
         can_pump=False, active_from_shift=2,
         description='Riverside Coal Unit 1 — 300MW, 400kV. Slow ramp.',
@@ -115,7 +119,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='RVSD-2', station_label='RVSD', bus_label='MDBY',
         unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-        ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+        ramp_pct_per_min=RAMP_COAL_PCT_MIN, inertia_h=5.0, cold_start_min=240.0,
         q_max_mvar=150.0, q_min_mvar=-80.0,
         can_pump=False, active_from_shift=2,
         description='Riverside Coal Unit 2 — 300MW, 400kV. OOS Shift 2 (relay maintenance).',
@@ -124,7 +128,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='RVSD-3', station_label='RVSD', bus_label='MDBY',
         unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-        ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+        ramp_pct_per_min=RAMP_COAL_PCT_MIN, inertia_h=5.0, cold_start_min=240.0,
         q_max_mvar=150.0, q_min_mvar=-80.0,
         can_pump=False, active_from_shift=2,
         description='Riverside Coal Unit 3 — 300MW, 400kV. Slow ramp.',
@@ -134,7 +138,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='DUNH-1', station_label='DUNH', bus_label='MDBY',
         unit_type='HYDRO_PUMP', rated_mw=200.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=90.0, q_min_mvar=-50.0,
         can_pump=True, active_from_shift=3,
         description='Dunmore Hydro Upper Unit 1 — 200MW pumped storage, 400kV.',
@@ -143,7 +147,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='DUNH-2', station_label='DUNH', bus_label='MDBY',
         unit_type='HYDRO_PUMP', rated_mw=200.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=90.0, q_min_mvar=-50.0,
         can_pump=True, active_from_shift=3,
         description='Dunmore Hydro Upper Unit 2 — 200MW pumped storage, 400kV.',
@@ -153,7 +157,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='HART-1', station_label='HART', bus_label='STHW',
         unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
-        ramp_pct_per_min=1.0, inertia_h=6.0, cold_start_min=480.0,
+        ramp_pct_per_min=RAMP_NUCLEAR_PCT_MIN, inertia_h=6.0, cold_start_min=480.0,
         q_max_mvar=300.0, q_min_mvar=-150.0,
         can_pump=False, active_from_shift=3,
         description='Hartwell Nuclear Unit 1 — 700MW, 400kV. Baseload, always online.',
@@ -162,7 +166,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='HART-2', station_label='HART', bus_label='STHW',
         unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
-        ramp_pct_per_min=1.0, inertia_h=6.0, cold_start_min=480.0,
+        ramp_pct_per_min=RAMP_NUCLEAR_PCT_MIN, inertia_h=6.0, cold_start_min=480.0,
         q_max_mvar=300.0, q_min_mvar=-150.0,
         can_pump=False, active_from_shift=3,
         description='Hartwell Nuclear Unit 2 — 700MW, 400kV. Baseload, always online.',
@@ -172,7 +176,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='ASHG-1', station_label='ASHG', bus_label='ASHF',
         unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
-        ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
+        ramp_pct_per_min=RAMP_CCGT_PCT_MIN, inertia_h=4.0, cold_start_min=60.0,
         q_max_mvar=180.0, q_min_mvar=-100.0,
         can_pump=False, active_from_shift=3,
         description='Ashford CCGT Unit 1 — 400MW, 220kV. Medium ramp.',
@@ -181,7 +185,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='ASHG-2', station_label='ASHG', bus_label='ASHF',
         unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
-        ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
+        ramp_pct_per_min=RAMP_CCGT_PCT_MIN, inertia_h=4.0, cold_start_min=60.0,
         q_max_mvar=180.0, q_min_mvar=-100.0,
         can_pump=False, active_from_shift=3,
         description='Ashford CCGT Unit 2 — 400MW, 220kV. Medium ramp.',
@@ -191,7 +195,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='WRNG-1', station_label='WRNG', bus_label='WRNT',
         unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
-        ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
+        ramp_pct_per_min=RAMP_CCGT_PCT_MIN, inertia_h=4.0, cold_start_min=60.0,
         q_max_mvar=180.0, q_min_mvar=-100.0,
         can_pump=False, active_from_shift=3,
         description='Wrentham CCGT Unit 1 — 400MW, 220kV. Medium ramp.',
@@ -200,7 +204,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='WRNG-2', station_label='WRNG', bus_label='WRNT',
         unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
-        ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
+        ramp_pct_per_min=RAMP_CCGT_PCT_MIN, inertia_h=4.0, cold_start_min=60.0,
         q_max_mvar=180.0, q_min_mvar=-100.0,
         can_pump=False, active_from_shift=3,
         description='Wrentham CCGT Unit 2 — 400MW, 220kV. Medium ramp.',
@@ -210,7 +214,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='WNBR-1', station_label='WNBR', bus_label='BRCK',
         unit_type='WIND', rated_mw=300.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=0.0, cold_start_min=0.0,
         q_max_mvar=0.0, q_min_mvar=0.0,
         can_pump=False, active_from_shift=4,
         description='Brackley Wind Farm — 300MW aggregated, 150kV. Uncontrollable.',
@@ -220,7 +224,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BR01-1', station_label='BR01', bus_label='BR01',
         unit_type='HYDRO_ROR', rated_mw=30.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=12.0, q_min_mvar=-6.0,
         can_pump=False, active_from_shift=4,
         description='River Brent Station 1 Unit 1 — 30MW run-of-river, 150kV.',
@@ -229,7 +233,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BR01-2', station_label='BR01', bus_label='BR01',
         unit_type='HYDRO_ROR', rated_mw=30.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=12.0, q_min_mvar=-6.0,
         can_pump=False, active_from_shift=4,
         description='River Brent Station 1 Unit 2 — 30MW run-of-river, 150kV.',
@@ -238,7 +242,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BR02-1', station_label='BR02', bus_label='BR02',
         unit_type='HYDRO_ROR', rated_mw=25.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=10.0, q_min_mvar=-5.0,
         can_pump=False, active_from_shift=4,
         description='River Brent Station 2 Unit 1 — 25MW run-of-river, 150kV.',
@@ -247,7 +251,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BR02-2', station_label='BR02', bus_label='BR02',
         unit_type='HYDRO_ROR', rated_mw=25.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=10.0, q_min_mvar=-5.0,
         can_pump=False, active_from_shift=4,
         description='River Brent Station 2 Unit 2 — 25MW run-of-river, 150kV.',
@@ -256,7 +260,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BR03-1', station_label='BR03', bus_label='BR03',
         unit_type='HYDRO_ROR', rated_mw=20.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=8.0, q_min_mvar=-4.0,
         can_pump=False, active_from_shift=4,
         description='River Brent Station 3 Unit 1 — 20MW run-of-river, 150kV.',
@@ -265,7 +269,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BR03-2', station_label='BR03', bus_label='BR03',
         unit_type='HYDRO_ROR', rated_mw=20.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=8.0, q_min_mvar=-4.0,
         can_pump=False, active_from_shift=4,
         description='River Brent Station 3 Unit 2 — 20MW run-of-river, 150kV.',
@@ -275,7 +279,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='KELM-1', station_label='KELM', bus_label='WEST',
         unit_type='HYDRO_PUMP', rated_mw=250.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=120.0, q_min_mvar=-60.0,
         can_pump=True, active_from_shift=5,
         description='Kelmore Hydro Upper Unit 1 — 250MW pumped storage, 400kV.',
@@ -284,7 +288,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='KELM-2', station_label='KELM', bus_label='WEST',
         unit_type='HYDRO_PUMP', rated_mw=250.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=120.0, q_min_mvar=-60.0,
         can_pump=True, active_from_shift=5,
         description='Kelmore Hydro Upper Unit 2 — 250MW pumped storage, 400kV.',
@@ -294,7 +298,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='KELD-1', station_label='KELD', bus_label='KELD',
         unit_type='HYDRO', rated_mw=80.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=35.0, q_min_mvar=-20.0,
         can_pump=False, active_from_shift=5,
         description='Kelmore Hydro Lower Unit 1 — 80MW downstream, 220kV.',
@@ -303,7 +307,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='KELD-2', station_label='KELD', bus_label='KELD',
         unit_type='HYDRO', rated_mw=80.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=35.0, q_min_mvar=-20.0,
         can_pump=False, active_from_shift=5,
         description='Kelmore Hydro Lower Unit 2 — 80MW downstream, 220kV.',
@@ -313,7 +317,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='AR01-1', station_label='AR01', bus_label='AR01',
         unit_type='HYDRO_ROR', rated_mw=40.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=15.0, q_min_mvar=-8.0,
         can_pump=False, active_from_shift=5,
         description='River Arden Station 1 Unit 1 — 40MW run-of-river, 220kV.',
@@ -322,7 +326,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='AR01-2', station_label='AR01', bus_label='AR01',
         unit_type='HYDRO_ROR', rated_mw=40.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=15.0, q_min_mvar=-8.0,
         can_pump=False, active_from_shift=5,
         description='River Arden Station 1 Unit 2 — 40MW run-of-river, 220kV.',
@@ -331,7 +335,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='AR02-1', station_label='AR02', bus_label='AR02',
         unit_type='HYDRO_ROR', rated_mw=35.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=14.0, q_min_mvar=-7.0,
         can_pump=False, active_from_shift=5,
         description='River Arden Station 2 Unit 1 — 35MW run-of-river, 220kV.',
@@ -340,7 +344,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='AR02-2', station_label='AR02', bus_label='AR02',
         unit_type='HYDRO_ROR', rated_mw=35.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=14.0, q_min_mvar=-7.0,
         can_pump=False, active_from_shift=5,
         description='River Arden Station 2 Unit 2 — 35MW run-of-river, 220kV.',
@@ -349,7 +353,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='AR03-1', station_label='AR03', bus_label='AR03',
         unit_type='HYDRO_ROR', rated_mw=60.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=24.0, q_min_mvar=-12.0,
         can_pump=False, active_from_shift=5,
         description='River Arden Station 3 — 60MW run-of-river, 220kV.',
@@ -358,7 +362,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='AR04-1', station_label='AR04', bus_label='AR04',
         unit_type='HYDRO_ROR', rated_mw=50.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=20.0, q_min_mvar=-10.0,
         can_pump=False, active_from_shift=5,
         description='River Arden Station 4 — 50MW run-of-river, 220kV.',
@@ -368,7 +372,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='THNF-1', station_label='THNF', bus_label='NRTH',
         unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-        ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+        ramp_pct_per_min=RAMP_COAL_PCT_MIN, inertia_h=5.0, cold_start_min=240.0,
         q_max_mvar=150.0, q_min_mvar=-80.0,
         can_pump=False, active_from_shift=6,
         description='Thornfield Coal Unit 1 — 300MW, 400kV.',
@@ -377,7 +381,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='THNF-2', station_label='THNF', bus_label='NRTH',
         unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-        ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+        ramp_pct_per_min=RAMP_COAL_PCT_MIN, inertia_h=5.0, cold_start_min=240.0,
         q_max_mvar=150.0, q_min_mvar=-80.0,
         can_pump=False, active_from_shift=6,
         description='Thornfield Coal Unit 2 — 300MW, 400kV.',
@@ -386,7 +390,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='THNF-3', station_label='THNF', bus_label='NRTH',
         unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-        ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+        ramp_pct_per_min=RAMP_COAL_PCT_MIN, inertia_h=5.0, cold_start_min=240.0,
         q_max_mvar=150.0, q_min_mvar=-80.0,
         can_pump=False, active_from_shift=6,
         description='Thornfield Coal Unit 3 — 300MW, 400kV.',
@@ -396,7 +400,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BARR-1', station_label='BARR', bus_label='NRTH',
         unit_type='HYDRO_PUMP', rated_mw=250.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=120.0, q_min_mvar=-60.0,
         can_pump=True, active_from_shift=6,
         description='Barrow Hydro Upper Unit 1 — 250MW pumped storage, 400kV.',
@@ -405,7 +409,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BARR-2', station_label='BARR', bus_label='NRTH',
         unit_type='HYDRO_PUMP', rated_mw=250.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=120.0, q_min_mvar=-60.0,
         can_pump=True, active_from_shift=6,
         description='Barrow Hydro Upper Unit 2 — 250MW pumped storage, 400kV.',
@@ -415,7 +419,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BARD-1', station_label='BARD', bus_label='BARD',
         unit_type='HYDRO', rated_mw=80.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=35.0, q_min_mvar=-20.0,
         can_pump=False, active_from_shift=6,
         description='Barrow Hydro Lower Unit 1 — 80MW downstream, 220kV.',
@@ -424,7 +428,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='BARD-2', station_label='BARD', bus_label='BARD',
         unit_type='HYDRO', rated_mw=80.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=35.0, q_min_mvar=-20.0,
         can_pump=False, active_from_shift=6,
         description='Barrow Hydro Lower Unit 2 — 80MW downstream, 220kV.',
@@ -435,7 +439,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='WNCN-1', station_label='WNCN', bus_label='WNCN',
         unit_type='WIND', rated_mw=250.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=0.0, cold_start_min=0.0,
         q_max_mvar=0.0, q_min_mvar=0.0,
         can_pump=False, active_from_shift=6,
         description='Cairn Wind Farm Block A — 250MW aggregated, 220kV. Uncontrollable.',
@@ -444,7 +448,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='WNCN-2', station_label='WNCN', bus_label='WNCN',
         unit_type='WIND', rated_mw=250.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=0.0, cold_start_min=0.0,
         q_max_mvar=0.0, q_min_mvar=0.0,
         can_pump=False, active_from_shift=6,
         description='Cairn Wind Farm Block B — 250MW aggregated, 220kV. Uncontrollable.',
@@ -454,7 +458,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='SLST-1', station_label='SLST', bus_label='SLST',
         unit_type='SOLAR', rated_mw=600.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=0.0, cold_start_min=0.0,
         q_max_mvar=0.0, q_min_mvar=0.0,
         can_pump=False, active_from_shift=7,
         description='Stanton Solar Park — 600MW aggregated, 220kV. Zero output at night.',
@@ -464,7 +468,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='SLFD-1', station_label='SLFD', bus_label='FLDN',
         unit_type='SOLAR', rated_mw=400.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=0.0, cold_start_min=0.0,
         q_max_mvar=0.0, q_min_mvar=0.0,
         can_pump=False, active_from_shift=7,
         description='Feldon Solar Park — 400MW aggregated, 150kV. Zero output at night.',
@@ -474,7 +478,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='CO01-1', station_label='CO01', bus_label='CO01',
         unit_type='HYDRO_ROR', rated_mw=28.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=11.0, q_min_mvar=-6.0,
         can_pump=False, active_from_shift=7,
         description='River Coln Station 1 Unit 1 — 28MW run-of-river, 150kV.',
@@ -483,7 +487,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='CO01-2', station_label='CO01', bus_label='CO01',
         unit_type='HYDRO_ROR', rated_mw=28.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=11.0, q_min_mvar=-6.0,
         can_pump=False, active_from_shift=7,
         description='River Coln Station 1 Unit 2 — 28MW run-of-river, 150kV.',
@@ -492,7 +496,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='CO02-1', station_label='CO02', bus_label='CO02',
         unit_type='HYDRO_ROR', rated_mw=23.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=9.0, q_min_mvar=-5.0,
         can_pump=False, active_from_shift=7,
         description='River Coln Station 2 Unit 1 — 23MW run-of-river, 150kV.',
@@ -501,7 +505,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='CO02-2', station_label='CO02', bus_label='CO02',
         unit_type='HYDRO_ROR', rated_mw=23.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=9.0, q_min_mvar=-5.0,
         can_pump=False, active_from_shift=7,
         description='River Coln Station 2 Unit 2 — 23MW run-of-river, 150kV.',
@@ -510,7 +514,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='CO03-1', station_label='CO03', bus_label='CO03',
         unit_type='HYDRO_ROR', rated_mw=18.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=7.0, q_min_mvar=-4.0,
         can_pump=False, active_from_shift=7,
         description='River Coln Station 3 Unit 1 — 18MW run-of-river, 150kV.',
@@ -519,7 +523,7 @@ UNITS: list[GenerationUnit] = [
     GenerationUnit(
         label='CO03-2', station_label='CO03', bus_label='CO03',
         unit_type='HYDRO_ROR', rated_mw=18.0, min_mw=0.0,
-        ramp_pct_per_min=100.0, inertia_h=3.0, cold_start_min=5.0,
+        ramp_pct_per_min=RAMP_HYDRO_PCT_MIN, inertia_h=3.0, cold_start_min=5.0,
         q_max_mvar=7.0, q_min_mvar=-4.0,
         can_pump=False, active_from_shift=7,
         description='River Coln Station 3 Unit 2 — 18MW run-of-river, 150kV.',

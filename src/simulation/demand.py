@@ -209,6 +209,25 @@ class DemandModel:
         self._shed_fractions[bus_label] = 0.0
         return True
 
+    def restore_load(self, bus_label: BusLabel, fraction: float) -> bool:
+        """
+        Restore a fraction of previously shed load at a bus — the
+        incremental counterpart to shed_load(). Subtracts from any
+        existing shed at that bus, floored at 0.0.
+
+        Returns:
+            True if bus_label is a known load bus.
+            False otherwise.
+        """
+        if bus_label not in self._shed_fractions:
+            return False
+        new_shed = max(0.0, self._shed_fractions[bus_label] - float(fraction))
+        self._shed_fractions[bus_label] = new_shed
+        if DEBUG_SIMULATION:
+            logging.getLogger('sim').debug(f'[DEMAND] Load restored at {bus_label}: '
+                                           f'{new_shed * 100:.0f}% still shed')
+        return True
+
     def get_shed_fraction(self, bus_label: BusLabel) -> float:
         """Return current shed fraction at a bus (0.0–1.0)."""
         return self._shed_fractions.get(bus_label, 0.0)

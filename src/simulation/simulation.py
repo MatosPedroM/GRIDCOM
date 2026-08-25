@@ -176,6 +176,7 @@ class SimulationState:
     bus_svc_mvar:            dict   # {bus_label: float} manual SVC setpoint, buses hosting one
     bus_svc_limits:          dict   # {bus_label: (q_min_mvar, q_max_mvar)}
     bus_q_injection_mvar:    dict   # {bus_label: float} total device Q injection
+    bus_load_q_mvar:         dict   # {bus_label: float} load's own reactive demand (negative = consuming)
 
     # Network — lines
     line_flows_mw:           dict
@@ -674,7 +675,7 @@ class GridSimulation:
             self._loadflow.rebuild(in_service)
             self._voltage.rebuild(in_service)
             lf_result = self._loadflow.solve(p_injections)
-            vr_result = self._voltage.solve(q_injections, pv_buses=pv_buses)
+            vr_result = self._voltage.solve(q_injections)
 
         # 11. Island detection and isolated unit protection
         self._trip_isolated_units(in_service)
@@ -1072,6 +1073,27 @@ class GridSimulation:
                 message=f'Load restored at {bus_label}',
                 element_label=bus_label,
                 detail=f'Operator restored shed load at substation {bus_label}.',
+            )
+        return result
+
+    def restore_load(self, bus_label: str, fraction: float) -> bool:
+        """
+        Restore a fraction of previously shed load at a bus — the
+        incremental counterpart to shed_load(). Unlike clear_shed()
+        (restores everything at once, used by the LOAD_RESTORE scripted
+        event), this only steps the shed fraction down by `fraction`,
+        floored at 0.0. Deliberately does NOT decrement _load_shed_events:
+        the shed still happened and still counts against the shift's
+        security score.
+        """
+        result = self._demand.restore_load(bus_label, fraction)
+        if result:
+            self._raise_alarm(
+                priority='INFO',
+                message=f'Load restored at {bus_label}: {fraction*100:.0f}%',
+                element_label=bus_label,
+                detail=(f'Operator restored {fraction*100:.0f}% of load at '
+                        f'substation {bus_label}.'),
             )
         return result
 
@@ -2094,6 +2116,7 @@ class GridSimulation:
             bus_svc_mvar={bus: q for bus, (q, _qmin, _qmax) in svc_state.items()},
             bus_svc_limits={bus: (qmin, qmax) for bus, (_q, qmin, qmax) in svc_state.items()},
             bus_q_injection_mvar=dict(device_q_by_bus),
+            bus_load_q_mvar=self._demand.q_load_injections(),
 
             line_flows_mw=dict(lf_result.line_flows_mw),
             line_loading_pct=dict(lf_result.line_loading_pct),

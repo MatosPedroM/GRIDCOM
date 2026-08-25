@@ -10,6 +10,88 @@
 
 ## Current Status
 
+**COMPLETE** — Session 111: fixed an oscillation bug in Session 110's single-key S toggle, reported
+by the developer after real use — from a fully-shed bus (100%), pressing S restored to 75% (correct,
+still had "no load" -> restore direction), but pressing S again at 75% re-shed back to 100% instead
+of continuing to restore, since the toggle's rule was "shed unless fully shed" rather than tracking
+a direction. Developer's fix: drop the toggle entirely, split into two dedicated keys mirroring the
+existing unit S/X convention exactly — S always increases (start unit / restore load), X always
+decreases (stop unit / shed load), in both contexts, for both selection types.
+- `Renderer.on_toggle_shed()` replaced by two unconditional methods, `on_restore_load()` (always
+  calls `sim.restore_load()`, floored at 0% shed by `DemandModel.restore_load()` itself — Session
+  110) and `on_shed_load()` (always calls `sim.shed_load()`, capped at 100% by the existing
+  `shed_load()`) — no more `get_shed_fraction()` branching/toggle logic.
+- `main.py`'s `K_s`/`K_x` branches (both `PLAYING` and `DESIGNER_TEST` states) now each check
+  `renderer._get_selected_bus() is not None` and dispatch to `on_restore_load()`/`on_shed_load()`
+  respectively, falling back to `on_start_unit()`/`on_stop_unit()` for a unit selection — same
+  selection-type-safe pattern as before, just two symmetric branches instead of one asymmetric one.
+- Updated the bus-selected shortcut hint bar text (`[S/X]  Restore/Shed Load`) and CLAUDE.md's
+  keybinding table to describe the new S=increase/X=decrease pairing explicitly.
+- Edited: `src/display/renderer.py` (`on_toggle_shed()` -> `on_restore_load()`/`on_shed_load()`,
+  hint bar text), `src/main.py` (both KEYDOWN blocks' `K_s`/`K_x` branches), `CLAUDE.md` (keybinding
+  table).
+- **Verified**: bound-method smoke test reproducing the exact reported scenario — shed to 100% via
+  4x X presses, then 5x S presses — confirmed steady 100%->75%->50%->25%->0%->0% with no
+  oscillation, floor holds correctly on the 5th press past full restore. `python -m pytest tests/`
+  — 29/29 pass. `py_compile` on both edited Python files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window) — fix verified via the same bound-method smoke-test approach that caught this bug's
+  absence of coverage last session (the earlier test only checked the toggle's overall 0->100->0
+  round trip, not a same-direction repeat press mid-range, which is what actually exposed the bug).
+
+**COMPLETE** — Session 110: rebound load shed/restore from H/Shift+H to a single dual-purpose S key
+per developer directive, and made restore incremental (matching shed) instead of all-at-once.
+- **New incremental restore**: `DemandModel.restore_load(bus_label, fraction)` (demand.py) mirrors
+  `shed_load()`'s shape but subtracts and floors at 0.0 instead of adding and capping at 1.0.
+  `GridSimulation.restore_load()` (simulation.py) wraps it the same way `shed_load()`/`clear_shed()`
+  are already wrapped (INFO alarm, no `_load_shed_events` decrement — restoring doesn't undo the
+  security-score hit). `clear_shed()` itself is untouched — confirmed its only other caller is the
+  `LOAD_RESTORE` scripted-event action (simulation.py), a deliberately separate "restore everything
+  at once" tool.
+- **Single S key**: `Renderer.on_shed_load()`/`on_clear_shed()` replaced by one
+  `on_toggle_shed(sim)`: sheds another `LOAD_SHED_STEP_FRACTION` (25%) while the selected bus has
+  any load remaining (`get_shed_fraction() < 1.0`), switches to restoring the same step size once
+  fully shed (`== 1.0`) — a state-based toggle, not a remembered direction, so pressing S again from
+  a partial shed (e.g. 75%) sheds further rather than continuing to restore. `main.py`'s existing `S`
+  branch (both the `PLAYING` state and `DESIGNER_TEST`, the latter fixed for H/Shift+H just last
+  session) now checks `renderer._get_selected_bus() is not None` first and dispatches to
+  `on_toggle_shed()`, falling back to the original `on_start_unit()` when a unit (not a bus) is
+  selected — safe because a single `_selected_label` backs both `_get_selected_unit()`/
+  `_get_selected_bus()`, so a selection is never both at once. `X` (stop unit) is unaffected.
+- Updated the bus-selected shortcut hint bar text (`_build_shortcut_hint()`) and CLAUDE.md's
+  keybinding table to reflect the new single-key S binding; removed the old H/Shift+H rows entirely.
+- Edited: `src/simulation/demand.py` (new `restore_load()`), `src/simulation/simulation.py` (new
+  `restore_load()` wrapper), `src/display/renderer.py` (`on_shed_load`/`on_clear_shed` ->
+  `on_toggle_shed`, hint bar text), `src/main.py` (both KEYDOWN blocks' `K_s` branch, `K_h` branch
+  removed from both), `CLAUDE.md` (keybinding table).
+- **Verified**: standalone `DemandModel` smoke test — 4x shed (25% each) reaches exactly 1.0, 4x
+  restore reaches exactly 0.0, confirmed the full 0%->25%->50%->75%->100%->75%->50%->25%->0% cycle.
+  Bound-method test of `Renderer.on_toggle_shed()` against a fake sim confirmed the state-based
+  (not direction-remembered) toggle: pressing again from 75% sheds to 100% rather than continuing to
+  restore. `python -m pytest tests/` — 29/29 pass (no existing test asserted the old all-at-once
+  restore behavior, so nothing needed updating). `py_compile` on all four edited Python files.
+- **Not done this session**: no live fullscreen manual playtest (environment can't launch a real
+  window) — fix verified via standalone/bound-method smoke tests exercising the exact same
+  `DemandModel`/`GridSimulation`/`Renderer` methods the real S keypress path calls.
+
+**COMPLETE** — Session 109: fixed a real bug reported by the developer — selecting a load bus and
+pressing H/Shift+H in Grid Designer's Test Grid mode (`GameState.DESIGNER_TEST`) did nothing. Root
+cause: `main.py`'s `DESIGNER_TEST` KEYDOWN handler has its own separate S/X/M/T/C/A/etc. key
+bindings (mirroring, not sharing, the main `PLAYING` state's block) and simply never included H/
+Shift+H — `Renderer.on_shed_load()`/`on_clear_shed()` already existed and work identically in both
+game states (verified: `_designer_test_sim` is a real `GridSimulation`, same `shed_load()`/
+`clear_shed()`), the wiring was just missing on the input side. The shortcut hint bar (Session 97)
+already correctly advertised `[H] Shed Load [SHIFT+H] Restore` in this mode since it shares
+`Renderer.tick()`/`_build_shortcut_hint()` with `PLAYING` — only `main.py`'s per-state KEYDOWN
+handling was out of sync. Fixed by adding the same H/Shift+H branch already used in the `PLAYING`
+state's handler, in the same position relative to T/C (trip/close line).
+- Edited: `src/main.py` (`DESIGNER_TEST` KEYDOWN handler, new H/Shift+H branch).
+- **Verified**: `python -m pytest tests/` — 29/29 pass. `py_compile` on the edited file.
+- **Not done this session**: no live fullscreen manual playtest reproducing the original bug report
+  (environment can't launch a real window) — fix verified by code-path tracing and confirming the
+  exact same `Renderer` methods/simulation calls used successfully by the `PLAYING` state are now
+  reachable from `DESIGNER_TEST` too.
+
 **COMPLETE** — Session 108: added a green line to the top edge of the topbar (Power Balance panel),
 mirroring the bottom border already there (Session 106) — the topbar is now framed on both edges,
 not just the bottom. One-line addition in `draw_topbar_panel()`: `pygame.draw.line(surf,

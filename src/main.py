@@ -711,6 +711,7 @@ def main() -> None:
                                 _make_designer_test(display_surf, _grid_test_pending_name,
                                                     start_hour, duration_hours)
                             sim_accum             = 0.0
+                            speed                 = SPEED_NORMAL
                             _designer_test_origin = _time_window_origin
                             game_state            = GameState.DESIGNER_TEST
                             _grid_test_error       = ''
@@ -832,6 +833,7 @@ def main() -> None:
                                 _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
                                     _make_shift_test(display_surf, shift_name)
                                 sim_accum             = 0.0
+                                speed                 = SPEED_NORMAL
                                 _designer_test_origin = GameState.SHIFT_SELECT_JSON
                                 game_state            = GameState.DESIGNER_TEST
                             except Exception:
@@ -1002,13 +1004,25 @@ def main() -> None:
                     elif event.key == pygame.K_r and _const.EDITOR_MODE:
                         renderer.editor_key_r()
 
+                    # S/X are dual-purpose based on current selection:
+                    # start/stop the selected unit, or restore/shed load in
+                    # 25% steps at the selected substation — S always
+                    # increases (start unit / restore load), X always
+                    # decreases (stop unit / shed load), mirroring the
+                    # unit binding exactly rather than a single toggle key.
                     elif (event.key == pygame.K_s and not _const.EDITOR_MODE
                           and not renderer._input_active):
-                        renderer.on_start_unit(sim)
+                        if renderer._get_selected_bus() is not None:
+                            renderer.on_restore_load(sim)
+                        else:
+                            renderer.on_start_unit(sim)
 
                     elif (event.key == pygame.K_x and not _const.EDITOR_MODE
                           and not renderer._input_active):
-                        renderer.on_stop_unit(sim)
+                        if renderer._get_selected_bus() is not None:
+                            renderer.on_shed_load(sim)
+                        else:
+                            renderer.on_stop_unit(sim)
 
                     elif (event.key == pygame.K_m and not _const.EDITOR_MODE
                           and not renderer._input_active):
@@ -1021,15 +1035,6 @@ def main() -> None:
                     elif (event.key == pygame.K_c and not _const.EDITOR_MODE
                           and not renderer._input_active):
                         renderer.on_close_line(sim)
-
-                    # Emergency load shedding on the selected substation:
-                    # H sheds one block (cumulative), Shift+H restores all.
-                    elif (event.key == pygame.K_h and not _const.EDITOR_MODE
-                          and not renderer._input_active):
-                        if shift_held:
-                            renderer.on_clear_shed(sim)
-                        else:
-                            renderer.on_shed_load(sim)
 
                     elif ctrl and not shift_held and event.key == pygame.K_a:
                         _const.AGC_ENABLED = not _const.AGC_ENABLED
@@ -1368,11 +1373,12 @@ def main() -> None:
 
             if _shift_builder.on_test_request is None:
                 def _on_shift_test_request(shift_name: str) -> None:
-                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin
+                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin, speed
                     try:
                         _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
                             _make_shift_test(display_surf, shift_name)
                         sim_accum             = 0.0
+                        speed                 = SPEED_NORMAL
                         _designer_test_origin = GameState.SHIFT_BUILDER
                         game_state             = GameState.DESIGNER_TEST
                     except Exception as e:
@@ -1383,11 +1389,12 @@ def main() -> None:
 
             if _shift_builder.on_campaign_test_request is None:
                 def _on_campaign_test_request(shift_number: int) -> None:
-                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin
+                    nonlocal game_state, _designer_test_sim, _designer_test_grid, _designer_test_renderer, sim_accum, _designer_test_origin, speed
                     try:
                         _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
                             _make_campaign_shift_test(display_surf, shift_number)
                         sim_accum             = 0.0
+                        speed                 = SPEED_NORMAL
                         _designer_test_origin = GameState.SHIFT_BUILDER
                         game_state             = GameState.DESIGNER_TEST
                     except Exception as e:
@@ -1480,9 +1487,15 @@ def main() -> None:
                         _const.AGC_ENABLED = not _const.AGC_ENABLED
 
                     elif (event.key == pygame.K_s and not _rend._input_active):
-                        _rend.on_start_unit(_sim)
+                        if _rend._get_selected_bus() is not None:
+                            _rend.on_restore_load(_sim)
+                        else:
+                            _rend.on_start_unit(_sim)
                     elif (event.key == pygame.K_x and not _rend._input_active):
-                        _rend.on_stop_unit(_sim)
+                        if _rend._get_selected_bus() is not None:
+                            _rend.on_shed_load(_sim)
+                        else:
+                            _rend.on_stop_unit(_sim)
                     elif (event.key == pygame.K_m and not _rend._input_active):
                         _rend.on_toggle_auto_mode(_sim)
                     elif (event.key == pygame.K_t and not _rend._input_active):

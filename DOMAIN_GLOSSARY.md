@@ -121,7 +121,7 @@ at their rated ramp rate.
 **Ramp Rate (%/min)**
 The maximum rate at which a unit can change its output, expressed as a percentage
 of rated MW per simulated minute. In GRIDCOM: enforced in UnitModel.update().
-Hydro: 100%/min (near-instant). Coal: 3%/min (slow). Nuclear: 1%/min (very slow).
+Hydro: 100%/min (near-instant). Coal: 1.333%/min (slow). Nuclear: 0.5%/min (very slow).
 
 **Spinning Reserve (MW)**
 Headroom available from online, synchronised units — the difference between their
@@ -146,17 +146,17 @@ ONLINE. During STARTING: contributes no power, no inertia, no AGC response.
 ## Generation Unit Types
 
 **COAL**
-Thermal unit burning coal. Slow ramp (3%/min). High inertia (H=5.0s).
+Thermal unit burning coal. Slow ramp (1.333%/min). High inertia (H=5.0s).
 High carbon cost. In GRIDCOM stations: RVSD (Riverside, 3×300MW, COALCOM easter egg),
 THNF (Thornfield, 3×300MW). Both at 400kV.
 
 **CCGT (Combined Cycle Gas Turbine)**
-Gas-fired unit. Medium ramp (8%/min). Medium inertia (H=4.0s).
+Gas-fired unit. Medium ramp (3.75%/min). Medium inertia (H=4.0s).
 Gas price exposed. In GRIDCOM stations: ASHG (Ashford, 2×400MW),
 WRNG (Wrentham, 2×400MW). Both at 220kV.
 
 **NUCLEAR**
-Baseload unit. Very slow ramp (1%/min). High inertia (H=6.0s).
+Baseload unit. Very slow ramp (0.5%/min). High inertia (H=6.0s).
 Zero carbon. Always online (cannot be shut down by player in campaign).
 In GRIDCOM: HART (Hartwell, 2×700MW, 400kV).
 

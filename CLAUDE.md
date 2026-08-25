@@ -313,10 +313,10 @@ Tab         Cycle element selection
 Escape      Cancel input -> disarm adjust -> deselect -> confirm abandon shift
 A           Acknowledge top alarm
 Shift+A     Acknowledge all alarms
-S / X       Start / stop selected unit
+S / X       Start / stop selected unit, OR restore / shed 25% load at selected
+            substation (S/X are dual-purpose: act on whichever is selected;
+            S always increases, X always decreases, in both contexts)
 T / C       Trip / close selected line
-H           Shed one load block at selected substation (cumulative)
-Shift+H     Restore all shed load at selected substation
 , / .       Adjust selected bus's manual SVC setpoint
 L           Toggle voltage-tier colour view (lines/substations)
 M           Return selected unit to AUTO dispatch mode (Phase 1 shifts only)

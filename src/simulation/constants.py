@@ -459,6 +459,19 @@ TEXT_SCREEN_LEFT_MARGIN:  int   = 120  # px — left margin at native 1920×1080
 TEXT_SCREEN_TOP_MARGIN:   int   = 80   # px — top margin at native 1920×1080
 TEXT_SCREEN_ROW_H:        int   = 22   # px — row height at native 1920×1080
 
+# ─────────────────────────────────────────────
+# REPORT SCREEN (F2 — full-screen bus/line report, does not pause sim)
+# ─────────────────────────────────────────────
+REPORT_FONT_SIZE:        int   = 16   # px — row/header text
+REPORT_TITLE_FONT_SIZE:  int   = 17   # px — title bar text (matches TEXT_SCREEN_FONT_SIZE)
+REPORT_TITLE_Y:          int   = 30   # px — title bar baseline, native 1920x1080
+REPORT_TABLE_TOP_MARGIN: int   = 100  # px — top margin where both tables start
+REPORT_HEADER_H:         int   = 24   # px — column header row height
+REPORT_ROW_H:            int   = 22   # px — per-element data row height
+REPORT_BOTTOM_MARGIN:    int   = 60   # px — reserved for footer hint line
+REPORT_COL_PAD:          int   = 16   # px — left/right padding within each half
+REPORT_AVG_WINDOW_MIN:   float = 5.0  # simulated minutes averaged for the P/Q/flow trend
+
 SPLASH_DURATION_S:  float = 4.0   # seconds before splash auto-advances to main menu
 MENU_FONT_SIZE:     int   = 20    # px — menu item font size
 MENU_ROW_H:         int   = 30    # px — row height for menu items

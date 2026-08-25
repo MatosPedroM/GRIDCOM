@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 import os
 import time
 from collections import deque
@@ -45,6 +46,9 @@ from display.palette import (
     COL_FPS_TEXT, COL_150KV,
     COL_TEXT_BODY, COL_TEXT_SCREEN_HDR, COL_MENU_CURSOR, COL_MENU_DISABLED,
     COL_PANEL_BORDER, COL_TEXT_PRIMARY,
+    COL_TEXT_VALUE, COL_TEXT_SECONDARY,
+    COL_UNIT_ONLINE, COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL,
+    COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT, COL_LINE_TRIPPED,
 )
 import simulation.constants as _sim_const
 from simulation.constants import (
@@ -60,6 +64,9 @@ from simulation.constants import (
     PANEL_ALARM_X, PANEL_ALARM_W,
     TEXT_SCREEN_FONT_SIZE, TEXT_SCREEN_TOP_MARGIN, TEXT_SCREEN_ROW_H,
     MENU_FONT_SIZE, MENU_ROW_H, MENU_TOP_MARGIN,
+    REPORT_FONT_SIZE, REPORT_TITLE_FONT_SIZE, REPORT_TITLE_Y,
+    REPORT_TABLE_TOP_MARGIN, REPORT_HEADER_H, REPORT_ROW_H,
+    REPORT_BOTTOM_MARGIN, REPORT_COL_PAD, REPORT_AVG_WINDOW_MIN,
     PERF_DEBUG_LOG, PERF_LOG_INTERVAL_S,
     TARGET_FPS, FREQ_HISTORY_WINDOW_S,
     SVC_Q_STEP_MVAR,
@@ -76,6 +83,15 @@ _BLINK_2HZ_PERIOD = 0.5   # seconds per 2Hz blink cycle (alarm panel)
 _BLINK_PERIOD     = 1.0   # seconds per blink cycle (canvas, dispatch panel)
 _HIT_RADIUS       = 10    # px — Chebyshev hit radius for bus/unit selection
 _LINE_HIT_PX      = 8     # px — max perpendicular distance for line selection
+
+# Mirrors context.py's _VSI_TIER_TEXT_COL — duplicated locally rather than
+# importing across drawing modules; keep both in sync if VSI tiers change.
+_REPORT_VSI_TIER_TEXT_COL: dict[str, tuple] = {
+    'HEALTHY':  COL_UNIT_ONLINE,
+    'WATCH':    COL_VSI_WATCH,
+    'WARNING':  COL_VSI_WARNING,
+    'CRITICAL': COL_VSI_CRITICAL,
+}
 
 
 class Renderer:
@@ -203,6 +219,24 @@ class Renderer:
         # Panel scroll offsets
         self._alarm_scroll: int = 0
 
+        # Full-screen bus/line report (F2) — does not pause the sim;
+        # tick_report_screen() is called instead of tick() while active (see
+        # main.py's PLAYING/DESIGNER_TEST loops). Scroll offsets are separate
+        # per half (buses left, lines right) since each scrolls independently.
+        self._report_active:       bool = False
+        self._report_scroll_buses: int  = 0
+        self._report_scroll_lines: int  = 0
+        # Per-bus/per-line P/Q/flow rolling history for the report's trend
+        # column. Keyed by label, each value a deque of (sim_hour, value)
+        # pairs, pruned to REPORT_AVG_WINDOW_MIN sim-minutes on each sample.
+        # Only populated while the report is active (see _report_sample()) —
+        # no cost while it's closed. A fixed-length deque isn't used here
+        # since sample cadence in sim-time isn't constant across speeds.
+        self._report_last_sampled_min: float | None = None
+        self._report_bus_p_hist: dict[str, deque] = {}
+        self._report_bus_q_hist: dict[str, deque] = {}
+        self._report_line_hist:  dict[str, deque] = {}
+
         # Frequency / load-variation history — sampled once per rendered frame,
         # display-only concern (simulation.py holds no history of its own for
         # either). Load variation is MW/min, derived from consecutive load
@@ -305,7 +339,16 @@ class Renderer:
         )
 
     def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:
-        """Route mouse wheel to the alarm panel based on native-space position."""
+        """Route mouse wheel to the report screen (if active — left half
+        scrolls buses, right half scrolls lines), else the alarm panel
+        based on native-space position."""
+        if self._report_active:
+            half_w = self._native.get_width() // 2
+            if pos[0] < half_w:
+                self._report_scroll_buses = max(0, self._report_scroll_buses - delta)
+            else:
+                self._report_scroll_lines = max(0, self._report_scroll_lines - delta)
+            return
         if pos[1] < self._scaled_topbar_h + self._scaled_canvas_h:
             return
         nx = pos[0]
@@ -674,10 +717,13 @@ class Renderer:
 
     def on_escape(self) -> None:
         """
-        Cancel input if active; clear cmd focus if active; otherwise deselect.
-        No-op when nothing is selected — main.py handles global quit.
+        Close the report screen if open; otherwise cancel input if active;
+        clear cmd focus if active; otherwise deselect. No-op when nothing is
+        selected — main.py handles global quit.
         """
-        if self._input_active:
+        if self._report_active:
+            self._report_active = False
+        elif self._input_active:
             self._input_buffer = ''
             self._input_active = False
         elif self._setpoint_active:
@@ -695,6 +741,19 @@ class Renderer:
             self._setpoint_adjust_active = False
         elif self._selected_label is not None:
             self.clear_selection()
+
+    def on_report_toggle(self) -> None:
+        """Toggle the full-screen bus/line report (F2). Resets scroll and
+        sampling history on open, so a stale scroll position or a trend
+        average spanning a previous open/close cycle doesn't leak through."""
+        self._report_active = not self._report_active
+        if self._report_active:
+            self._report_scroll_buses = 0
+            self._report_scroll_lines = 0
+            self._report_last_sampled_min = None
+            self._report_bus_p_hist.clear()
+            self._report_bus_q_hist.clear()
+            self._report_line_hist.clear()
 
     # ─── Text screen rendering ────────────────────────────────────────────────
 
@@ -888,6 +947,204 @@ class Renderer:
         self._display.blit(self._native, self._letterbox_rect.topleft)
         self._display_dirty = False
 
+    # ─── Report screen rendering (F2) ──────────────────────────────────────────
+
+    def _report_bus_pq(self, bus, state) -> tuple[float, float]:
+        """Net P (MW) and Q (MVAr) at a bus — shared by sampling and drawing.
+
+        P = sum of unit_outputs_mw for units at this bus, minus bus_loads.
+        Q = sum of unit_q_injections_mvar for units at this bus, plus
+        device/load Q (bus_load_q_mvar for LOAD buses, else
+        bus_q_injection_mvar) — the same device/load term draw_bus_context
+        uses, extended with per-unit generator Q for consistency with P.
+        """
+        units_here = self._grid.get_units_at_bus(bus.label)
+        gen_mw  = sum(state.unit_outputs_mw.get(u.label, 0.0) for u in units_here)
+        load_mw = state.bus_loads.get(bus.label, 0.0)
+        gen_q = sum(state.unit_q_injections_mvar.get(u.label, 0.0) for u in units_here)
+        device_load_q = (state.bus_load_q_mvar.get(bus.label, 0.0) if bus.bus_type == 'LOAD'
+                          else state.bus_q_injection_mvar.get(bus.label, 0.0))
+        return gen_mw - load_mw, gen_q + device_load_q
+
+    def _report_sample(self, state) -> None:
+        """Append one (sim_hour, value) sample per bus/line to the report's
+        rolling history, once per sim tick (guarded on sim_time_min actually
+        having advanced), and prune anything older than REPORT_AVG_WINDOW_MIN
+        sim-minutes. Only called while the report screen is active."""
+        if state is None or state.sim_time_min == self._report_last_sampled_min:
+            return
+        self._report_last_sampled_min = state.sim_time_min
+
+        for bus in self._grid.get_active_buses():
+            p, q = self._report_bus_pq(bus, state)
+            self._report_bus_p_hist.setdefault(bus.label, deque()).append((state.sim_hour, p))
+            self._report_bus_q_hist.setdefault(bus.label, deque()).append((state.sim_hour, q))
+        for label, flow in state.line_flows_mw.items():
+            self._report_line_hist.setdefault(label, deque()).append((state.sim_hour, flow))
+
+        cutoff = state.sim_hour - REPORT_AVG_WINDOW_MIN / 60.0
+        for hist in (*self._report_bus_p_hist.values(), *self._report_bus_q_hist.values(),
+                     *self._report_line_hist.values()):
+            while len(hist) > 1 and hist[0][0] < cutoff:
+                hist.popleft()
+
+    @staticmethod
+    def _report_trend(current: float, hist) -> tuple[str, float | None]:
+        """Returns (glyph, avg). glyph in {'^','v','-','?'} — '?' when there's
+        not yet enough history to average. avg is None in that case too."""
+        if not hist:
+            return '?', None
+        avg = sum(v for _, v in hist) / len(hist)
+        if current > avg * 1.01:
+            return '^', avg
+        if current < avg * 0.99:
+            return 'v', avg
+        return '-', avg
+
+    def _draw_report_bus_table(self, state, x0: int, x1: int, top: int,
+                                bottom: int, sc: float) -> None:
+        sp  = int(REPORT_FONT_SIZE * sc)
+        hh  = int(REPORT_HEADER_H  * sc)
+        rh  = max(1, int(REPORT_ROW_H * sc))
+        pad = int(REPORT_COL_PAD * sc)
+
+        buses = sorted(self._grid.get_active_buses(), key=lambda b: b.label)
+        rows_per_screen = max(1, (bottom - top - hh) // rh)
+        max_start = max(0, len(buses) - rows_per_screen)
+        start = max(0, min(self._report_scroll_buses, max_start))
+        self._report_scroll_buses = start
+        visible = buses[start:start + rows_per_screen]
+
+        hdr_y = top
+        cols = [
+            ('BUS',      x0 + pad,               COL_TEXT_SECONDARY),
+            ('TIER',     x0 + int(90  * sc), COL_TEXT_SECONDARY),
+            ('V(kV/pu)', x0 + int(190 * sc), COL_TEXT_SECONDARY),
+            ('ANG',      x0 + int(340 * sc), COL_TEXT_SECONDARY),
+            ('P(MW)',    x0 + int(420 * sc), COL_TEXT_SECONDARY),
+            ('TREND',    x0 + int(520 * sc), COL_TEXT_SECONDARY),
+            ('Q(MVAr)',  x0 + int(580 * sc), COL_TEXT_SECONDARY),
+            ('TREND',    x0 + int(680 * sc), COL_TEXT_SECONDARY),
+        ]
+        for label, cx, col in cols:
+            self._font.render_to(self._native, (cx, hdr_y), label, col, size=sp)
+
+        for i, bus in enumerate(visible):
+            y = top + hh + i * rh
+
+            v_pu = state.bus_voltages.get(bus.label)
+            v_str = f'{v_pu * bus.voltage_kv:.0f}/{v_pu:.3f}' if v_pu is not None else '--'
+            angle_deg = math.degrees(state.bus_angles.get(bus.label, 0.0))
+            tier = state.bus_vsi_tier.get(bus.label, 'HEALTHY')
+            tier_col = _REPORT_VSI_TIER_TEXT_COL.get(tier, COL_TEXT_DIM)
+
+            net_p, net_q = self._report_bus_pq(bus, state)
+            p_glyph, _ = self._report_trend(net_p, self._report_bus_p_hist.get(bus.label))
+            q_glyph, _ = self._report_trend(net_q, self._report_bus_q_hist.get(bus.label))
+
+            self._font.render_to(self._native, (x0 + pad, y), bus.label, COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(90 * sc), y), tier, tier_col, size=sp)
+            self._font.render_to(self._native, (x0 + int(190 * sc), y), v_str, COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(340 * sc), y), f'{angle_deg:+.1f}', COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(420 * sc), y), f'{net_p:+.0f}', COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(520 * sc), y), p_glyph, COL_TEXT_DIM, size=sp)
+            self._font.render_to(self._native, (x0 + int(580 * sc), y), f'{net_q:+.0f}', COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(680 * sc), y), q_glyph, COL_TEXT_DIM, size=sp)
+
+    def _draw_report_line_table(self, state, x0: int, x1: int, top: int,
+                                 bottom: int, sc: float) -> None:
+        sp  = int(REPORT_FONT_SIZE * sc)
+        hh  = int(REPORT_HEADER_H  * sc)
+        rh  = max(1, int(REPORT_ROW_H * sc))
+        pad = int(REPORT_COL_PAD * sc)
+
+        lines = sorted(self._grid.get_active_lines(), key=lambda l: l.label)
+        rows_per_screen = max(1, (bottom - top - hh) // rh)
+        max_start = max(0, len(lines) - rows_per_screen)
+        start = max(0, min(self._report_scroll_lines, max_start))
+        self._report_scroll_lines = start
+        visible = lines[start:start + rows_per_screen]
+
+        hdr_y = top
+        cols = [
+            ('LINE',      x0 + pad,               ),
+            ('FROM->TO',  x0 + int(90  * sc)),
+            ('FLOW(MW)',  x0 + int(300 * sc)),
+            ('TREND',     x0 + int(400 * sc)),
+            ('LOAD%',     x0 + int(460 * sc)),
+            ('STATUS',    x0 + int(540 * sc)),
+        ]
+        for label, cx in cols:
+            self._font.render_to(self._native, (cx, hdr_y), label, COL_TEXT_SECONDARY, size=sp)
+
+        for i, line in enumerate(visible):
+            y = top + hh + i * rh
+
+            flow_mw = state.line_flows_mw.get(line.label, 0.0)
+            glyph, _ = self._report_trend(flow_mw, self._report_line_hist.get(line.label))
+
+            loading = state.line_loading_pct.get(line.label, 0.0)
+            loading_col = (COL_LOAD_CRIT if loading >= 95.0 else
+                            COL_LOAD_HIGH if loading >= 80.0 else
+                            COL_LOAD_WARN if loading >= 60.0 else COL_UNIT_ONLINE)
+
+            status = state.line_status.get(line.label, 'IN_SERVICE')
+            status_col, status_disp = ((COL_LINE_TRIPPED, 'TRIPPED') if status == 'TRIPPED'
+                                        else (COL_UNIT_ONLINE, 'IN SVC'))
+
+            route_str = f'{line.from_bus}->{line.to_bus}'
+            self._font.render_to(self._native, (x0 + pad, y), line.label, COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(90 * sc), y), route_str, COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(300 * sc), y), f'{flow_mw:+.0f}', COL_TEXT_VALUE, size=sp)
+            self._font.render_to(self._native, (x0 + int(400 * sc), y), glyph, COL_TEXT_DIM, size=sp)
+            self._font.render_to(self._native, (x0 + int(460 * sc), y), f'{loading:.0f}%', loading_col, size=sp)
+            self._font.render_to(self._native, (x0 + int(540 * sc), y), status_disp, status_col, size=sp)
+
+    def tick_report_screen(self, dt_real_s: float, state, speed_mult: float = 1.0) -> None:
+        """
+        Full-screen bus/line report (F2). Does NOT pause the sim — the caller
+        still ticks GridSimulation every frame this is active; this method
+        only replaces tick()'s draw call. Bypasses canvas/strip entirely and
+        paints self._native directly — same shape as tick_text_screen()/
+        tick_splash_screen()/tick_menu_screen(). Left half: bus table. Right
+        half: line table. Each scrolls independently (see on_scroll()).
+        """
+        self._native.fill(COL_BACKGROUND)
+        sc = self._scale
+
+        fst = int(REPORT_TITLE_FONT_SIZE * sc)
+        title = 'GRID REPORT'
+        if state is not None:
+            hr, mn = int(state.sim_hour) % 24, int((state.sim_hour % 1.0) * 60)
+            title += f'   {hr:02d}:{mn:02d}   {state.frequency_hz:.2f} Hz   {speed_mult:.2f}x'
+        self._font.render_to(self._native, (int(REPORT_COL_PAD * sc), int(REPORT_TITLE_Y * sc)),
+                              title, COL_TEXT_PRIMARY, size=fst)
+
+        if self._grid is None or state is None:
+            self._display.blit(self._native, self._letterbox_rect.topleft)
+            self._display_dirty = False
+            return
+
+        self._report_sample(state)
+
+        w, h = self._native.get_width(), self._native.get_height()
+        half_w = w // 2
+        top = int(REPORT_TABLE_TOP_MARGIN * sc)
+        bottom_limit = h - int(REPORT_BOTTOM_MARGIN * sc)
+        pygame.draw.line(self._native, COL_PANEL_BORDER, (half_w, top), (half_w, bottom_limit), 1)
+
+        self._draw_report_bus_table(state, 0, half_w, top, bottom_limit, sc)
+        self._draw_report_line_table(state, half_w, w, top, bottom_limit, sc)
+
+        hint = ('[F2 / ESC]  Return to Grid View    [MOUSEWHEEL]  Scroll  '
+                '(left = buses, right = lines)')
+        hint_y = h - int(REPORT_BOTTOM_MARGIN * sc) + int(10 * sc)
+        self._font.render_to(self._native, (int(REPORT_COL_PAD * sc), hint_y),
+                              hint, COL_TEXT_DIM, size=int(REPORT_FONT_SIZE * sc))
+
+        self._display.blit(self._native, self._letterbox_rect.topleft)
+        self._display_dirty = False
+
     # ─── Shortcut hint bar (Phase 2 / DESIGNER_TEST) ──────────────────────────
 
     def _build_shortcut_hint(self) -> str:
@@ -909,7 +1166,7 @@ class Renderer:
         if self._get_selected_bus() is not None:
             return ('[S/X]  Restore/Shed Load    [,/.]  SVC    '
                      '[TAB]  Cycle    [ESC]  Deselect')
-        return ('[TAB]  Select    [P]  Pause    [F12]  Speed    '
+        return ('[TAB]  Select    [F2]  Report    [P]  Pause    [F12]  Speed    '
                 '[CTRL+A]  AGC    [A]  Ack    [SHIFT+A]  Ack All')
 
     def _draw_hint_bar(self) -> None:

@@ -969,6 +969,8 @@ def main() -> None:
                     elif event.key == pygame.K_ESCAPE:
                         if _const.EDITOR_MODE:
                             _const.EDITOR_MODE = False
+                        elif renderer._report_active:
+                            renderer.on_escape()
                         elif (renderer._selected_label is not None
                               or renderer._input_active
                               or renderer._setpoint_active
@@ -1049,6 +1051,10 @@ def main() -> None:
                           and not renderer._input_active):
                         _const.VOLTAGE_COLOUR_VIEW = not _const.VOLTAGE_COLOUR_VIEW
 
+                    elif (event.key == pygame.K_F2 and not _const.EDITOR_MODE
+                          and not renderer._input_active):
+                        renderer.on_report_toggle()
+
                     elif (event.key == pygame.K_COMMA and not _const.EDITOR_MODE
                           and not renderer._input_active and not renderer._setpoint_active):
                         renderer.on_svc_adjust(sim, -1)
@@ -1089,20 +1095,6 @@ def main() -> None:
 
                     elif event.key == pygame.K_d:
                         _const.DEBUG_DISPLAY = not _const.DEBUG_DISPLAY
-
-                    # Shift-switch: F1 / F3 / F5 (dev convenience — no briefing reset)
-                    elif event.key == pygame.K_F1 and not _const.EDITOR_MODE:
-                        shift = 1
-                        sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
-                        state = sim.get_state(); sim_accum = 0.0
-                    elif event.key == pygame.K_F3 and not _const.EDITOR_MODE:
-                        shift = 3
-                        sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
-                        state = sim.get_state(); sim_accum = 0.0
-                    elif event.key == pygame.K_F5 and not _const.EDITOR_MODE:
-                        shift = 5
-                        sim, grid, renderer = _make_sim_and_renderer(display_surf, shift)
-                        state = sim.get_state(); sim_accum = 0.0
 
                     elif (not _const.EDITOR_MODE and not ctrl and not shift_held
                           and event.key in (
@@ -1176,7 +1168,10 @@ def main() -> None:
                     state = sim.get_state()
                     sim_accum = 0.0
 
-            renderer.tick(dt, state=state, speed_mult=speed)
+            if renderer._report_active:
+                renderer.tick_report_screen(dt, state=state, speed_mult=speed)
+            else:
+                renderer.tick(dt, state=state, speed_mult=speed)
 
             if sim.is_shift_complete():
                 debrief_lines = build_debrief_lines(
@@ -1438,21 +1433,24 @@ def main() -> None:
                     shift_held = bool(mods & pygame.KMOD_SHIFT)
 
                     if event.key == pygame.K_ESCAPE:
-                        dest = _designer_test_origin
-                        _designer_test_sim      = None
-                        _designer_test_grid     = None
-                        _designer_test_renderer = None
-                        _designer_test_origin   = GameState.DESIGNER
-                        if dest == GameState.GRID_TEST_SELECT:
-                            from data.designer_io import list_designer_grids
-                            from display.menus import build_grid_test_select_items
-                            _grid_test_items = build_grid_test_select_items(list_designer_grids())
-                            menu_selected    = 0
-                            game_state       = GameState.GRID_TEST_SELECT
-                        elif dest == GameState.SHIFT_BUILDER:
-                            game_state = GameState.SHIFT_BUILDER
+                        if _rend._report_active:
+                            _rend.on_escape()
                         else:
-                            game_state = GameState.DESIGNER
+                            dest = _designer_test_origin
+                            _designer_test_sim      = None
+                            _designer_test_grid     = None
+                            _designer_test_renderer = None
+                            _designer_test_origin   = GameState.DESIGNER
+                            if dest == GameState.GRID_TEST_SELECT:
+                                from data.designer_io import list_designer_grids
+                                from display.menus import build_grid_test_select_items
+                                _grid_test_items = build_grid_test_select_items(list_designer_grids())
+                                menu_selected    = 0
+                                game_state       = GameState.GRID_TEST_SELECT
+                            elif dest == GameState.SHIFT_BUILDER:
+                                game_state = GameState.SHIFT_BUILDER
+                            else:
+                                game_state = GameState.DESIGNER
 
                     elif (event.key == pygame.K_p
                           and not _rend._input_active):
@@ -1466,12 +1464,8 @@ def main() -> None:
                           and not _rend._input_active):
                         _rend.on_silence_alarm()
 
-                    elif event.key == pygame.K_F1:
-                        speed = SPEED_SLOW
-                    elif event.key == pygame.K_F2:
-                        speed = SPEED_NORMAL
-                    elif event.key == pygame.K_F3:
-                        speed = SPEED_FAST
+                    elif event.key == pygame.K_F2 and not _rend._input_active:
+                        _rend.on_report_toggle()
 
                     elif ctrl and not shift_held and event.key == pygame.K_a:
                         _const.AGC_ENABLED = not _const.AGC_ENABLED
@@ -1586,7 +1580,10 @@ def main() -> None:
                     sim_accum = 0.0
 
             if game_state == GameState.DESIGNER_TEST:
-                _rend.tick(dt, state=state, speed_mult=speed)
+                if _rend._report_active:
+                    _rend.tick_report_screen(dt, state=state, speed_mult=speed)
+                else:
+                    _rend.tick(dt, state=state, speed_mult=speed)
 
         pygame.display.flip()
 

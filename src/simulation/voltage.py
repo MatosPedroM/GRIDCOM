@@ -38,7 +38,7 @@ from simulation.constants import (
     PV_CORRECTION_Q_TOL_MVAR,
     DEBUG_SIMULATION,
 )
-from simulation.grid import Grid
+from simulation.designer_grid import DesignerGrid
 
 # Type aliases
 BusLabel    = str
@@ -58,7 +58,7 @@ class VoltageModel:
     When a PV bus hits its Q limit it is converted to PQ for that solve.
 
     Attributes:
-        grid:  The Grid object this model was built from.
+        grid:  The DesignerGrid object this model was built from.
 
     Usage:
         vm = VoltageModel(grid)
@@ -69,13 +69,13 @@ class VoltageModel:
         pq_conversions = result.pq_buses   # set of labels that hit Q limit
     """
 
-    def __init__(self, grid: Grid) -> None:
+    def __init__(self, grid: DesignerGrid) -> None:
         """
         Build the reactive susceptance matrix from the grid's active lines.
 
         Args:
-            grid: Loaded Grid object. Must have at least one active bus
-                  and one active line.
+            grid: Loaded DesignerGrid object. Must have at least one active
+                  bus and one active line.
         """
         self.grid = grid
         self._slack_bus: BusLabel = grid.slack_bus

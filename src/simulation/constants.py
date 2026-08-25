@@ -19,7 +19,6 @@ DEBUG_PERF:       bool = False  # per-frame render timing breakdown — see PERF
 DEBUG_EVENTS:     bool = True
 EDITOR_MODE:      bool = False
 FLOW_ANIMATION:        bool = False
-DEBUG_SCENARIO_ACTIVE: bool = False
 DEV_SKIP_INTRO:        bool = True
 VOLTAGE_COLOUR_VIEW:   bool = True  # 'L' toggle — colour lines/substations by voltage tier instead of load
 

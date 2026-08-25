@@ -192,6 +192,9 @@ def draw_topbar_panel(
     spin_mw   = state.spinning_reserve_mw  if state else 640.0
     inertia_h = state.system_inertia_h     if state else 4.8
     losses_mw = state.losses_mw            if state else 85.0
+    q_gen_mvar = state.total_q_generated_mvar if state else 0.0
+    q_con_mvar = state.total_q_consumed_mvar  if state else 0.0
+    q_bal_mvar = q_gen_mvar - q_con_mvar
     agc_cur   = state.agc_current_mw       if state else 40.0
     agc_max   = state.agc_max_mw           if state else 65.0
     agc_min   = state.agc_min_mw           if state else 6.5
@@ -230,6 +233,9 @@ def draw_topbar_panel(
         ('GEN',             f'{gen_mw:,.0f} MW',           COL_TEXT_VALUE if gen_mw > 0 else COL_TEXT_DIM),
         ('LOAD',            f'{load_mw:,.0f} MW',          COL_TEXT_PRIMARY),
         ('BAL',             f'{bal_mw:+,.0f} MW',          COL_TEXT_GOOD if bal_mw >= 0 else COL_TEXT_CRIT),
+        ('Q GEN',           f'{q_gen_mvar:,.0f} MVAr',     COL_TEXT_VALUE if q_gen_mvar > 0 else COL_TEXT_DIM),
+        ('Q CON',           f'{q_con_mvar:,.0f} MVAr',     COL_TEXT_PRIMARY),
+        ('Q BAL',           f'{q_bal_mvar:+,.0f} MVAr',    COL_TEXT_GOOD if q_bal_mvar >= 0 else COL_TEXT_CRIT),
         ('LOAD VAR (/MIN)', f'{load_rate_mw_min:+.1f} MW', COL_TEXT_SECONDARY),
         ('SPIN RES',        f'{spin_mw:,.0f} MW',          COL_TEXT_SECONDARY),
         ('INERTIA',         f'{inertia_h:.1f} s',          COL_TEXT_SECONDARY),

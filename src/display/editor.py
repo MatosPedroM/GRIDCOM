@@ -188,9 +188,8 @@ class GridEditor:
             return best_label, best_kind
 
         # Station anchors — only shift-active stations
-        from data.fleet import STATION_POSITIONS
         for sl in self._canvas._station_units:
-            default = STATION_POSITIONS.get(sl, (0, 0))
+            default = self._default_station_pos(sl)
             sx, sy = get_station_pos(sl, default)
             sx = int(sx * sc)
             sy = int(sy * sc)
@@ -210,8 +209,23 @@ class GridEditor:
                     bx, by = get_bus_pos(label, bus.canvas_x, bus.canvas_y)
                     return int(bx * sc), int(by * sc)
         else:
-            from data.fleet import STATION_POSITIONS
-            default = STATION_POSITIONS.get(label, (0, 0))
+            default = self._default_station_pos(label)
             sx, sy = get_station_pos(label, default)
             return int(sx * sc), int(sy * sc)
         return (0, 0)
+
+    def _default_station_pos(self, station_label: str) -> tuple[int, int]:
+        """
+        Fallback station anchor when no layout override exists yet: 20px
+        (native-space) above the station's own bus, mirroring
+        GridCanvas.load_designer_topology()'s identical fallback. Replaces
+        the old fleet.py STATION_POSITIONS dict lookup — every station now
+        gets a sensible default from its own bus rather than a hardcoded
+        campaign-specific position table.
+        """
+        units = self._canvas._station_units.get(station_label)
+        if not units:
+            return (0, 0)
+        bus_label = units[0].bus_label
+        bx, by = self._canvas._bus_pos.get(bus_label, (0, 0))
+        return (int(bx / self._scale), int(by / self._scale - 20))

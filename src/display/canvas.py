@@ -25,12 +25,7 @@ from __future__ import annotations
 import pygame
 import pygame.freetype
 
-from data.topology import (
-    BUSES, LINES, INTERCONNECTOR_POSITIONS,
-    get_buses_by_shift, get_lines_by_shift,
-    Bus, Line,
-)
-from data.fleet import UNITS, STATION_POSITIONS, get_units_at_bus, get_station_position
+from data.topology import Bus, Line
 from display.palette import (
     COL_BACKGROUND,
     COL_TEXT_PRIMARY,
@@ -39,7 +34,6 @@ from display.symbols import (
     draw_substation, draw_load_substation,
     draw_unit_square, draw_station_collector,
     draw_transmission_line, draw_hydraulic_connector,
-    draw_interconnector,
     draw_vsi_halo, draw_shunt_glyph, draw_svc_glyph,
     UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX, HALF_BUS, HALF_UNIT,
     get_port_point,
@@ -273,17 +267,6 @@ def route_line(
     return [(x1, y1), (bx, by), (x2, y2)]
 
 
-def _unit_positions(station_label: str, n_units: int) -> list[tuple[int, int]]:
-    """
-    Return (cx, cy) for each unit square at a station.
-    Units are laid out horizontally, centred on the station anchor.
-    """
-    ax, ay = get_station_position(station_label)
-    total_w = n_units * UNIT_SIZE + (n_units - 1) * UNIT_GAP
-    start_x = ax - total_w // 2 + UNIT_SIZE // 2
-    return [(start_x + i * (UNIT_SIZE + UNIT_GAP), ay) for i in range(n_units)]
-
-
 class GridCanvas:
     """
     Renders the full grid schematic for one shift.
@@ -292,33 +275,27 @@ class GridCanvas:
         canvas = GridCanvas(shift=1, font=font)
         canvas.draw(surf, state=None, blink_on=True)
 
+        # Or, for a designer/GRID_SOURCE grid — skips the topology.py seed
+        # entirely instead of building it only to discard it a moment later:
+        canvas = GridCanvas(shift=None, font=font)
+        canvas.load_designer_topology(buses, lines, units, ...)
+
     Args:
         shift:  Active shift number (1-10). Controls which buses/lines appear.
+                None skips the topology.py-backed seed — the caller MUST call
+                load_designer_topology() immediately afterward, before draw().
         font:   pygame.freetype.Font for labels.
     """
 
     def __init__(
         self,
-        shift: int,
+        shift: int | None,
         font: pygame.freetype.Font,
         scale: float = 1.0,
     ) -> None:
         self._shift = shift
         self._font  = font
         self._scale = scale
-
-        # Active topology for this shift
-        self._buses: list[Bus] = get_buses_by_shift(shift)
-        self._lines: list[Line] = get_lines_by_shift(shift)
-
-        # Bus is frozen=True; store scaled positions separately rather than mutating.
-        self._bus_pos: dict[str, tuple[int, int]] = {
-            b.label: (int(b.canvas_x * scale), int(b.canvas_y * scale))
-            for b in self._buses
-        }
-
-        # Fast bus lookup
-        self._bus_map: dict[str, Bus] = {b.label: b for b in self._buses}
 
         # Designer-supplied label anchors (label → 'top'/'right'/'bottom'/
         # 'left'), set via load_designer_topology(). Kept as two separate
@@ -330,113 +307,26 @@ class GridCanvas:
         self._designer_bus_label_anchors:     dict[str, str] | None = None
         self._designer_station_label_anchors: dict[str, str] | None = None
 
-        # Pre-compute unit layout per station (only stations active this shift)
-        active_bus_labels = {b.label for b in self._buses}
-        self._station_units: dict[str, list] = {}    # station → [GenerationUnit]
-        self._station_pos:   dict[str, list[tuple[int, int]]] = {}  # station → [(cx,cy)]
+        # Set by load_designer_topology(); lets rebuild() replay a designer
+        # grid reload instead of re-seeding from topology.py. None for a
+        # topology.py-backed (shift is not None) canvas.
+        self._designer_reload_args: tuple | None = None
 
-        seen_stations: set[str] = set()
-        for unit in UNITS:
-            if unit.active_from_shift > shift:
-                continue
-            if unit.bus_label not in active_bus_labels:
-                continue
-            sl = unit.station_label
-            if sl not in seen_stations:
-                seen_stations.add(sl)
-                self._station_units[sl] = []
-            self._station_units[sl].append(unit)
-
-        for sl, units in self._station_units.items():
-            # _unit_positions returns 1920-unit coords; scale to physical space
-            raw = _unit_positions(sl, len(units))
-            self._station_pos[sl] = [
-                (int(x * scale), int(y * scale)) for x, y in raw
-            ]
-
-        # Fast rated_mw lookup by unit label (avoids fleet.get_unit() in hot path)
-        self._unit_rated_mw: dict[str, float] = {
-            u.label: u.rated_mw
-            for units in self._station_units.values()
-            for u in units
-        }
-
-        # Bus → connected line labels (for load-state colouring of substation symbols)
-        self._bus_lines: dict[str, list[str]] = {b.label: [] for b in self._buses}
-        for line in self._lines:
-            if line.from_bus in self._bus_lines:
-                self._bus_lines[line.from_bus].append(line.label)
-            if line.to_bus in self._bus_lines:
-                self._bus_lines[line.to_bus].append(line.label)
-
-        # Per-line attachment points (8 fixed ports per bus instead of centre)
-        self._line_ports: dict[str, tuple[int, int, int, int]] = assign_line_ports(
-            self._buses, self._lines, self._bus_pos, self._bus_lines, scale,
-        )
-
-        # Obstacle-avoiding waypoints per line — computed once here (not per
-        # frame). Offsetting for double circuits happens first, then each
-        # (already-offset) endpoint pair is routed independently.
-        self._line_waypoints: dict[str, list[tuple[int, int]]] = self._build_line_waypoints(
-            self._lines, self._line_ports, scale,
-        )
-
-        # Hydraulic connectors: only those where both buses are active this shift
-        self._hydraulic: list[tuple[Bus, Bus]] = []
-        for from_lbl, to_lbl in _HYDRAULIC_CONNECTORS:
-            if from_lbl in active_bus_labels and to_lbl in active_bus_labels:
-                self._hydraulic.append(
-                    (self._bus_map[from_lbl], self._bus_map[to_lbl])
-                )
-
-        scaled_w  = int(NATIVE_WIDTH  * scale)
-        scaled_ch = int(CANVAS_HEIGHT * scale)
-
-        # Canvas cache: converted to display pixel format for hardware-accelerated blits.
-        self._canvas_surf_cache: pygame.Surface = pygame.Surface((scaled_w, scaled_ch)).convert()
-        self._canvas_key: object = object()  # sentinel forces first-frame draw
-
-        # Pre-baked hydraulic connector surface — convert_alpha() for fast SRCALPHA blits.
-        self._hydraulic_surf: pygame.Surface = pygame.Surface(
-            (scaled_w, scaled_ch), pygame.SRCALPHA
-        ).convert_alpha()
-        self._hydraulic_surf.fill((0, 0, 0, 0))
-        dash_w = max(1, round(scale))
-        for fb, tb in self._hydraulic:
-            fx, fy = self._bus_pos[fb.label]
-            tx, ty = self._bus_pos[tb.label]
-            _draw_dashed_line(
-                self._hydraulic_surf, COL_LINE_HYDRAULIC,
-                (fx, fy), (tx, ty),
-                dash=max(1, int(3 * scale)), gap=max(1, int(2 * scale)), width=dash_w,
+        if shift is not None:
+            # Every campaign shift now loads via GRID_SOURCE (DesignerGrid) —
+            # topology.py's campaign bus/line/unit arrays no longer exist.
+            # Callers must pass shift=None and follow with
+            # load_designer_topology(), which populates everything this
+            # branch used to build.
+            raise ValueError(
+                'GridCanvas(shift=<int>) is no longer supported — topology.py '
+                'campaign data was retired. Pass shift=None and call '
+                'load_designer_topology() instead.'
             )
-
-        # Pre-baked tripped-line surfaces: one per line, drawn once at init.
-        # Each surface covers only the line's bounding box (offset stored alongside).
-        self._tripped_line_surfs: dict[str, tuple[pygame.Surface, int, int]] = {}
-        pad = max(2, int(2 * scale))
-        for line in self._lines:
-            waypoints = self._line_waypoints.get(line.label)
-            if waypoints is None:
-                continue
-            xs = [p[0] for p in waypoints]
-            ys = [p[1] for p in waypoints]
-            min_x, max_x = min(xs) - pad, max(xs) + pad
-            min_y, max_y = min(ys) - pad, max(ys) + pad
-            w = max(1, max_x - min_x)
-            h = max(1, max_y - min_y)
-            surf = pygame.Surface((w, h), pygame.SRCALPHA).convert_alpha()
-            surf.fill((0, 0, 0, 0))
-            ox, oy = min_x, min_y
-            td = max(1, int(3 * scale))
-            tg = max(1, int(2 * scale))
-            for (sx1, sy1), (sx2, sy2) in zip(waypoints, waypoints[1:]):
-                _draw_dashed_line(
-                    surf, COL_LINE_TRIPPED,
-                    (sx1 - ox, sy1 - oy), (sx2 - ox, sy2 - oy),
-                    dash=td, gap=tg, width=dash_w,
-                )
-            self._tripped_line_surfs[line.label] = (surf, ox, oy)
+        # Designer/GRID_SOURCE grid — caller calls load_designer_topology()
+        # next, which populates every attribute __init__ would otherwise
+        # set. Skipping any topology lookup here (rather than doing one and
+        # immediately discarding it) is the whole point of shift=None.
 
     def _build_line_waypoints(
         self,
@@ -501,10 +391,10 @@ class GridCanvas:
         station_label_anchors: dict[str, str] | None = None,
     ) -> None:
         """
-        Replace the canvas topology with designer-supplied Bus/Line/Unit lists.
+        Populate the canvas topology from designer-supplied Bus/Line/Unit lists —
+        the only way a canvas topology is ever built now that every campaign
+        shift loads via GRID_SOURCE.
 
-        Bypasses get_buses_by_shift(), UNITS, and get_station_position() so the
-        canvas draws the designer grid instead of the campaign shift topology.
         Station position comes from station_positions (unscaled, native-space
         anchors set/dragged in the Designer); a station missing an entry falls
         back to 20px above its bus.
@@ -519,6 +409,14 @@ class GridCanvas:
         station_positions = station_positions or {}
         self._designer_bus_label_anchors     = bus_label_anchors or {}
         self._designer_station_label_anchors = station_label_anchors or {}
+
+        # Remembered so rebuild() can replay this call (layout-override
+        # changes in the editor need the exact same designer data reloaded,
+        # not a re-seed from topology.py — see rebuild()).
+        self._designer_reload_args = (
+            buses, lines, units,
+            station_positions, bus_label_anchors, station_label_anchors,
+        )
 
         self._buses    = buses
         self._lines    = lines
@@ -576,6 +474,14 @@ class GridCanvas:
         self._hydraulic = []
         scaled_w  = int(NATIVE_WIDTH  * scale)
         scaled_ch = int(CANVAS_HEIGHT * scale)
+
+        # Canvas cache — see __init__'s identical setup. Must be (re)created
+        # here too since __init__(shift=None) returns before ever creating
+        # one (this method is the only place a shift=None canvas's cache
+        # surface gets built).
+        self._canvas_surf_cache = pygame.Surface((scaled_w, scaled_ch)).convert()
+        self._canvas_key = object()  # sentinel forces first-frame draw
+
         self._hydraulic_surf = pygame.Surface(
             (scaled_w, scaled_ch), pygame.SRCALPHA
         ).convert_alpha()
@@ -619,9 +525,20 @@ class GridCanvas:
         self._canvas_key = object()
 
     def rebuild(self, shift: int | None = None) -> None:
-        """Re-run __init__ pre-computation after layout overrides change."""
+        """Re-run topology pre-computation after layout overrides change.
+
+        A designer/GRID_SOURCE canvas (self._designer_reload_args set by the
+        last load_designer_topology() call) replays that same call instead of
+        re-running __init__ — re-running __init__ with self._shift=None would
+        skip everything and leave the canvas empty, since __init__(shift=None)
+        expects load_designer_topology() to populate it, not to reconstruct
+        from what __init__ itself already discarded.
+        """
         if shift is not None:
             self._shift = shift
+        if self._shift is None and self._designer_reload_args is not None:
+            self.load_designer_topology(*self._designer_reload_args)
+            return
         self.__init__(self._shift, self._font, self._scale)
 
     # ─── Main draw entry point ────────────────────────────────────────────────
@@ -783,7 +700,6 @@ class GridCanvas:
         unit_states:   dict[str, str]   = {}
         unit_outputs:  dict[str, float] = {}   # fraction 0-1
         unit_modes:    dict[str, str]   = {}   # 'AUTO'/'MANUAL', only for scheduled units
-        intc_flows:    dict[str, float] = {'INTC-N': 0.0, 'INTC-S': 0.0}
         bus_vsi_tier:  dict[str, str]   = {}
         bus_shunt_step: dict[str, int]  = {}
         svc_buses:     set[str]         = set()
@@ -802,8 +718,6 @@ class GridCanvas:
                 unit_outputs[lbl] = mw / rated if rated > 0 else 0.0
             for lbl in state.unit_has_schedule:
                 unit_modes[lbl] = state.unit_dispatch_modes.get(lbl, 'MANUAL')
-            if hasattr(state, 'interconnector_flows'):
-                intc_flows = state.interconnector_flows
             bus_vsi_tier   = state.bus_vsi_tier
             bus_shunt_step = state.bus_shunt_step
             svc_buses = set(state.bus_svc_mvar.keys())
@@ -919,13 +833,6 @@ class GridCanvas:
                     scale=self._scale,
                     dispatch_mode=u_mode,
                 )
-
-        # ── Layer 8: Interconnector markers ────────────────────────────────────
-        for intc_label, (ix, iy) in INTERCONNECTOR_POSITIONS.items():
-            flow = intc_flows.get(intc_label, 0.0)
-            draw_interconnector(target, int(ix * self._scale), int(iy * self._scale),
-                                flow_mw=flow, label=intc_label, font=self._font,
-                                font_scale=font_scale, scale=self._scale)
 
         # ── Layer 9: Node labels ───────────────────────────────────────────────
         self._draw_labels(target, font_scale)

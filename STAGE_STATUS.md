@@ -10,6 +10,77 @@
 
 ## Current Status
 
+**COMPLETE** — Session 112: retired topology.py's/fleet.py's hardcoded campaign network data —
+campaign and continuous modes now load exclusively from Grid Designer JSON (GRID_SOURCE), with no
+runtime fallback to a hardcoded 46-bus/47-unit array. Prompted by the developer wanting the campaign
+to run entirely off designer-authored grid files rather than a parallel hardcoded topology.
+- **Found the migration further along than expected, but broken**: all 10 shift files already
+  declared GRID_SOURCE (pointing at one of 3 shared tiers: grid_small for shifts 1-4, grid_medium for
+  5-7, grid_big for 8-10), making the old `Grid(shift)`/topology.py fallback dead code for every real
+  shift already — but only grid_small.json exists on disk, so shifts 5-10 crash with
+  `FileNotFoundError` today. That gap is unchanged by this session (out of scope — grid authoring, not
+  architecture); shifts 1-4 are the actual regression-test surface and were verified end-to-end.
+- **Real technical blocker fixed**: `GridCanvas.__init__` unconditionally called
+  `get_buses_by_shift()`/`get_lines_by_shift()`/iterated `UNITS` for every shift — including
+  GRID_SOURCE ones — before `set_designer_grid()` discarded it a moment later via
+  `load_designer_topology()`. `GridCanvas` now accepts `shift=None` (skips the topology.py seed
+  entirely); `Renderer` gained `has_designer_grid: bool` to select it. All 4 `Renderer(...)`
+  construction sites in main.py (`_make_sim_and_renderer`, `_make_designer_test`,
+  `_make_shift_test`/`_make_campaign_shift_test`, the MAIN_MENU placeholder) and `display/designer.py`'s
+  own canvas now pass `has_designer_grid=True` / `shift=None`.
+- **Caught and fixed a real bug introduced mid-session**: `_canvas_surf_cache` (the blit target
+  `draw()` reads from) was only ever created inside the old `__init__` topology.py branch —
+  `load_designer_topology()` never built one. A `shift=None` canvas would `AttributeError` on its
+  first `draw()` call. Fixed by creating the cache surface in `load_designer_topology()` too. Caught
+  via a direct `draw()` smoke test, not by the bus/line-count checks alone — worth remembering that
+  construction succeeding doesn't mean rendering does.
+- **Deleted**: `src/simulation/grid.py` (the `Grid` class — no caller left after migrating
+  `main.py`/`gameplay/phase1.py`'s `build_planning_model()` off their `Grid(shift)` fallback branches,
+  which both `raise ValueError` now instead of silently trying to construct a deleted class);
+  `src/debug_scenario.py` (a `DEBUG_SCENARIO_ACTIVE`-gated dev tool hardcoded against specific campaign
+  bus/line labels — confirmed off by default, retired rather than ported); the Grid Designer's
+  "IMPORT SHIFT 10" sidebar button and `designer_io.py`'s `import_shift_as_designer_grid()` +
+  `topology_buses_to_designer()`/`topology_lines_to_designer()`/`fleet_units_to_designer()` (existed
+  solely to read topology.py's/fleet.py's data, so became permanently non-functional); interconnector
+  marker rendering in `canvas.py` (`INTERCONNECTOR_POSITIONS` had no Designer-JSON equivalent, and
+  every GRID_SOURCE shift already had zero interconnectors, so this was already a no-op for real
+  shifts — removed rather than fixed, per developer decision to scope interconnectors out for now).
+- **`data/topology.py` and `data/fleet.py`** trimmed to just the `Bus`/`Line`/`GenerationUnit`
+  dataclass definitions (still needed — `DesignerGrid` builds instances of them internally, and
+  several simulation modules type-hint against them) — `BUSES`/`LINES`/`UNITS`/
+  `INTERCONNECTOR_POSITIONS`/`STATION_POSITIONS` and all `get_*_by_shift`/`get_bus`/`get_line`/
+  `get_unit`/`get_units_at_bus`/`get_units_at_station`/`get_station_position` lookup functions
+  deleted. `simulation/loadflow.py`, `simulation/voltage.py`, `simulation/simulation.py` re-typed
+  their `grid` parameter from `Grid` to `DesignerGrid` (duck-typed sibling, not a subclass — already
+  the only type actually passed at every real call site).
+- **`display/editor.py`**'s `STATION_POSITIONS` fallback (used when a station has no
+  `layout.json` override yet) replaced with a computed "20px above its own bus" default — mirrors
+  `load_designer_topology()`'s identical fallback — instead of a fleet.py hardcoded position table.
+- **Rewrote `tests/test_simulation.py`**: 7 of 10 test functions (`test_grid_loads`,
+  `test_loadflow_solves`, `test_unit_model`, `test_voltage_model`, `test_renewables_model`,
+  `test_cascade_model`, `test_simulation_model`) constructed `Grid(shift)` directly, including
+  hand-verified analytical DC-load-flow math tied to specific campaign bus/line labels (MDBY, DUND,
+  L49/L50, the 400kV backbone/N-1 tie-cut structure for island-finding). Ported each to a synthetic
+  `DesignerBus`/`DesignerLine`/`DesignerUnit` + `DesignerGrid` fixture (following
+  `test_voltage_reactive.py`'s established pattern) preserving the same physical property under test
+  — not the same labels/topology, since those were campaign-specific, but the same analytical math
+  and behavioral invariants (e.g. the 3-bus load-flow fixture reproduces the exact by-hand-verified
+  theta/flow values under relabeled buses; the cascade fixture's tie-cut still demonstrably splits a
+  backbone from its pockets). `test_demand_model`/`test_frequency_model`/`test_shift_scoring` were
+  already self-contained and untouched. Found (not introduced) a pre-existing, unrelated bug in
+  `test_shift_scoring`'s standalone-runner invocation (`SimpleNamespace` missing `derate_events`) —
+  confirmed present on `main` before this session via `git stash`; left alone as out of scope.
+- **Verified**: `python -m pytest tests/` — 29/29 pass. Full campaign bootstrap smoke test (shifts 1-4
+  via `_make_sim_and_renderer`, real construction → tick → `draw()`) — all pass. Confirmed shifts 5-10
+  still fail with the same pre-existing `FileNotFoundError` (missing grid_medium.json/grid_big.json),
+  not a new crash. Grid Designer's Test Grid flow and the Designer's own editing canvas both verified
+  end-to-end (construct → tick → `draw()`, including the `rebuild()` layout-editor path). `python -m
+  compileall src/` and `main.py` import-check both clean.
+- **Not done this session** (explicitly out of scope, confirmed with developer): authoring
+  `grid_medium.json`/`grid_big.json` (shifts 5-10 remain unplayable until these exist); re-authoring
+  shifts 1-9's actual scenario content (currently stub placeholders pending an unrelated rework);
+  adding interconnector support to the Designer JSON schema.
+
 **COMPLETE** — Session 111: fixed an oscillation bug in Session 110's single-key S toggle, reported
 by the developer after real use — from a fully-shed bus (100%), pressing S restored to 75% (correct,
 still had "no load" -> restore direction), but pressing S again at 75% re-shed back to 100% instead

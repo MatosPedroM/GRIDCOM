@@ -23,110 +23,119 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 # STAGE 1 TESTS — Network Data Model
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_grid_loads_fixture():
+    """Small synthetic DesignerGrid: one slack (MDBY-like) transmission bus,
+    one plain transmission bus, one load bus, one generation station with
+    two units, and a station-only element (canvas position via a unit's
+    station_x/station_y) to exercise get_canvas_position() for a non-bus
+    label. Returns (grid, buses, lines, units) — the raw Designer* lists,
+    so tests can assert the grid reproduces them exactly."""
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+
+    buses = [
+        DesignerBus(label='SLAK', name='Slackton', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=200, canvas_y=100,
+                    active_from_shift=1, is_slack=True),
+        DesignerBus(label='CNTR', name='Centre', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=400, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='LOAD', name='Loadham', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=400, canvas_y=300,
+                    active_from_shift=1, is_slack=False, peak_load_mw=240.0),
+    ]
+    lines = [
+        DesignerLine(label='L01', from_bus='SLAK', to_bus='CNTR',
+                     reactance_pu=0.08, rating_mw=800.0, voltage_kv=400.0),
+        DesignerLine(label='L02', from_bus='CNTR', to_bus='LOAD',
+                     reactance_pu=0.12, rating_mw=500.0, voltage_kv=150.0),
+    ]
+    units = [
+        DesignerUnit(label='GENS-1', station_label='GENS', bus_label='CNTR',
+                     unit_type='COAL', rated_mw=300.0, min_mw=90.0,
+                     ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                     q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
+                     active_from_shift=1, description='Test coal unit 1',
+                     station_x=450, station_y=80),
+        DesignerUnit(label='GENS-2', station_label='GENS', bus_label='CNTR',
+                     unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
+                     ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
+                     q_max_mvar=180.0, q_min_mvar=-100.0, can_pump=False,
+                     active_from_shift=1, description='Test CCGT unit 2',
+                     station_x=450, station_y=80),
+    ]
+    grid = DesignerGrid(buses, lines, units)
+    return grid, buses, lines, units
+
+
 def test_grid_loads() -> bool:
     """
-    Verify the Grid class loads the correct number of buses, lines, and units
-    for shifts 1, 3, and 5 (the three grid-size tiers).
-
-    Also verifies all 47 units load without error across the full fleet.
+    DesignerGrid replaces Grid/topology.py as the grid abstraction — it has
+    no shift-filtering concept (a DesignerGrid IS the full grid it was
+    built from, unfiltered), so this now verifies DesignerGrid's own
+    invariants against a small synthetic fixture: it reproduces exactly
+    the bus/line/unit lists it was constructed from, resolves slack_bus to
+    the bus marked is_slack, exposes valid canvas positions for both bus
+    and station labels, and every unit satisfies the same physical
+    validation properties the old fleet-wide check exercised.
     """
     print("test_grid_loads...")
     all_passed = True
 
     try:
-        from simulation.grid import Grid
-        from data.topology import BUSES, LINES
-        from data.fleet import UNITS
+        from simulation.designer_grid import DesignerGrid
 
-        # ── Shift 1: south sub-grid (12 buses) ───────────────────────────
+        grid, d_buses, d_lines, d_units = _build_grid_loads_fixture()
+
+        # ── Grid reproduces exactly what it was given ─────────────────────
         try:
-            g1 = Grid(1)
-            buses1 = g1.get_active_buses()
-            lines1 = g1.get_active_lines()
-            units1 = g1.get_active_units()
+            active_buses = grid.get_active_buses()
+            active_lines = grid.get_active_lines()
+            active_units = grid.get_active_units()
 
-            expected_buses_1 = sum(1 for b in BUSES if b.active_from_shift <= 1)
-            expected_lines_1 = sum(1 for l in LINES if l.active_from_shift <= 1)
-            expected_units_1 = sum(1 for u in UNITS if u.active_from_shift <= 1)
+            assert len(active_buses) == len(d_buses), \
+                f"Expected {len(d_buses)} buses, got {len(active_buses)}"
+            assert len(active_lines) == len(d_lines), \
+                f"Expected {len(d_lines)} lines, got {len(active_lines)}"
+            assert len(active_units) == len(d_units), \
+                f"Expected {len(d_units)} units, got {len(active_units)}"
 
-            assert len(buses1) == expected_buses_1, \
-                f"Shift 1 buses: expected {expected_buses_1}, got {len(buses1)}"
-            assert len(lines1) == expected_lines_1, \
-                f"Shift 1 lines: expected {expected_lines_1}, got {len(lines1)}"
-            assert len(units1) == expected_units_1, \
-                f"Shift 1 units: expected {expected_units_1}, got {len(units1)}"
-            assert g1.slack_bus == 'MDBY', \
-                f"Slack bus should be MDBY, got {g1.slack_bus!r}"
+            assert {b.label for b in active_buses} == {b.label for b in d_buses}, \
+                "Bus labels should match the fixture exactly"
+            assert {l.label for l in active_lines} == {l.label for l in d_lines}, \
+                "Line labels should match the fixture exactly"
+            assert {u.label for u in active_units} == {u.label for u in d_units}, \
+                "Unit labels should match the fixture exactly"
 
-            print(f"  Grid(1): {len(buses1)} buses, {len(lines1)} lines, "
-                  f"{len(units1)} units — PASS")
+            print(f"  DesignerGrid: {len(active_buses)} buses, {len(active_lines)} lines, "
+                  f"{len(active_units)} units — matches fixture exactly — PASS")
 
         except AssertionError as e:
-            print(f"  Grid(1): FAIL — {e}")
+            print(f"  Fixture reproduction: FAIL — {e}")
             all_passed = False
 
-        # ── Shift 3: south + centre (20 buses) ───────────────────────────
+        # ── Slack bus resolves to the bus marked is_slack ──────────────────
         try:
-            g3 = Grid(3)
-            buses3 = g3.get_active_buses()
-            lines3 = g3.get_active_lines()
-            units3 = g3.get_active_units()
+            assert grid.slack_bus == 'SLAK', \
+                f"Slack bus should resolve to SLAK, got {grid.slack_bus!r}"
 
-            expected_buses_3 = sum(1 for b in BUSES if b.active_from_shift <= 3)
-            expected_lines_3 = sum(1 for l in LINES if l.active_from_shift <= 3 <= l.active_until_shift)
-            expected_units_3 = sum(1 for u in UNITS if u.active_from_shift <= 3)
+            slack = grid.get_bus('SLAK')
+            assert slack.is_slack, "SLAK.is_slack should be True"
+            assert slack.voltage_kv == 400.0, \
+                f"SLAK should be 400kV, got {slack.voltage_kv}"
 
-            assert len(buses3) == expected_buses_3, \
-                f"Shift 3 buses: expected {expected_buses_3}, got {len(buses3)}"
-            assert len(lines3) == expected_lines_3, \
-                f"Shift 3 lines: expected {expected_lines_3}, got {len(lines3)}"
-            assert len(units3) == expected_units_3, \
-                f"Shift 3 units: expected {expected_units_3}, got {len(units3)}"
-
-            assert len(buses3) > len(buses1), \
-                "Shift 3 should have more buses than shift 1"
-
-            print(f"  Grid(3): {len(buses3)} buses, {len(lines3)} lines, "
-                  f"{len(units3)} units — PASS")
+            marked_slack = [b for b in grid.get_active_buses() if b.is_slack]
+            assert len(marked_slack) == 1, \
+                f"Exactly one slack bus expected, found {len(marked_slack)}"
+            print(f"  Slack bus resolves to SLAK (is_slack=True) — PASS")
 
         except AssertionError as e:
-            print(f"  Grid(3): FAIL — {e}")
+            print(f"  Slack bus check: FAIL — {e}")
             all_passed = False
 
-        # ── Shift 7: full grid (36 transmission + load buses) ─────────────
+        # ── Unit validation properties hold ────────────────────────────────
         try:
-            g7 = Grid(7)
-            buses7 = g7.get_active_buses()
-            lines7 = g7.get_active_lines()
-            units7 = g7.get_active_units()
-
-            expected_buses_7 = sum(1 for b in BUSES if b.active_from_shift <= 7)
-            expected_lines_7 = sum(1 for l in LINES if l.active_from_shift <= 7 <= l.active_until_shift)
-            expected_units_7 = sum(1 for u in UNITS if u.active_from_shift <= 7)
-
-            assert len(buses7) == expected_buses_7, \
-                f"Shift 7 buses: expected {expected_buses_7}, got {len(buses7)}"
-            assert len(lines7) == expected_lines_7, \
-                f"Shift 7 lines: expected {expected_lines_7}, got {len(lines7)}"
-            assert len(units7) == expected_units_7, \
-                f"Shift 7 units: expected {expected_units_7}, got {len(units7)}"
-
-            assert len(buses7) > len(buses3), \
-                "Shift 7 should have more buses than shift 3"
-            assert len(units7) == 47, \
-                f"Full fleet should be 47 units, got {len(units7)}"
-
-            print(f"  Grid(7): {len(buses7)} buses, {len(lines7)} lines, "
-                  f"{len(units7)} units — PASS")
-
-        except AssertionError as e:
-            print(f"  Grid(7): FAIL — {e}")
-            all_passed = False
-
-        # ── All 47 units load without error ───────────────────────────────
-        try:
-            g_full = Grid(10)   # Shift 10 = all units active
-            for unit in g_full.get_active_units():
+            for unit in grid.get_active_units():
                 assert unit.label, "Unit label should not be empty"
                 assert unit.rated_mw > 0.0, \
                     f"{unit.label}: rated_mw must be > 0"
@@ -140,43 +149,23 @@ def test_grid_loads() -> bool:
                     f"{unit.label}: inertia_h must be >= 0"
                 assert unit.cold_start_min >= 0.0, \
                     f"{unit.label}: cold_start_min must be >= 0"
-            print(f"  All 47 units load without error — PASS")
+            print(f"  All {len(grid.get_active_units())} fixture units validate — PASS")
 
         except AssertionError as e:
             print(f"  Unit validation: FAIL — {e}")
             all_passed = False
 
-        # ── Slack bus is present and marked correctly ─────────────────────
+        # ── Canvas positions accessible for both bus and station labels ────
         try:
-            g = Grid(1)
-            slack = g.get_bus('MDBY')
-            assert slack.is_slack, "MDBY.is_slack should be True"
-            assert slack.voltage_kv == 400.0, \
-                f"MDBY should be 400kV, got {slack.voltage_kv}"
-
-            non_slack_buses = [b for b in g.get_active_buses() if b.is_slack]
-            assert len(non_slack_buses) == 1, \
-                f"Exactly one slack bus expected, found {len(non_slack_buses)}"
-            print(f"  Slack bus MDBY correctly defined — PASS")
-
-        except AssertionError as e:
-            print(f"  Slack bus check: FAIL — {e}")
-            all_passed = False
-
-        # ── Canvas positions accessible ───────────────────────────────────
-        try:
-            g = Grid(5)
-            pos = g.get_canvas_position('MDBY')
+            pos = grid.get_canvas_position('SLAK')
             assert len(pos) == 2, "Canvas position should be (x, y) tuple"
             assert 0 <= pos[0] <= 1920, f"Canvas x out of range: {pos[0]}"
-            assert 0 <= pos[1] <= 844, f"Canvas y out of range: {pos[1]}"
+            assert 0 <= pos[1] <= 1080, f"Canvas y out of range: {pos[1]}"
 
-            pos_station = g.get_canvas_position('RVSD')
+            pos_station = grid.get_canvas_position('GENS')
             assert len(pos_station) == 2
 
-            pos_intc = g.get_canvas_position('INTC-N')
-            assert len(pos_intc) == 2
-            print(f"  Canvas positions accessible — PASS")
+            print(f"  Canvas positions accessible for bus and station labels — PASS")
 
         except AssertionError as e:
             print(f"  Canvas positions: FAIL — {e}")
@@ -184,44 +173,29 @@ def test_grid_loads() -> bool:
 
         # ── Demand profile query ──────────────────────────────────────────
         try:
-            g = Grid(1)
-            # Shift 1 has a single load bus: LD01 (150kV load substation).
-            load_ld01_morning = g.get_load_at_bus('LD01', 9.0)
-            load_ld01_night   = g.get_load_at_bus('LD01', 3.0)
-            load_slack        = g.get_load_at_bus('MDBY', 9.0)
+            load_morning = grid.get_load_at_bus('LOAD', 9.0)
+            load_slack   = grid.get_load_at_bus('SLAK', 9.0)
 
-            assert load_ld01_morning > 0.0, "LD01 morning load should be > 0"
-            assert load_ld01_night   > 0.0, "LD01 night load should be > 0"
-            assert load_ld01_morning > load_ld01_night, \
-                "Morning load should exceed night load"
+            # DesignerGrid.get_load_at_bus() returns a flat 50% of peak_load_mw
+            # for all hours (test-session convention — see designer_grid.py's
+            # docstring), not a real demand-profile curve, so there is no
+            # morning/night shape to assert here — just that LOAD buses
+            # return their fixed value and TRANSMISSION buses return zero.
+            assert abs(load_morning - 240.0 * 0.5) < 1e-6, \
+                f"LOAD bus should return 50% of peak_load_mw=240.0, got {load_morning}"
             assert load_slack == 0.0, \
-                "Slack bus MDBY should have zero load"
-            print(f"  Demand profile query: morning={load_ld01_morning:.1f}MW "
-                  f"night={load_ld01_night:.1f}MW — PASS")
+                "Transmission bus SLAK should have zero load"
+            print(f"  Demand profile query: LOAD={load_morning:.1f}MW "
+                  f"SLAK={load_slack:.1f}MW — PASS")
 
         except AssertionError as e:
             print(f"  Demand profile: FAIL — {e}")
             all_passed = False
 
-        # ── Invalid shift number raises ValueError ────────────────────────
-        try:
-            try:
-                Grid(0)
-                print(f"  ValueError for shift 0: FAIL — no exception raised")
-                all_passed = False
-            except ValueError:
-                pass
-            try:
-                Grid(11)
-                print(f"  ValueError for shift 11: FAIL — no exception raised")
-                all_passed = False
-            except ValueError:
-                pass
-            print(f"  Invalid shift raises ValueError — PASS")
-
-        except Exception as e:
-            print(f"  ValueError check: ERROR — {type(e).__name__}: {e}")
-            all_passed = False
+        # Note: the old "invalid shift number raises ValueError" sub-test is
+        # dropped entirely — DesignerGrid takes no shift_number argument at
+        # all (it IS the full grid it was built from; there is nothing to
+        # validate a shift number against).
 
     except Exception as e:
         print(f"  ERROR — {type(e).__name__}: {e}")
@@ -236,18 +210,120 @@ def test_grid_loads() -> bool:
 # STAGE 2 TESTS — DC Load Flow Solver
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_3bus_loadflow_fixture():
+    """Tiny synthetic DesignerGrid reproducing the analytical 3-bus network
+    from the hand-verified math below — A (slack), B, C with the same
+    reactances/ratings as the original comment. The math is independent of
+    label names, so re-labelling from MDBY/DUND/LD01 to A/B/C changes
+    nothing about the analytical result."""
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+
+    buses = [
+        DesignerBus(label='A', name='Bus A', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=100, canvas_y=100,
+                    active_from_shift=1, is_slack=True),
+        DesignerBus(label='B', name='Bus B', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=300, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='C', name='Bus C', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=300, canvas_y=300,
+                    active_from_shift=1, is_slack=False),
+    ]
+    lines = [
+        DesignerLine(label='AB', from_bus='A', to_bus='B',
+                     reactance_pu=0.1, rating_mw=500.0, voltage_kv=400.0),
+        DesignerLine(label='BC', from_bus='B', to_bus='C',
+                     reactance_pu=0.2, rating_mw=300.0, voltage_kv=400.0),
+        DesignerLine(label='AC', from_bus='A', to_bus='C',
+                     reactance_pu=0.1, rating_mw=500.0, voltage_kv=400.0),
+    ]
+    units: list = []
+    grid = DesignerGrid(buses, lines, units)
+    return grid
+
+
+def _build_meshed_loadflow_fixture():
+    """Moderately-sized synthetic DesignerGrid (10 buses, meshed, similar
+    scale to test_voltage_reactive.py's fixtures but larger) standing in
+    for a real campaign shift grid — same intent as the old Grid(1)/Grid(7)
+    checks (DCLoadFlow doesn't crash and produces non-zero flows on a
+    real-ish sized network), different concrete topology. Bus SLK is slack;
+    two more transmission buses (MID, EAST) form a backbone; four LOAD
+    buses hang off the backbone via single feeders."""
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+
+    buses = [
+        DesignerBus(label='SLK', name='Slack', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=200, canvas_y=100,
+                    active_from_shift=1, is_slack=True),
+        DesignerBus(label='MID', name='Mid', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=400, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='EST', name='East', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=600, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='SUB1', name='Sub1', voltage_kv=220.0,
+                    bus_type='TRANSMISSION', canvas_x=200, canvas_y=300,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='SUB2', name='Sub2', voltage_kv=220.0,
+                    bus_type='TRANSMISSION', canvas_x=600, canvas_y=300,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='LD01', name='Load 1', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=100, canvas_y=500,
+                    active_from_shift=1, is_slack=False, peak_load_mw=600.0),
+        DesignerBus(label='LD02', name='Load 2', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=300, canvas_y=500,
+                    active_from_shift=1, is_slack=False, peak_load_mw=500.0),
+        DesignerBus(label='LD03', name='Load 3', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=500, canvas_y=500,
+                    active_from_shift=1, is_slack=False, peak_load_mw=550.0),
+        DesignerBus(label='LD04', name='Load 4', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=700, canvas_y=500,
+                    active_from_shift=1, is_slack=False, peak_load_mw=450.0),
+    ]
+    lines = [
+        DesignerLine(label='L01', from_bus='SLK', to_bus='MID',
+                     reactance_pu=0.05, rating_mw=1500.0, voltage_kv=400.0),
+        DesignerLine(label='L02', from_bus='MID', to_bus='EST',
+                     reactance_pu=0.05, rating_mw=1500.0, voltage_kv=400.0),
+        DesignerLine(label='L03', from_bus='SLK', to_bus='EST',
+                     reactance_pu=0.09, rating_mw=1200.0, voltage_kv=400.0),
+        DesignerLine(label='L04', from_bus='SLK', to_bus='SUB1',
+                     reactance_pu=0.1, rating_mw=900.0, voltage_kv=220.0),
+        DesignerLine(label='L05', from_bus='EST', to_bus='SUB2',
+                     reactance_pu=0.1, rating_mw=900.0, voltage_kv=220.0),
+        DesignerLine(label='L06', from_bus='SUB1', to_bus='SUB2',
+                     reactance_pu=0.15, rating_mw=700.0, voltage_kv=220.0),
+        DesignerLine(label='L07', from_bus='SUB1', to_bus='LD01',
+                     reactance_pu=0.12, rating_mw=700.0, voltage_kv=150.0),
+        DesignerLine(label='L08', from_bus='SUB1', to_bus='LD02',
+                     reactance_pu=0.12, rating_mw=600.0, voltage_kv=150.0),
+        DesignerLine(label='L09', from_bus='SUB2', to_bus='LD03',
+                     reactance_pu=0.12, rating_mw=650.0, voltage_kv=150.0),
+        DesignerLine(label='L10', from_bus='SUB2', to_bus='LD04',
+                     reactance_pu=0.12, rating_mw=550.0, voltage_kv=150.0),
+    ]
+    units: list = []
+    grid = DesignerGrid(buses, lines, units)
+    return grid
+
+
 def test_loadflow_solves() -> bool:
     """
     Verify DCLoadFlow produces physically correct results on known test networks.
 
-    Uses a 3-bus network with an analytical solution, then verifies the
-    full Shift 1 grid produces sensible non-zero flows.
+    Uses a synthetic 3-bus network with an analytical solution (same math as
+    before — only the bus/line labels changed since topology.py's Grid is
+    retired), then verifies a moderately-sized synthetic meshed grid
+    produces sensible non-zero flows, standing in for the old real-campaign
+    Grid(1)/Grid(7) checks.
     """
     print("test_loadflow_solves...")
     all_passed = True
 
     try:
-        from simulation.grid import Grid
         from simulation.loadflow import DCLoadFlow
         from simulation.constants import S_BASE
 
@@ -281,30 +357,51 @@ def test_loadflow_solves() -> bool:
         #   P_AC = (theta_A - theta_C)/X_AC = (0-(-0.01))/0.1 = 0.1 pu = 100 MW
 
         try:
-            # Use Grid(2): L50 activates from Shift 2 (same shift as LD02).
-            # Grid(2) has MDBY→DUND (L11), DUND→LD01 (L49), DUND→LD02 (L50).
-            g1 = Grid(2)
-            lf = DCLoadFlow(g1)
+            g3 = _build_3bus_loadflow_fixture()
+            lf = DCLoadFlow(g3)
 
-            # Generation at MDBY (slack), load split across LD01 and LD02.
-            # Slack absorbs +1000 MW. Both feeder lines should carry flow.
-            buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['LD01'] = -500.0
-            buses['LD02'] = -500.0
+            buses = {b.label: 0.0 for b in g3.get_active_buses()}
+            buses['B'] = 200.0
+            buses['C'] = -200.0
 
             result = lf.solve(buses)
 
-            # Slack bus angle must be exactly 0
-            assert abs(result.bus_angles['MDBY']) < 1e-10, \
-                f"Slack bus angle should be 0, got {result.bus_angles['MDBY']}"
+            assert abs(result.bus_angles['A']) < 1e-10, \
+                f"Slack bus angle should be 0, got {result.bus_angles['A']}"
+            assert abs(result.bus_angles['B'] - 0.01) < 1e-6, \
+                f"theta_B should be 0.01 rad, got {result.bus_angles['B']:.6f}"
+            assert abs(result.bus_angles['C'] - (-0.01)) < 1e-6, \
+                f"theta_C should be -0.01 rad, got {result.bus_angles['C']:.6f}"
 
-            # All buses must have angles
-            for b in g1.get_active_buses():
+            assert abs(result.line_flows_mw['AB'] - (-100.0)) < 0.5, \
+                f"P_AB should be -100 MW, got {result.line_flows_mw['AB']:.2f}"
+            assert abs(result.line_flows_mw['BC'] - 100.0) < 0.5, \
+                f"P_BC should be 100 MW, got {result.line_flows_mw['BC']:.2f}"
+            assert abs(result.line_flows_mw['AC'] - 100.0) < 0.5, \
+                f"P_AC should be 100 MW, got {result.line_flows_mw['AC']:.2f}"
+
+            print(f"  3-bus analytical: theta_B={result.bus_angles['B']:.4f} "
+                  f"theta_C={result.bus_angles['C']:.4f} rad, "
+                  f"AB={result.line_flows_mw['AB']:.1f} BC={result.line_flows_mw['BC']:.1f} "
+                  f"AC={result.line_flows_mw['AC']:.1f} MW — PASS")
+
+        except AssertionError as e:
+            print(f"  3-bus analytical: FAIL — {e}")
+            all_passed = False
+
+        # ── All angles/flows present on the 3-bus fixture ─────────────────
+        try:
+            g3 = _build_3bus_loadflow_fixture()
+            lf = DCLoadFlow(g3)
+            buses = {b.label: 0.0 for b in g3.get_active_buses()}
+            buses['B'] = 200.0
+            buses['C'] = -200.0
+            result = lf.solve(buses)
+
+            for b in g3.get_active_buses():
                 assert b.label in result.bus_angles, \
                     f"Missing angle for bus {b.label}"
-
-            # All lines must have flows and loadings
-            for l in g1.get_active_lines():
+            for l in g3.get_active_lines():
                 assert l.label in result.line_flows_mw, \
                     f"Missing flow for line {l.label}"
                 assert l.label in result.line_loading_pct, \
@@ -312,42 +409,31 @@ def test_loadflow_solves() -> bool:
                 assert result.line_loading_pct[l.label] >= 0.0, \
                     f"Line {l.label} loading should be >= 0"
 
-            # Both feeders from DUND should carry non-zero flow
-            assert abs(result.line_flows_mw['L49']) > 1.0, \
-                f"L49 (DUND-LD01) should carry flow, got {result.line_flows_mw['L49']:.2f} MW"
-            assert abs(result.line_flows_mw['L50']) > 1.0, \
-                f"L50 (DUND-LD02) should carry flow, got {result.line_flows_mw['L50']:.2f} MW"
-
-            print(f"  Grid(1) solve: slack angle=0, all angles/flows present — PASS")
-            print(f"    L49 flow={result.line_flows_mw['L49']:.1f} MW  "
-                  f"loading={result.line_loading_pct['L49']:.1f}%")
-            print(f"    L50 flow={result.line_flows_mw['L50']:.1f} MW  "
-                  f"loading={result.line_loading_pct['L50']:.1f}%")
+            print(f"  All angles/flows present on 3-bus fixture — PASS")
 
         except AssertionError as e:
-            print(f"  Grid(1) solve: FAIL — {e}")
+            print(f"  Angles/flows present: FAIL — {e}")
             all_passed = False
 
         # ── Flow direction consistency ─────────────────────────────────────
-        # Generation at MDBY (slack), load at LD01. Power must flow
-        # MDBY→DUND (L11, positive) then DUND→LD01 (L49, positive).
+        # Generation at slack SLK, load at LD01 (via SUB1). Power must flow
+        # SLK->SUB1 (L04, positive) then SUB1->LD01 (L07, positive).
         try:
-            g1 = Grid(1)
-            lf = DCLoadFlow(g1)
+            gm = _build_meshed_loadflow_fixture()
+            lf = DCLoadFlow(gm)
 
-            buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['LD01'] = -1000.0  # load at LD01
+            buses = {b.label: 0.0 for b in gm.get_active_buses()}
+            buses['LD01'] = -1000.0  # load at LD01, fed only via SUB1
 
             result = lf.solve(buses)
 
-            # Power flows toward load: MDBY→DUND positive, DUND→LD01 positive
-            assert result.line_flows_mw['L11'] > 0.0, \
-                f"L11 should flow MDBY→DUND (positive), got {result.line_flows_mw['L11']:.2f}"
-            assert result.line_flows_mw['L49'] > 0.0, \
-                f"L49 should flow DUND→LD01 (positive), got {result.line_flows_mw['L49']:.2f}"
+            assert result.line_flows_mw['L04'] > 0.0, \
+                f"L04 should flow SLK->SUB1 (positive), got {result.line_flows_mw['L04']:.2f}"
+            assert result.line_flows_mw['L07'] > 0.0, \
+                f"L07 should flow SUB1->LD01 (positive), got {result.line_flows_mw['L07']:.2f}"
 
-            print(f"  Flow direction correct: L11={result.line_flows_mw['L11']:.1f} MW "
-                  f"L49={result.line_flows_mw['L49']:.1f} MW -- PASS")
+            print(f"  Flow direction correct: L04={result.line_flows_mw['L04']:.1f} MW "
+                  f"L07={result.line_flows_mw['L07']:.1f} MW -- PASS")
 
         except AssertionError as e:
             print(f"  Flow direction: FAIL — {e}")
@@ -355,14 +441,16 @@ def test_loadflow_solves() -> bool:
 
         # ── Loading percentage matches flow / rating ───────────────────────
         try:
-            g1 = Grid(1)
-            lf = DCLoadFlow(g1)
-            buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['LD01'] = -600.0
-            buses['LD02'] = -400.0
+            gm = _build_meshed_loadflow_fixture()
+            lf = DCLoadFlow(gm)
+            buses = {b.label: 0.0 for b in gm.get_active_buses()}
+            buses['LD01'] = -400.0
+            buses['LD02'] = -350.0
+            buses['LD03'] = -300.0
+            buses['LD04'] = -250.0
             result = lf.solve(buses)
 
-            for line in g1.get_active_lines():
+            for line in gm.get_active_lines():
                 lbl = line.label
                 expected_loading = abs(result.line_flows_mw[lbl]) / line.rating_mw * 100.0
                 assert abs(result.line_loading_pct[lbl] - expected_loading) < 1e-6, \
@@ -377,18 +465,18 @@ def test_loadflow_solves() -> bool:
 
         # ── Singular matrix (islanded) returns safe zero-angle fallback ────
         try:
-            g1 = Grid(1)
-            lf = DCLoadFlow(g1)
+            gm = _build_meshed_loadflow_fixture()
+            lf = DCLoadFlow(gm)
 
             # Corrupt the B matrix to force singularity
             lf._b_reduced = np.zeros_like(lf._b_reduced)
 
-            buses = {b.label: 0.0 for b in g1.get_active_buses()}
-            buses['ASHF'] = -500.0
+            buses = {b.label: 0.0 for b in gm.get_active_buses()}
+            buses['LD01'] = -500.0
             result = lf.solve(buses)
 
             # Should return without raising — zero angles
-            for b in g1.get_active_buses():
+            for b in gm.get_active_buses():
                 assert abs(result.bus_angles[b.label]) < 1e-10, \
                     f"Singular fallback: expected zero angle for {b.label}"
 
@@ -398,34 +486,33 @@ def test_loadflow_solves() -> bool:
             print(f"  Singular fallback: FAIL — {e}")
             all_passed = False
 
-        # ── Full grid Shift 7: all lines get flows ────────────────────────
+        # ── Full meshed grid: all lines get flows ──────────────────────────
         try:
-            g7 = Grid(7)
-            lf7 = DCLoadFlow(g7)
+            gm = _build_meshed_loadflow_fixture()
+            lfm = DCLoadFlow(gm)
 
-            buses = {b.label: 0.0 for b in g7.get_active_buses()}
+            buses = {b.label: 0.0 for b in gm.get_active_buses()}
             # Spread load across load substations
-            for label in g7.get_load_bus_labels():
+            for label in gm.get_load_bus_labels():
                 buses[label] = -500.0
-            # Generation at major buses
-            buses['MDBY'] = 0.0   # slack — absorbs remainder
-            buses['STHW'] = 1400.0
-            buses['NRTH'] = 600.0
-            buses['WEST'] = 400.0
+            # Generation at major transmission buses (slack absorbs remainder)
+            buses['SLK'] = 0.0
+            buses['MID'] = 900.0
+            buses['EST'] = 700.0
 
-            result = lf7.solve(buses)
+            result = lfm.solve(buses)
 
-            expected_lines = len(g7.get_active_lines())
+            expected_lines = len(gm.get_active_lines())
             assert len(result.line_flows_mw) == expected_lines, \
                 f"Expected {expected_lines} line flows, got {len(result.line_flows_mw)}"
-            assert len(result.bus_angles) == len(g7.get_active_buses()), \
+            assert len(result.bus_angles) == len(gm.get_active_buses()), \
                 "Missing bus angles in full grid solve"
 
             non_zero = sum(1 for f in result.line_flows_mw.values() if abs(f) > 0.1)
-            assert non_zero > 10, \
-                f"Expected at least 10 lines to carry flow, only {non_zero}/{expected_lines} non-zero"
+            assert non_zero == expected_lines, \
+                f"Expected all {expected_lines} lines to carry flow, only {non_zero} non-zero"
 
-            print(f"  Full grid (shift 7): {expected_lines} lines solved, "
+            print(f"  Full meshed grid: {expected_lines} lines solved, "
                   f"{non_zero} carrying flow — PASS")
 
         except AssertionError as e:
@@ -448,18 +535,42 @@ def test_loadflow_solves() -> bool:
 def test_unit_model() -> bool:
     """
     Verify UnitModel state transitions, ramp behaviour, and FleetModel aggregates.
+
+    data.fleet.UNITS/get_unit() are being retired along with topology.py's
+    Grid — the GenerationUnit dataclass itself still exists, so each
+    sub-test below constructs its own inline GenerationUnit fixture with
+    the same field values the original real-fleet units carried (rated_mw,
+    min_mw, ramp_pct_per_min, etc.), keeping the hand-verified analytical
+    math identical.
     """
     print("test_unit_model...")
     all_passed = True
 
     try:
         from simulation.units import UnitModel, FleetModel
-        from simulation.grid import Grid
-        from data.fleet import get_unit
+        from data.fleet import GenerationUnit
+
+        def _mk_unit(label, station, bus, unit_type, rated_mw, min_mw,
+                     ramp_pct_per_min, inertia_h, cold_start_min,
+                     q_max_mvar=100.0, q_min_mvar=-50.0, can_pump=False,
+                     active_from_shift=1):
+            return GenerationUnit(
+                label=label, station_label=station, bus_label=bus,
+                unit_type=unit_type, rated_mw=rated_mw, min_mw=min_mw,
+                ramp_pct_per_min=ramp_pct_per_min, inertia_h=inertia_h,
+                cold_start_min=cold_start_min,
+                q_max_mvar=q_max_mvar, q_min_mvar=q_min_mvar,
+                can_pump=can_pump, active_from_shift=active_from_shift,
+                description=f'Test {unit_type} unit',
+                min_up_time_h=1.0, min_down_time_h=1.0,
+            )
 
         # ── Unit starts OFFLINE ───────────────────────────────────────────
         try:
-            spec = get_unit('RVSD-1')
+            spec = _mk_unit('RVSD-1', 'RVSD', 'MDBY', 'COAL',
+                             rated_mw=300.0, min_mw=90.0,
+                             ramp_pct_per_min=3.0, inertia_h=5.0,
+                             cold_start_min=240.0)
             um = UnitModel(spec)
             assert um.state == 'OFFLINE', \
                 f"Expected OFFLINE, got {um.state!r}"
@@ -475,7 +586,10 @@ def test_unit_model() -> bool:
 
         # ── start() transitions to STARTING ───────────────────────────────
         try:
-            spec = get_unit('RVSD-1')
+            spec = _mk_unit('RVSD-1', 'RVSD', 'MDBY', 'COAL',
+                             rated_mw=300.0, min_mw=90.0,
+                             ramp_pct_per_min=3.0, inertia_h=5.0,
+                             cold_start_min=240.0)
             um = UnitModel(spec)
             accepted = um.start()
             assert accepted, "start() should return True from OFFLINE"
@@ -495,7 +609,10 @@ def test_unit_model() -> bool:
 
         # ── Cold start countdown advances; unit goes ONLINE ───────────────
         try:
-            spec = get_unit('ASHG-1')   # CCGT: cold_start_min = 60.0
+            spec = _mk_unit('ASHG-1', 'ASHG', 'ASHF', 'CCGT',
+                             rated_mw=400.0, min_mw=80.0,
+                             ramp_pct_per_min=8.0, inertia_h=4.0,
+                             cold_start_min=60.0)   # CCGT: cold_start_min = 60.0
             um = UnitModel(spec)
             um.start()
 
@@ -521,7 +638,10 @@ def test_unit_model() -> bool:
 
         # ── Ramp rate limits output per tick ──────────────────────────────
         try:
-            spec = get_unit('RVSD-1')   # COAL: ramp 3%/min, rated 300 MW
+            spec = _mk_unit('RVSD-1', 'RVSD', 'MDBY', 'COAL',
+                             rated_mw=300.0, min_mw=90.0,
+                             ramp_pct_per_min=3.0, inertia_h=5.0,
+                             cold_start_min=240.0)   # COAL: ramp 3%/min, rated 300 MW
             um = UnitModel(spec, initial_mw=90.0)  # start ONLINE at min
 
             um.set_target(300.0)
@@ -548,7 +668,10 @@ def test_unit_model() -> bool:
 
         # ── Output clamped to [min_mw, rated_mw] when ONLINE ──────────────
         try:
-            spec = get_unit('HART-1')   # NUCLEAR: min 490, rated 700
+            spec = _mk_unit('HART-1', 'HART', 'STHW', 'NUCLEAR',
+                             rated_mw=700.0, min_mw=490.0,
+                             ramp_pct_per_min=0.5, inertia_h=6.0,
+                             cold_start_min=480.0)   # NUCLEAR: min 490, rated 700
             um = UnitModel(spec, initial_mw=490.0)
 
             # Target below min: clamp to min_mw
@@ -570,7 +693,10 @@ def test_unit_model() -> bool:
 
         # ── stop() transitions ONLINE -> SHUTDOWN -> OFFLINE ──────────────
         try:
-            spec = get_unit('DUNH-1')   # HYDRO_PUMP: ramp 100%/min, rated 200 MW
+            spec = _mk_unit('DUNH-1', 'DUNH', 'MDBY', 'HYDRO_PUMP',
+                             rated_mw=200.0, min_mw=0.0,
+                             ramp_pct_per_min=100.0, inertia_h=3.0,
+                             cold_start_min=5.0, can_pump=True)   # HYDRO_PUMP: ramp 100%/min, rated 200 MW
             um = UnitModel(spec, initial_mw=200.0)
             assert um.state == 'ONLINE'
 
@@ -597,7 +723,10 @@ def test_unit_model() -> bool:
 
         # ── trip() goes to OFFLINE immediately from any state ─────────────
         try:
-            spec = get_unit('RVSD-3')
+            spec = _mk_unit('RVSD-3', 'RVSD', 'MDBY', 'COAL',
+                             rated_mw=300.0, min_mw=90.0,
+                             ramp_pct_per_min=3.0, inertia_h=5.0,
+                             cold_start_min=240.0)
             um_online = UnitModel(spec, initial_mw=300.0)
             um_online.trip()
             assert um_online.state == 'OFFLINE', \
@@ -617,7 +746,10 @@ def test_unit_model() -> bool:
 
         # ── Renewable unit always ONLINE; start/stop rejected ─────────────
         try:
-            spec = get_unit('WNCN-1')   # WIND
+            spec = _mk_unit('WNCN-1', 'WNCN', 'WNCN', 'WIND',
+                             rated_mw=250.0, min_mw=0.0,
+                             ramp_pct_per_min=100.0, inertia_h=0.0,
+                             cold_start_min=0.0, q_max_mvar=0.0, q_min_mvar=0.0)   # WIND
             um = UnitModel(spec)
             assert um.state == 'ONLINE', \
                 f"Wind unit should start ONLINE, got {um.state!r}"
@@ -633,15 +765,52 @@ def test_unit_model() -> bool:
             all_passed = False
 
         # ── FleetModel aggregates ─────────────────────────────────────────
-        # Grid(3) used: HART-1/2 are at STHW which is only active from Shift 3.
+        # FleetModel only needs grid.get_active_units() (see units.py's
+        # FleetModel.__init__) — a synthetic DesignerGrid with two stations
+        # on two different buses is enough to exercise per-bus p_injections
+        # aggregation, which was the point of the original Grid(3) fixture
+        # (RVSD units at MDBY, HART units at STHW).
         try:
-            g3 = Grid(3)
+            from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+            from simulation.designer_grid import DesignerGrid
+
+            f_buses = [
+                DesignerBus(label='MDBY', name='Midbury', voltage_kv=400.0,
+                            bus_type='TRANSMISSION', canvas_x=100, canvas_y=100,
+                            active_from_shift=1, is_slack=True),
+                DesignerBus(label='STHW', name='Southwick', voltage_kv=400.0,
+                            bus_type='TRANSMISSION', canvas_x=300, canvas_y=100,
+                            active_from_shift=1, is_slack=False),
+            ]
+            f_lines = [
+                DesignerLine(label='L01', from_bus='MDBY', to_bus='STHW',
+                             reactance_pu=0.05, rating_mw=2000.0, voltage_kv=400.0),
+            ]
+            f_units = [
+                DesignerUnit(label='RVSD-1', station_label='RVSD', bus_label='MDBY',
+                             unit_type='COAL', rated_mw=300.0, min_mw=90.0,
+                             ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                             q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
+                             active_from_shift=1, description='Test coal unit'),
+                DesignerUnit(label='HART-1', station_label='HART', bus_label='STHW',
+                             unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
+                             ramp_pct_per_min=0.5, inertia_h=6.0, cold_start_min=480.0,
+                             q_max_mvar=300.0, q_min_mvar=-150.0, can_pump=False,
+                             active_from_shift=1, description='Test nuclear unit 1'),
+                DesignerUnit(label='HART-2', station_label='HART', bus_label='STHW',
+                             unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
+                             ramp_pct_per_min=0.5, inertia_h=6.0, cold_start_min=480.0,
+                             q_max_mvar=300.0, q_min_mvar=-150.0, can_pump=False,
+                             active_from_shift=1, description='Test nuclear unit 2'),
+            ]
+            g_fleet = DesignerGrid(f_buses, f_lines, f_units)
+
             schedule = {
                 'RVSD-1': 280.0,
                 'HART-1': 600.0,
                 'HART-2': 700.0,
             }
-            fleet = FleetModel(g3, initial_schedule=schedule)
+            fleet = FleetModel(g_fleet, initial_schedule=schedule)
 
             total_gen = fleet.total_generation_mw()
             # Scheduled units + any renewables at 0 MW
@@ -824,6 +993,37 @@ def test_frequency_model() -> bool:
     return all_passed
 
 
+def _build_voltage_model_fixture():
+    """Synthetic DesignerGrid standing in for the old Grid(1) topology
+    source — VoltageModel only needs bus/line structure, not real campaign
+    data. Slack bus SLK feeds two more buses (MID, FAR), giving a
+    non-slack bus (MID) with a controllable path to the slack bus for the
+    PV/PQ conversion sub-test."""
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+
+    buses = [
+        DesignerBus(label='SLK', name='Slack', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=100, canvas_y=100,
+                    active_from_shift=1, is_slack=True),
+        DesignerBus(label='MID', name='Mid', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=300, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='FAR', name='Far', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=500, canvas_y=100,
+                    active_from_shift=1, is_slack=False, peak_load_mw=200.0),
+    ]
+    lines = [
+        DesignerLine(label='L01', from_bus='SLK', to_bus='MID',
+                     reactance_pu=0.08, rating_mw=1000.0, voltage_kv=400.0),
+        DesignerLine(label='L02', from_bus='MID', to_bus='FAR',
+                     reactance_pu=0.12, rating_mw=500.0, voltage_kv=150.0),
+    ]
+    units: list = []
+    grid = DesignerGrid(buses, lines, units)
+    return grid
+
+
 def test_voltage_model() -> bool:
     """
     Verify VoltageModel produces physically reasonable voltage magnitudes
@@ -838,20 +1038,19 @@ def test_voltage_model() -> bool:
     all_passed = True
 
     try:
-        from simulation.grid import Grid
         from simulation.voltage import VoltageModel
 
         # ── Slack bus always 1.0, voltages physically reasonable ──────────
         try:
-            g1 = Grid(1)
+            g1 = _build_voltage_model_fixture()
             vm = VoltageModel(g1)
 
             # Balanced system — zero Q everywhere.
             q_zero = {b.label: 0.0 for b in g1.get_active_buses()}
             result = vm.solve(q_zero)
 
-            assert abs(result.bus_voltages['MDBY'] - 1.0) < 1e-9, \
-                f"Slack bus MDBY should have V=1.0, got {result.bus_voltages['MDBY']:.6f}"
+            assert abs(result.bus_voltages['SLK'] - 1.0) < 1e-9, \
+                f"Slack bus SLK should have V=1.0, got {result.bus_voltages['SLK']:.6f}"
 
             for b in g1.get_active_buses():
                 v = result.bus_voltages[b.label]
@@ -867,7 +1066,7 @@ def test_voltage_model() -> bool:
 
         # ── Reactive injection raises voltage; absorption lowers it ────────
         try:
-            g1 = Grid(1)
+            g1 = _build_voltage_model_fixture()
             vm = VoltageModel(g1)
 
             buses = g1.get_active_buses()
@@ -902,7 +1101,7 @@ def test_voltage_model() -> bool:
 
         # ── PV->PQ conversion when Q limit is hit ─────────────────────────
         try:
-            g1 = Grid(1)
+            g1 = _build_voltage_model_fixture()
             vm = VoltageModel(g1)
 
             buses = g1.get_active_buses()
@@ -1060,6 +1259,47 @@ def test_demand_model() -> bool:
     return all_passed
 
 
+def _build_renewables_fixture():
+    """Synthetic DesignerGrid with WIND and SOLAR units, standing in for
+    the old Grid(7) fixture (real campaign fleet's WNCN wind farm and
+    SLST/SLFD solar farms) — RenewablesModel only cares about
+    grid.get_active_units() filtered to unit_type in ('WIND', 'SOLAR')."""
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+
+    buses = [
+        DesignerBus(label='SLK', name='Slack', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=100, canvas_y=100,
+                    active_from_shift=1, is_slack=True),
+        DesignerBus(label='WIND', name='Windbus', voltage_kv=220.0,
+                    bus_type='TRANSMISSION', canvas_x=300, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='SOLR', name='Solarbus', voltage_kv=220.0,
+                    bus_type='TRANSMISSION', canvas_x=500, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+    ]
+    lines = [
+        DesignerLine(label='L01', from_bus='SLK', to_bus='WIND',
+                     reactance_pu=0.08, rating_mw=1000.0, voltage_kv=220.0),
+        DesignerLine(label='L02', from_bus='SLK', to_bus='SOLR',
+                     reactance_pu=0.08, rating_mw=1000.0, voltage_kv=220.0),
+    ]
+    units = [
+        DesignerUnit(label='WNCN-1', station_label='WNCN', bus_label='WIND',
+                     unit_type='WIND', rated_mw=250.0, min_mw=0.0,
+                     ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+                     q_max_mvar=0.0, q_min_mvar=0.0, can_pump=False,
+                     active_from_shift=1, description='Test wind unit'),
+        DesignerUnit(label='SLST-1', station_label='SLST', bus_label='SOLR',
+                     unit_type='SOLAR', rated_mw=300.0, min_mw=0.0,
+                     ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+                     q_max_mvar=0.0, q_min_mvar=0.0, can_pump=False,
+                     active_from_shift=1, description='Test solar unit'),
+    ]
+    grid = DesignerGrid(buses, lines, units)
+    return grid
+
+
 def test_renewables_model() -> bool:
     """
     Verify RenewablesModel output is bounded, solar is zero at night,
@@ -1070,11 +1310,9 @@ def test_renewables_model() -> bool:
 
     try:
         from simulation.renewables import RenewablesModel
-        from simulation.grid import Grid
-        from data.fleet import UNITS
 
-        # Use Shift 7 which has WNCN (wind) and SLST/SLFD (solar) active.
-        g7 = Grid(7)
+        # Synthetic fixture with a WIND and a SOLAR unit (see docstring).
+        g7 = _build_renewables_fixture()
 
         # ── All outputs bounded [0, rated_mw] ─────────────────────────────
         try:
@@ -1171,6 +1409,68 @@ def test_renewables_model() -> bool:
 # STAGE 6 TESTS — Cascade Detection and Island Finding
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_cascade_fixture():
+    """
+    Synthetic backbone-plus-pockets topology, replacing the real campaign
+    Grid(7) fixture: a 6-bus meshed 400kV "backbone" (BCK1..BCK6, fully
+    interconnected so any single line loss keeps it whole) plus 3 "pocket"
+    buses (POK1..POK3), each tied to the backbone by exactly one line and
+    each carrying one downstream LOAD bus. Cutting the three backbone-pocket
+    tie lines demonstrably splits the network into >= 2 islands — the same
+    structural property the old L09-L14 transformer-tie cut exercised.
+    Returns (buses, lines) — raw Bus/Line lists via DesignerGrid, since
+    find_islands()/get_blackout_zones() take bus/line lists directly, not
+    a grid object.
+    """
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+
+    backbone_labels = ['BCK1', 'BCK2', 'BCK3', 'BCK4', 'BCK5', 'BCK6']
+    pocket_labels = ['POK1', 'POK2', 'POK3']
+    load_labels = ['PLD1', 'PLD2', 'PLD3']
+    tie_labels = ['TIE1', 'TIE2', 'TIE3']
+
+    buses = []
+    for i, lbl in enumerate(backbone_labels):
+        buses.append(DesignerBus(
+            label=lbl, name=f'Backbone {i+1}', voltage_kv=400.0,
+            bus_type='TRANSMISSION', canvas_x=100 * i, canvas_y=0,
+            active_from_shift=1, is_slack=(i == 0)))
+    for i, lbl in enumerate(pocket_labels):
+        buses.append(DesignerBus(
+            label=lbl, name=f'Pocket {i+1}', voltage_kv=220.0,
+            bus_type='TRANSMISSION', canvas_x=100 * i, canvas_y=200,
+            active_from_shift=1, is_slack=False))
+    for i, lbl in enumerate(load_labels):
+        buses.append(DesignerBus(
+            label=lbl, name=f'Pocket Load {i+1}', voltage_kv=150.0,
+            bus_type='LOAD', canvas_x=100 * i, canvas_y=400,
+            active_from_shift=1, is_slack=False, peak_load_mw=100.0))
+
+    lines = []
+    # Mesh the backbone: a ring (BCK1-BCK2-...-BCK6-BCK1) plus one chord,
+    # so no single line loss can split it.
+    for i in range(len(backbone_labels)):
+        a = backbone_labels[i]
+        b = backbone_labels[(i + 1) % len(backbone_labels)]
+        lines.append(DesignerLine(label=f'BB{i+1}', from_bus=a, to_bus=b,
+                                   reactance_pu=0.05, rating_mw=1500.0, voltage_kv=400.0))
+    lines.append(DesignerLine(label='BBX', from_bus='BCK1', to_bus='BCK4',
+                               reactance_pu=0.05, rating_mw=1500.0, voltage_kv=400.0))
+    # Each pocket ties to the backbone by exactly one line.
+    for i, (tie, pok) in enumerate(zip(tie_labels, pocket_labels)):
+        lines.append(DesignerLine(label=tie, from_bus=backbone_labels[i], to_bus=pok,
+                                   reactance_pu=0.1, rating_mw=800.0, voltage_kv=220.0))
+    # Each pocket feeds its own load bus.
+    for i, (pok, pld) in enumerate(zip(pocket_labels, load_labels)):
+        lines.append(DesignerLine(label=f'PL{i+1}', from_bus=pok, to_bus=pld,
+                                   reactance_pu=0.12, rating_mw=400.0, voltage_kv=150.0))
+
+    units: list = []
+    grid = DesignerGrid(buses, lines, units)
+    return grid.get_active_buses(), grid.get_active_lines(), backbone_labels, tie_labels
+
+
 def test_cascade_model() -> bool:
     """
     Verify CascadeModel island finding and overload timer behaviour.
@@ -1186,20 +1486,17 @@ def test_cascade_model() -> bool:
 
     try:
         from simulation.cascade import CascadeModel
-        from simulation.grid import Grid
         from simulation.constants import TRIP_DELAY_S, OVERLOAD_CRIT_PCT
 
         cm = CascadeModel()
 
         # ── find_islands partitions all buses with no overlap or gaps ─────────
         # Every bus must appear in exactly one island — this is the core
-        # invariant of the BFS algorithm.  The number of islands varies by
-        # topology (radial cascade stations and generation buses are naturally
-        # isolated when their single feed line is the only connection).
+        # invariant of the BFS algorithm. On this fixture the meshed
+        # backbone plus its three single-tied pockets are all reachable
+        # from each other, so the whole network is one island.
         try:
-            g7 = Grid(7)
-            lines7 = g7.get_active_lines()
-            buses7 = g7.get_active_buses()
+            buses7, lines7, backbone_labels, tie_labels = _build_cascade_fixture()
             islands7 = cm.find_islands(buses7, lines7)
 
             all_labels7 = {b.label for b in buses7}
@@ -1212,18 +1509,17 @@ def test_cascade_model() -> bool:
             assert covered == all_labels7, \
                 f"Not all buses covered: missing {all_labels7 - covered}"
 
-            # The main grid backbone (WEST, MDBY, STHW, CNTR, NRTH, EAST)
-            # must all be in the same island — they are directly interconnected
-            # by the active 400kV lines.
-            backbone = {'WEST', 'MDBY', 'STHW', 'CNTR', 'NRTH', 'EAST'}
+            # The 400kV backbone buses must all be in the same island —
+            # they are directly interconnected by the meshed backbone lines.
+            backbone = set(backbone_labels)
             backbone_island = next(
                 (i for i in islands7 if backbone <= i), None
             )
             assert backbone_island is not None, \
                 f"400kV backbone buses should all be in one island"
 
-            # Load substations each connect to a 150kV feeder — verify they're
-            # reachable from the backbone (same island), not isolated.
+            # Load substations each connect via a pocket feeder — verify
+            # they're reachable from the backbone (same island), not isolated.
             load_labels7 = {b.label for b in buses7 if b.bus_type == 'LOAD'}
             for lb in load_labels7:
                 lb_island = next(i for i in islands7 if lb in i)
@@ -1231,7 +1527,7 @@ def test_cascade_model() -> bool:
                     f"Load sub {lb} should be connected (not isolated), " \
                     f"got isolated 1-bus island"
 
-            print(f"  Grid(7) partition: {len(islands7)} islands, all "
+            print(f"  Fixture partition: {len(islands7)} islands, all "
                   f"{len(all_labels7)} buses covered, backbone connected — PASS")
 
         except AssertionError as e:
@@ -1239,17 +1535,14 @@ def test_cascade_model() -> bool:
             all_passed = False
 
         # ── Tripped line splits transmission network into two islands ─────────
-        # Use Grid(7) where L09 (STHW-ASHF), L10 (CNTR-WRNT), L11 (MDBY-DUND),
-        # L12 (WEST-RDST), L13 (NRTH-COAL), and L14 (EAST-SLST) are the only
-        # connections from the 400kV backbone into the 220kV regional pockets.
-        # Removing all six transformer lines isolates the 220kV pockets
-        # (and everything meshed onto them) from the spine.
+        # Cutting all three backbone-pocket tie lines isolates the pocket
+        # buses (and each pocket's downstream load) from the backbone spine —
+        # the same structural property the old L09-L14 transformer-tie cut
+        # exercised, on a fixture built specifically to demonstrate it.
         try:
-            g7 = Grid(7)
-            buses7 = g7.get_active_buses()
-            all_lines7 = g7.get_active_lines()
+            buses7, all_lines7, backbone_labels, tie_labels = _build_cascade_fixture()
 
-            cut_labels = {'L09', 'L10', 'L11', 'L12', 'L13', 'L14'}
+            cut_labels = set(tie_labels)
             reduced_lines = [l for l in all_lines7 if l.label not in cut_labels]
 
             islands = cm.find_islands(buses7, reduced_lines)
@@ -1265,10 +1558,20 @@ def test_cascade_model() -> bool:
             tx_labels7 = {b.label for b in buses7 if b.bus_type == 'TRANSMISSION'}
             tx_islands = [i for i in islands if i & tx_labels7]
             assert len(tx_islands) >= 2, \
-                f"Cutting transformer lines should create >= 2 tx islands, " \
+                f"Cutting the tie lines should create >= 2 tx islands, " \
                 f"got {len(tx_islands)}"
 
-            print(f"  Tripped transformer lines: {len(tx_islands)} tx islands "
+            # Specifically: the backbone stays one island, and each pocket
+            # (with its load) becomes its own separate island.
+            backbone = set(backbone_labels)
+            backbone_island = next((i for i in islands if backbone <= i), None)
+            assert backbone_island is not None, \
+                "Backbone should remain one connected island after the tie cut"
+            assert len(tx_islands) == 4, \
+                f"Expected exactly 4 tx-containing islands (1 backbone + 3 " \
+                f"pockets), got {len(tx_islands)}"
+
+            print(f"  Tripped tie lines: {len(tx_islands)} tx islands "
                   f"(total {total_in_islands} buses across all islands) — PASS")
 
         except AssertionError as e:
@@ -1277,8 +1580,7 @@ def test_cascade_model() -> bool:
 
         # ── Isolated buses — all blacked out when no units are online ─────
         try:
-            g5 = Grid(5)
-            buses5 = g5.get_active_buses()
+            buses5, _lines5, _backbone_labels, _tie_labels = _build_cascade_fixture()
 
             # No lines in service — every bus is its own island.
             islands = cm.find_islands(buses5, [])
@@ -1295,7 +1597,7 @@ def test_cascade_model() -> bool:
                 f"With no online generation, all buses should be blacked out"
 
             # With one specific bus "online", only that bus's island is viable.
-            sample_gen_bus = g5.get_active_buses()[0].label
+            sample_gen_bus = buses5[0].label
             one_gen_buses: frozenset = frozenset({sample_gen_bus})
             blackout_one = cm.get_blackout_zones(islands, one_gen_buses)
             assert sample_gen_bus not in blackout_one, \
@@ -1420,12 +1722,55 @@ def test_cascade_model() -> bool:
 # STAGE 8 TESTS — Master Simulation Loop
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_simulation_fixture():
+    """Synthetic DesignerGrid replacing the old Grid(1) fixture: a slack
+    bus, one plain transmission bus, one load bus, and two dispatchable
+    units on the transmission bus — GENS-1 (COAL, meant to start ONLINE via
+    initial_schedule, standing in for DUND-1) and GENS-2 (COAL, meant to
+    stay OFFLINE, standing in for RVSD-1) — so set_unit_target() has one
+    ONLINE unit to accept and one OFFLINE unit to reject."""
+    from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
+    from simulation.designer_grid import DesignerGrid
+
+    buses = [
+        DesignerBus(label='SLK', name='Slack', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=100, canvas_y=100,
+                    active_from_shift=1, is_slack=True),
+        DesignerBus(label='GEN', name='Gen bus', voltage_kv=400.0,
+                    bus_type='TRANSMISSION', canvas_x=300, canvas_y=100,
+                    active_from_shift=1, is_slack=False),
+        DesignerBus(label='LD01', name='Load 1', voltage_kv=150.0,
+                    bus_type='LOAD', canvas_x=300, canvas_y=300,
+                    active_from_shift=1, is_slack=False, peak_load_mw=200.0),
+    ]
+    lines = [
+        DesignerLine(label='L01', from_bus='SLK', to_bus='GEN',
+                     reactance_pu=0.05, rating_mw=1500.0, voltage_kv=400.0),
+        DesignerLine(label='L02', from_bus='GEN', to_bus='LD01',
+                     reactance_pu=0.12, rating_mw=500.0, voltage_kv=150.0),
+    ]
+    units = [
+        DesignerUnit(label='GENS-1', station_label='GENS', bus_label='GEN',
+                     unit_type='COAL', rated_mw=300.0, min_mw=40.0,
+                     ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                     q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
+                     active_from_shift=1, description='Test unit, ONLINE via schedule'),
+        DesignerUnit(label='GENS-2', station_label='GENS', bus_label='GEN',
+                     unit_type='COAL', rated_mw=300.0, min_mw=90.0,
+                     ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                     q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
+                     active_from_shift=1, description='Test unit, stays OFFLINE'),
+    ]
+    grid = DesignerGrid(buses, lines, units)
+    return grid
+
+
 def test_simulation_model() -> bool:
     """
     Verify GridSimulation initialises, ticks, and exposes correct state.
 
     Checks:
-      - GridSimulation initialises without error for Shift 1
+      - GridSimulation initialises without error
       - tick() advances sim_time_min correctly
       - get_state() returns a SimulationState with all required fields populated
       - is_shift_complete() returns True once duration_minutes has elapsed
@@ -1437,12 +1782,11 @@ def test_simulation_model() -> bool:
 
     try:
         from simulation.simulation import GridSimulation, SimulationState
-        from simulation.grid import Grid
         from gameplay.shifts.loader import load_shift_config
 
         # ── Initialises without error ─────────────────────────────────────
         try:
-            g1 = Grid(1)
+            g1 = _build_simulation_fixture()
             sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
             state = sim.get_state()
             assert isinstance(state, SimulationState), \
@@ -1459,7 +1803,7 @@ def test_simulation_model() -> bool:
 
         # ── tick() advances sim_time_min ──────────────────────────────────
         try:
-            g1 = Grid(1)
+            g1 = _build_simulation_fixture()
             sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
 
             sim.tick(60.0)   # 60 simulated seconds = 1 simulated minute
@@ -1481,10 +1825,11 @@ def test_simulation_model() -> bool:
         try:
             from data.profiles import DEMAND_PROFILE_NORMALISED
 
-            g1 = Grid(1)
-            # Explicit substation_load_mw (LD01, Grid(1)'s one load bus) —
-            # not sourced from shift_01.py, whose content is mutable/may be
-            # a stub, so total_load_mw > 0 doesn't depend on shift content.
+            g1 = _build_simulation_fixture()
+            # Explicit substation_load_mw (LD01, the fixture's one load
+            # bus) — not sourced from shift_01.py, whose content is
+            # mutable/may be a stub, so total_load_mw > 0 doesn't depend on
+            # shift content.
             substation_load_mw = {
                 'LD01': {h: 200.0 * DEMAND_PROFILE_NORMALISED[h] for h in DEMAND_PROFILE_NORMALISED},
             }
@@ -1524,7 +1869,7 @@ def test_simulation_model() -> bool:
 
         # ── is_shift_complete() ───────────────────────────────────────────
         try:
-            g1 = Grid(1)
+            g1 = _build_simulation_fixture()
             sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
             duration_hours = load_shift_config(1)['duration_hours']
             duration_s = duration_hours * 3600.0
@@ -1545,17 +1890,17 @@ def test_simulation_model() -> bool:
 
         # ── set_unit_target() — ONLINE unit accepts, OFFLINE rejects ──────
         try:
-            g1 = Grid(1)
-            schedule = {'DUND-1': 40.0}
+            g1 = _build_simulation_fixture()
+            schedule = {'GENS-1': 40.0}
             sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
                                  initial_schedule=schedule)
 
-            # DUND-1 is ONLINE (in initial_schedule); set_unit_target should accept
-            accepted = sim.set_unit_target('DUND-1', 50.0)
+            # GENS-1 is ONLINE (in initial_schedule); set_unit_target should accept
+            accepted = sim.set_unit_target('GENS-1', 50.0)
             assert accepted, "set_unit_target should return True for ONLINE unit"
 
-            # RVSD-1 is OFFLINE (not in schedule); should reject
-            rejected = sim.set_unit_target('RVSD-1', 200.0)
+            # GENS-2 is OFFLINE (not in schedule); should reject
+            rejected = sim.set_unit_target('GENS-2', 200.0)
             assert not rejected, \
                 "set_unit_target should return False for OFFLINE unit"
 
@@ -1566,7 +1911,7 @@ def test_simulation_model() -> bool:
 
         # ── trip_line() / close_line() toggle status ──────────────────────
         try:
-            g1 = Grid(1)
+            g1 = _build_simulation_fixture()
             sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL')
 
             lines = g1.get_active_lines()

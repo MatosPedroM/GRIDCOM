@@ -542,7 +542,6 @@ def _draw_actions(surf, font, font_bold, designer, y0: int) -> int:
         ('save',          'SAVE (Ctrl+S)',                COL_TEXT_GOOD),
         ('load',          'LOAD FROM FILE',               COL_TEXT_SECONDARY),
         ('test_grid',     'TEST SAVED GRID  (Ctrl+T)',    COL_SELECTION),
-        ('import_shift10','IMPORT SHIFT 10',              COL_TEXT_SECONDARY),
     ]
     for action, label, col in actions:
         rect = _r(PAD, y, DESIGNER_SIDEBAR_W - 2 * PAD, BTN_H)

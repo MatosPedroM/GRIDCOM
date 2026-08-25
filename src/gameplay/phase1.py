@@ -857,12 +857,13 @@ def build_planning_model(shift_number: int, difficulty: str = 'standard') -> Pla
     cfg = load_shift_config(shift_number)
 
     grid_source = cfg.get('grid_source')
-    if grid_source:
-        buses, lines, units = load_designer_grid_named(grid_source)
-        grid = DesignerGrid(buses, lines, units)
-    else:
-        from simulation.grid import Grid
-        grid = Grid(shift_number)
+    if not grid_source:
+        raise ValueError(
+            f'Shift {shift_number} has no GRID_SOURCE — every campaign shift '
+            f'must declare one (see gameplay/shifts/shift_{shift_number:02d}.py).'
+        )
+    buses, lines, units = load_designer_grid_named(grid_source)
+    grid = DesignerGrid(buses, lines, units)
 
     dispatchable = [
         u for u in grid.get_active_units() if u.unit_type not in _RENEWABLE_TYPES

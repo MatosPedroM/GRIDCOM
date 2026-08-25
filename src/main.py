@@ -55,7 +55,6 @@ from data.layout_override import load_layout
 from data.profiles import DEMAND_PROFILE_NORMALISED
 from gameplay.scoring import count_unit_trips, grade_campaign, grade_shift
 from gameplay.shifts.loader import load_shift_config
-from simulation.grid import Grid
 from simulation.simulation import GridSimulation
 from simulation.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
@@ -67,7 +66,6 @@ from simulation.constants import (
     LANDING_FREEZE_S as _LANDING_FREEZE_S_DEFAULT,
 )
 import simulation.constants as _const
-from debug_scenario import make_debug_sim, DEBUG_SCENARIO
 
 
 # ─── Game state ──────────────────────────────────────────────────────────────
@@ -245,12 +243,10 @@ def _make_sim_and_renderer(
     """
     Build sim + renderer for a campaign shift.
 
-    Normally topology/fleet come from Grid(shift) (topology.py/fleet.py,
-    filtered by shift number). If the shift's own shift_NN.py declares
-    GRID_SOURCE, topology instead comes from that named Grid Designer grid
-    (assets/designer_grids/<name>.json) via DesignerGrid — shift_number is
-    still passed through unchanged so briefing/debrief/HUD/scripted-events
-    continue to key off the real shift number either way.
+    Topology/fleet always come from the shift's own shift_NN.py GRID_SOURCE
+    (assets/designer_grids/<name>.json) via DesignerGrid — every campaign
+    shift declares one. shift_number is passed through unchanged so
+    briefing/debrief/HUD/scripted-events key off the real shift number.
 
     use_planned_schedule: True if the player went through and confirmed the
     Phase 1 planning screen for this shift. When True, the handover dispatch
@@ -261,14 +257,16 @@ def _make_sim_and_renderer(
     """
     cfg         = load_shift_config(shift)
     grid_source = cfg.get('grid_source')
+    if not grid_source:
+        raise ValueError(
+            f'Shift {shift} has no GRID_SOURCE — every campaign shift must '
+            f'declare one (see gameplay/shifts/shift_{shift:02d}.py).'
+        )
 
-    if grid_source:
-        from data.designer_io import load_designer_grid_named
-        from simulation.designer_grid import DesignerGrid
-        buses, lines, units = load_designer_grid_named(grid_source)
-        grid = DesignerGrid(buses, lines, units)
-    else:
-        grid = Grid(shift)
+    from data.designer_io import load_designer_grid_named
+    from simulation.designer_grid import DesignerGrid
+    buses, lines, units = load_designer_grid_named(grid_source)
+    grid = DesignerGrid(buses, lines, units)
 
     initial_schedule = cfg['initial_schedule']
     hourly_schedule   = None
@@ -282,21 +280,15 @@ def _make_sim_and_renderer(
     substation_load_mw = cfg['substation_load_mw'] or None
 
     # Substation types (and the reactive devices they seed) come from the
-    # grid itself for GRID_SOURCE shifts — every DesignerBus always carries
-    # an explicit authored substation_type (Grid Designer click-to-cycle
-    # field), so reading it here keeps this in sync with the grid JSON
-    # instead of duplicating it by hand in the shift file (see
-    # _make_designer_test() below, which reads the same way). Other shifts
-    # fall back to the shift file's own opt-in SUBSTATION_TYPES, if any —
-    # shifts that declare none get None here, which reproduces the
-    # pre-existing all-MIXED/no-devices default exactly.
-    if grid_source:
-        substation_types = {
-            b.label: b.substation_type for b in buses
-            if b.label in (substation_load_mw or {})
-        } or None
-    else:
-        substation_types = cfg.get('substation_types') or None
+    # grid itself — every DesignerBus always carries an explicit authored
+    # substation_type (Grid Designer click-to-cycle field), so reading it
+    # here keeps this in sync with the grid JSON instead of duplicating it
+    # by hand in the shift file (see _make_designer_test() below, which
+    # reads the same way).
+    substation_types = {
+        b.label: b.substation_type for b in buses
+        if b.label in (substation_load_mw or {})
+    } or None
 
     sim = GridSimulation(grid=grid, shift_number=shift, difficulty=difficulty,
                          initial_schedule=initial_schedule,
@@ -324,11 +316,9 @@ def _make_sim_and_renderer(
         sim.set_unit_q_target(_unit, _q_mvar)
 
     renderer = Renderer(display_surf, shift=shift,
-                        display_size=display_surf.get_size())
-    if grid_source:
-        renderer.set_designer_grid(grid)
-    else:
-        renderer.set_grid(grid)
+                        display_size=display_surf.get_size(),
+                        has_designer_grid=True)
+    renderer.set_designer_grid(grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
     _const.AGC_SPEED_MULT = cfg.get('agc_speed_mult', 1.0)
@@ -399,10 +389,13 @@ def _make_designer_test(
         duration_hours=duration_hours,
     )
     sim.seed_default_reactive_devices(substation_types)
-    # Renderer uses shift=1 as a safe sentinel — the canvas will show shift-1
-    # topology but the simulation state (frequency, dispatch, alarms) is live.
+    # Renderer uses shift=1 as a title-bar sentinel only — the canvas comes
+    # entirely from set_designer_grid() below (has_designer_grid=True skips
+    # the topology.py seed), simulation state (frequency, dispatch, alarms)
+    # is live regardless.
     renderer = Renderer(display_surf, shift=1,
-                        display_size=display_surf.get_size())
+                        display_size=display_surf.get_size(),
+                        has_designer_grid=True)
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = True
     _const.FREQ_TOLERANCE_MULT = 1.0
@@ -460,7 +453,8 @@ def _make_shift_test(
         duration_hours=cfg['duration_hours'],
     )
     renderer = Renderer(display_surf, shift=1,
-                        display_size=display_surf.get_size())
+                        display_size=display_surf.get_size(),
+                        has_designer_grid=True)
     renderer.set_designer_grid(designer_grid)
     _const.AGC_ENABLED = cfg['agc_enabled']
     _const.FREQ_TOLERANCE_MULT = cfg.get('freq_tolerance_mult', 1.0)
@@ -517,20 +511,16 @@ def main() -> None:
                               # target shift's config has uses_planning=True
     shift = 1
 
-    if _const.DEBUG_SCENARIO_ACTIVE:
-        sim, grid = make_debug_sim(DEBUG_SCENARIO)
-        renderer  = Renderer(display_surf, shift=DEBUG_SCENARIO.shift_number,
-                             display_size=display_surf.get_size())
-        renderer.set_grid(grid)
-        shift      = DEBUG_SCENARIO.shift_number
-        game_state = GameState.BRIEFING
-        briefing_lines = build_briefing_lines(shift)
-        briefing_chars = 0.0
-        state = sim.get_state()
-    else:
-        renderer   = Renderer(display_surf, shift=1,
-                              display_size=display_surf.get_size())
-        game_state = GameState.MAIN_MENU
+    # Placeholder canvas — never actually drawn (tick_menu_screen() doesn't
+    # touch the grid canvas), replaced the moment a real shift/grid loads.
+    # has_designer_grid=True + an empty DesignerGrid avoids needing any real
+    # topology at all just to get the loop started.
+    from simulation.designer_grid import DesignerGrid
+    renderer   = Renderer(display_surf, shift=1,
+                          display_size=display_surf.get_size(),
+                          has_designer_grid=True)
+    renderer.set_designer_grid(DesignerGrid([], [], []))
+    game_state = GameState.MAIN_MENU
 
     # ── Splash state ─────────────────────────────────────────────────────────
     splash_timer  = 0.0

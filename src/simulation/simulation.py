@@ -50,7 +50,7 @@ from simulation.constants import (
     LOAD_SHED_STEP_FRACTION,
 )
 import simulation.constants as _sim_const
-from simulation.grid import Grid
+from simulation.designer_grid import DesignerGrid
 from simulation.loadflow import DCLoadFlow
 from simulation.voltage import VoltageModel
 from simulation.frequency import FrequencyModel
@@ -177,6 +177,8 @@ class SimulationState:
     bus_svc_limits:          dict   # {bus_label: (q_min_mvar, q_max_mvar)}
     bus_q_injection_mvar:    dict   # {bus_label: float} total device Q injection
     bus_load_q_mvar:         dict   # {bus_label: float} load's own reactive demand (negative = consuming)
+    total_q_generated_mvar:  float  # system-wide positive Q contributions (generators/devices/lines)
+    total_q_consumed_mvar:   float  # system-wide negative Q contributions, as a positive magnitude
 
     # Network — lines
     line_flows_mw:           dict
@@ -262,7 +264,7 @@ class GridSimulation:
 
     def __init__(
         self,
-        grid: Grid,
+        grid: DesignerGrid,
         shift_number: int,
         difficulty: str,
         initial_schedule: dict | None = None,
@@ -1275,6 +1277,44 @@ class GridSimulation:
 
         return q_inj
 
+    def _q_generated_consumed(self, blackout_zones: frozenset = frozenset()) -> tuple[float, float]:
+        """
+        Sum every positive Q contribution (generated) and every negative
+        contribution (consumed, returned as a positive magnitude) across
+        load, reactive devices, generators, and line charging — the same
+        four components _build_q_injections() feeds to the voltage solver,
+        split by sign instead of net-combined per bus.
+        """
+        generated = 0.0
+        consumed = 0.0
+        for mvar in self._demand.q_load_injections().values():
+            if mvar >= 0.0:
+                generated += mvar
+            else:
+                consumed += -mvar
+
+        for mvar in self._reactive.q_injections().values():
+            if mvar >= 0.0:
+                generated += mvar
+            else:
+                consumed += -mvar
+
+        for mvar in self._fleet.q_injections().values():
+            if mvar >= 0.0:
+                generated += mvar
+            else:
+                consumed += -mvar
+
+        for line in self._get_in_service_lines():
+            if not line.length_km:
+                continue
+            mvar = line.length_km * _line_charging_mvar_per_km(line.voltage_kv)
+            for bus_label in (line.from_bus, line.to_bus):
+                if bus_label not in blackout_zones:
+                    generated += mvar
+
+        return generated, consumed
+
     # ─────── AGC ──────────────────────────────────────────────────────────
 
     def _apply_agc(self, dt_sim_seconds: float) -> None:
@@ -2020,6 +2060,7 @@ class GridSimulation:
         total_gen  = self._fleet.total_generation_mw()
         total_load = self._demand.total_load_mw
         reserve    = self._fleet.spinning_reserve_mw()
+        q_generated, q_consumed = self._q_generated_consumed(blackout_zones)
         h_sys      = self._frequency._compute_system_inertia(
             self._fleet.online_unit_types()
         )
@@ -2117,6 +2158,8 @@ class GridSimulation:
             bus_svc_limits={bus: (qmin, qmax) for bus, (_q, qmin, qmax) in svc_state.items()},
             bus_q_injection_mvar=dict(device_q_by_bus),
             bus_load_q_mvar=self._demand.q_load_injections(),
+            total_q_generated_mvar=q_generated,
+            total_q_consumed_mvar=q_consumed,
 
             line_flows_mw=dict(lf_result.line_flows_mw),
             line_loading_pct=dict(lf_result.line_loading_pct),

@@ -32,7 +32,6 @@ from data.designer_io import (
     next_bus_name, label_from_name,
     UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS,
     designer_buses_to_topology, designer_lines_to_topology, designer_units_to_fleet,
-    import_shift_as_designer_grid,
 )
 from display.geometry import point_segment_dist
 from display.palette import (
@@ -629,38 +628,6 @@ class GridDesigner:
 
     def _close_sidebar_overlay(self) -> None:
         self._sidebar_mode = 'normal'
-
-    def _import_campaign_shift(self, shift_number: int = 10) -> None:
-        """
-        Import the current campaign topology for the given shift as a named
-        Designer grid ('shift{N}'), then load it into the editor. Confirms
-        before overwriting an existing file under that name — the one
-        genuinely destructive action in the Designer sidebar.
-        """
-        name = f'shift{shift_number}'
-        if name in list_designer_grids():
-            self._dialog_prompt   = f"'{name}' already exists — overwrite? (y/n):"
-            self._dialog_buffer   = ''
-            self._dialog_active   = True
-            self._dialog_callback = lambda ans: self._confirm_import_campaign_shift(
-                shift_number, name, ans)
-        else:
-            self._do_import_campaign_shift(shift_number, name)
-
-    def _confirm_import_campaign_shift(self, shift_number: int, name: str, answer: str) -> None:
-        if answer.strip().lower().startswith('y'):
-            self._do_import_campaign_shift(shift_number, name)
-        else:
-            self._set_status('Import cancelled', COL_DESIGNER_STATUS_INFO)
-
-    def _do_import_campaign_shift(self, shift_number: int, name: str) -> None:
-        try:
-            import_shift_as_designer_grid(shift_number, name)
-            self._commit_load(name)
-            self._set_status(f'Imported Shift {shift_number} as {name!r}',
-                             COL_DESIGNER_STATUS_OK)
-        except Exception as e:
-            self._set_status(f'Import failed: {e}', COL_DESIGNER_STATUS_INFO)
 
     def _open_analysis(self) -> None:
         self._sync_analysis_state()
@@ -1265,9 +1232,6 @@ class GridDesigner:
         elif action == 'test_grid':
             self._open_test_browser()
 
-        elif action == 'import_shift10':
-            self._import_campaign_shift(10)
-
         elif action == 'analysis':
             self._open_analysis()
 
@@ -1578,10 +1542,9 @@ class GridDesigner:
         station_label_anchors: dict[str, str] = {u.station_label: u.label_anchor for u in self._units}
 
         if self._canvas is None:
-            # shift=0 sentinel — never actually used; load_designer_topology()
-            # immediately replaces everything __init__ would have populated
-            # from get_buses_by_shift(0).
-            self._canvas = GridCanvas(shift=0, font=self._font, scale=self._scale)
+            # shift=None skips the topology.py seed entirely — load_designer_topology()
+            # below immediately populates everything instead.
+            self._canvas = GridCanvas(shift=None, font=self._font, scale=self._scale)
         self._canvas.load_designer_topology(real_buses, real_lines, real_units,
                                             station_positions,
                                             bus_label_anchors, station_label_anchors)

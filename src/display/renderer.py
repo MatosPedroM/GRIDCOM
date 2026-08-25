@@ -84,7 +84,15 @@ class Renderer:
 
     Args:
         display_surf:  The pygame display surface (any resolution).
-        shift:         Active shift number; passed to GridCanvas.
+        shift:         Active shift number — always a real number, used for
+                        the title bar and shift config regardless of where
+                        the grid topology comes from.
+        has_designer_grid: True if the caller will immediately follow
+                        construction with set_designer_grid() — skips seeding
+                        GridCanvas from topology.py, since that seed would
+                        just be discarded a moment later. False (default)
+                        builds the canvas from topology.py via `shift`, the
+                        pre-GRID_SOURCE behaviour.
     """
 
     def __init__(
@@ -92,6 +100,7 @@ class Renderer:
         display_surf: pygame.Surface,
         shift: int,
         display_size: tuple[int, int] | None = None,
+        has_designer_grid: bool = False,
     ) -> None:
         self._display = display_surf
 
@@ -158,7 +167,10 @@ class Renderer:
             self._font = pygame.freetype.SysFont('monospace', 11)
         self._font.antialiased = False   # hard pixel edges; NN-equivalent at integer scale
 
-        self._canvas = GridCanvas(shift=shift, font=self._font, scale=self._scale)
+        self._canvas = GridCanvas(
+            shift=None if has_designer_grid else shift,
+            font=self._font, scale=self._scale,
+        )
         self._editor = GridEditor(self._canvas, scale=self._scale)
         _difficulty_label = load_shift_config(shift).get('difficulty_label', '')
         self._shift_title: str = (
@@ -279,10 +291,6 @@ class Renderer:
             self._perf_logger = _plogger
 
     # ─── Per-frame entry point ────────────────────────────────────────────────
-
-    def set_grid(self, grid) -> None:
-        """Store the Grid reference used by the dispatch panel."""
-        self._grid = grid
 
     def set_designer_grid(self, grid) -> None:
         """Load a DesignerGrid into both the dispatch panel and the canvas topology."""
@@ -1041,6 +1049,8 @@ class Renderer:
             round(state.spinning_reserve_mw)  if state else None,
             round(state.system_inertia_h, 1)  if state else None,
             round(state.losses_mw)            if state else None,
+            round(state.total_q_generated_mvar) if state else None,
+            round(state.total_q_consumed_mvar)  if state else None,
             round(self._load_rate_history[-1], 2) if self._load_rate_history else None,
             int(state.sim_hour * 60)          if state else None,
             speed_mult,

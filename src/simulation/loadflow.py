@@ -15,7 +15,7 @@ import logging
 import numpy as np
 
 from simulation.constants import S_BASE, YSHUNT_REG, DEBUG_SIMULATION
-from simulation.grid import Grid
+from simulation.designer_grid import DesignerGrid
 
 # Type aliases
 BusLabel    = str       # 4-char bus identifier: 'MDBY', 'CNTR'
@@ -39,8 +39,8 @@ class DCLoadFlow:
     Inputs and outputs are in real MW; conversion is handled internally.
 
     Attributes:
-        grid:       The Grid object this solver was built from.
-        slack_bus:  Label of the slack bus (always 'MDBY').
+        grid:       The DesignerGrid object this solver was built from.
+        slack_bus:  Label of the grid's designated slack bus.
 
     Usage:
         lf = DCLoadFlow(grid)
@@ -51,13 +51,13 @@ class DCLoadFlow:
         loading = result.line_loading_pct  # {label: %}
     """
 
-    def __init__(self, grid: Grid) -> None:
+    def __init__(self, grid: DesignerGrid) -> None:
         """
         Build the susceptance matrix from the grid's active lines.
 
         Args:
-            grid: Loaded Grid object. Must have at least one active bus
-                  and one active line.
+            grid: Loaded DesignerGrid object. Must have at least one active
+                  bus and one active line.
         """
         self.grid = grid
         self.slack_bus: BusLabel = grid.slack_bus

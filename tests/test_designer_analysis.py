@@ -58,7 +58,7 @@ def _build_fixture():
     units = [
         DesignerUnit(label='LAB-1', station_label='LAB', bus_label='LAB',
                      unit_type='CCGT', rated_mw=250.0, min_mw=0.0,
-                     ramp_pct_per_min=100.0, inertia_h=4.0, cold_start_min=5.0,
+                     inertia_h=4.0, cold_start_min=5.0,
                      q_max_mvar=100.0, q_min_mvar=-50.0, can_pump=False,
                      active_from_shift=1, description='Test gen unit'),
     ]

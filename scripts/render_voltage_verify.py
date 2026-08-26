@@ -48,7 +48,7 @@ lines = [
 units = [
     DesignerUnit(label='GEN-1', station_label='GEN', bus_label='GEN',
                  unit_type='CCGT', rated_mw=1000.0, min_mw=0.0,
-                 ramp_pct_per_min=100.0, inertia_h=4.0, cold_start_min=5.0,
+                 inertia_h=4.0, cold_start_min=5.0,
                  q_max_mvar=200.0, q_min_mvar=-200.0, can_pump=False,
                  active_from_shift=1, description='support gen', station_x=600, station_y=150),
 ]

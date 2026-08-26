@@ -184,7 +184,7 @@ Where:
   B'  = susceptance matrix built from line charging and shunt elements
 ```
 
-This is solved the same way as the DC load flow — one matrix solve, no iteration.
+This is solved the same way as the DC load flow — one matrix solve, no iteration. `B'`'s diagonal carries a small numerical-stability regulariser (`VSHUNT_REG` in constants.py) to keep the matrix invertible on weak/radial buses — this also sets the overall sensitivity of voltage to Q, so it's tuned deliberately (not left at whatever value avoids a singular matrix) to keep manual Q/SVC/shunt-bank adjustments visibly effective.
 
 **What this captures correctly:**
 - Voltage sags where reactive demand is high
@@ -296,7 +296,7 @@ All devices are modelled as Q injections at a bus (never as B' edits — switchi
 | Asset Type          | MVAr          | Control                          | Player interaction        |
 |----------------------|---------------|-----------------------------------|----------------------------|
 | Shunt capacitor/reactor bank | ±discrete steps | Deadband + hysteresis auto-switching | **Read-only** — automatic |
-| Generator AVR setpoint | Continuous, bounded by `q_max`/`q_min` | Per-unit setpoint, `[0.95, 1.05]` pu | **Manual — Lever #1** |
+| Generator Q target   | Continuous, bounded by `q_max_mvar`/`q_min_mvar` | Direct MVAr setpoint (`Q` key + Up/Down) | **Manual — Lever #1** |
 | SVC / STATCOM        | ±150 MVAr continuous | Direct setpoint | **Manual — Lever #2** |
 
 **The automatic shunt bank** absorbs the grid's routine daily reactive drift so the player isn't fighting minor fluctuations continuously. It uses a hunting-resistant control pattern:
@@ -306,10 +306,10 @@ All devices are modelled as Q injections at a bus (never as B' edits — switchi
 - A **one-tick lag**: automatics act on the *previous* tick's solved voltage, evaluated once per tick before that tick's Q injections are built — never inside the solve itself. This means there is no algebraic loop with the solver, and at the simulation's 10 Hz tick rate the lag is imperceptible to the player.
 
 **The two manual levers** are the tools the player actively works:
-1. **Generator voltage setpoint** — supports a sagging region from nearby generation. Raising a unit's setpoint increases its Q injection (visible via `unit_q_injections_mvar`) until it hits `q_max_mvar`, at which point the bus converts from PV to PQ (`unit_bus_types` flips) and further setpoint increases have no effect — the generator has exhausted its reactive reserve (`unit_q_reserve_mvar` reaches 0). This PV→PQ conversion, made visible to the player, is the same phenomenon described in §5.4.
+1. **Generator Q target** (`set_unit_q_target`, bound to the `Q` key + Up/Down in-game) — supports a sagging region from nearby generation. Every bus is solved PQ; there is no AVR or voltage setpoint to hold — the player sets the unit's reactive injection directly in MVAr, clamped to `[q_min_mvar, q_max_mvar]`, and the solver's `ΔV = B'⁻¹ × Q` reflects it immediately. This replaced the original PV-bus/AVR-setpoint model (voltage target with automatic Q correction) — see STAGE_STATUS.md's F9 session for the rework.
 2. **Manual SVC/STATCOM** — a continuous, player-set MVAr source at a specific bus, for regions with no nearby generation to lean on.
 
-`set_unit_q_target` (raw MVAr on a single unit) remains callable but has no dedicated UI — the two levers above are the intended player-facing controls.
+Both levers move real, but locally small, voltage — see §5.2's `VSHUNT_REG` note on solver sensitivity.
 
 ---
 
@@ -317,23 +317,21 @@ All devices are modelled as Q injections at a bus (never as B' edits — switchi
 
 ### 6.1 Ramp Rates
 
-No unit can change output instantaneously. Ramp rates constrain how quickly dispatch decisions take effect:
+No unit can change output instantaneously. Ramp rates constrain how quickly dispatch decisions take effect. Ramp rate is an absolute MW/min value looked up by unit_type from constants.py's UNIT_DEFAULTS — not a percentage of that unit's own rated_mw, and not authored per-unit in grid JSON, so retuning a technology's ramp rate never requires editing grid files:
 
-| Unit Type     | Ramp Rate (% rated/min) | Cold Start Time |
-|---------------|-------------------------|-----------------|
-| Nuclear       | 0.5%                    | 8 hours         |
-| Coal          | 1.333%                  | 4 hours         |
-| CCGT          | 3.75%                   | 20 minutes      |
-| Open Cycle GT | 15%                     | 10 minutes      |
-| Hydro         | 100%                    | 30 seconds      |
-| Battery       | 100%                    | Instantaneous   |
-| Wind / Solar  | Uncontrollable          | N/A             |
+| Unit Type     | Ramp Rate (MW/min) | Cold Start Time |
+|---------------|---------------------|-----------------|
+| Nuclear       | 3.5                 | 8 hours         |
+| Coal          | 4.0                 | 4 hours         |
+| CCGT          | 15.0                | 1 hour          |
+| Hydro         | 250                 | 5-8 minutes     |
+| Wind / Solar  | Uncontrollable      | N/A             |
 
 **Implementation:**
 
 ```python
 def update_unit_output(unit, target_MW, dt_minutes):
-    max_change = unit.ramp_rate_pct * unit.rated_MW * dt_minutes / 100
+    max_change = unit.ramp_mw_per_min * dt_minutes
     actual_change = clamp(target_MW - unit.current_MW, 
                           -max_change, 
                           +max_change)

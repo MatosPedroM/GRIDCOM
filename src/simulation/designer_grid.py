@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from config.constants import UNIT_DEFAULTS
 from data.topology import Bus, Line
 from data.fleet import GenerationUnit
 from data.designer_io import DesignerBus, DesignerLine, DesignerUnit
@@ -209,6 +210,7 @@ def _to_line(l: DesignerLine) -> Line:
 
 
 def _to_unit(u: DesignerUnit) -> GenerationUnit:
+    ramp_mw_per_min = UNIT_DEFAULTS.get(u.unit_type, UNIT_DEFAULTS['COAL'])['ramp_mw_per_min']
     return GenerationUnit(
         label=u.label,
         station_label=u.station_label,
@@ -216,7 +218,7 @@ def _to_unit(u: DesignerUnit) -> GenerationUnit:
         unit_type=u.unit_type,
         rated_mw=u.rated_mw,
         min_mw=u.min_mw,
-        ramp_pct_per_min=u.ramp_pct_per_min,
+        ramp_mw_per_min=ramp_mw_per_min,
         inertia_h=u.inertia_h,
         cold_start_min=u.cold_start_min,
         q_max_mvar=u.q_max_mvar,

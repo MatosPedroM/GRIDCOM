@@ -483,7 +483,7 @@ class PlanningModel:
                         # indefinitely" into 01:00 onward.
                         last_change_hour[label] = h
 
-                    ramp_mw = (unit.ramp_pct_per_min / 100.0) * unit.rated_mw * (PLANNING_STEP_HOURS * 60.0)
+                    ramp_mw = unit.ramp_mw_per_min * (PLANNING_STEP_HOURS * 60.0)
                     prev = prev_mw[label]
                     if want_online:
                         # Clamp the remaining shortfall into this unit's own
@@ -535,7 +535,7 @@ class PlanningModel:
                         if not want_online_this_hour.get(label, False):
                             continue
                         current_mw = self.schedule[label][h]
-                        ramp_mw = (unit.ramp_pct_per_min / 100.0) * unit.rated_mw * (PLANNING_STEP_HOURS * 60.0)
+                        ramp_mw = unit.ramp_mw_per_min * (PLANNING_STEP_HOURS * 60.0)
                         min_mw_this_column = max(
                             self.tech_min(unit), prev_hour_mw[label] - ramp_mw
                         )
@@ -616,7 +616,7 @@ class PlanningModel:
                             if not want_online_this_hour.get(blabel, False):
                                 continue
                             current = self.schedule[blabel][h]
-                            bramp_mw = (bunit.ramp_pct_per_min / 100.0) * bunit.rated_mw * (PLANNING_STEP_HOURS * 60.0)
+                            bramp_mw = bunit.ramp_mw_per_min * (PLANNING_STEP_HOURS * 60.0)
                             bmin_mw_this_column = max(
                                 self.tech_min(bunit), prev_hour_mw[blabel] - bramp_mw
                             )
@@ -656,7 +656,7 @@ class PlanningModel:
             # can move a unit further from its own last committed value
             # than a single column's ramp allows otherwise.
             def _ramp_mw_of(u: GenerationUnit) -> float:
-                return (u.ramp_pct_per_min / 100.0) * u.rated_mw * (PLANNING_STEP_HOURS * 60.0)
+                return u.ramp_mw_per_min * (PLANNING_STEP_HOURS * 60.0)
 
             def _room_up(u: GenerationUnit, label: str) -> float:
                 # How much this unit can rise this column: capped by both

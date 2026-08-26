@@ -53,13 +53,13 @@ def _build_grid_loads_fixture():
     units = [
         DesignerUnit(label='GENS-1', station_label='GENS', bus_label='CNTR',
                      unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-                     ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                     inertia_h=5.0, cold_start_min=240.0,
                      q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
                      active_from_shift=1, description='Test coal unit 1',
                      station_x=450, station_y=80),
         DesignerUnit(label='GENS-2', station_label='GENS', bus_label='CNTR',
                      unit_type='CCGT', rated_mw=400.0, min_mw=80.0,
-                     ramp_pct_per_min=8.0, inertia_h=4.0, cold_start_min=60.0,
+                     inertia_h=4.0, cold_start_min=60.0,
                      q_max_mvar=180.0, q_min_mvar=-100.0, can_pump=False,
                      active_from_shift=1, description='Test CCGT unit 2',
                      station_x=450, station_y=80),
@@ -143,8 +143,8 @@ def test_grid_loads() -> bool:
                     f"{unit.label}: min_mw must be >= 0"
                 assert unit.min_mw <= unit.rated_mw, \
                     f"{unit.label}: min_mw {unit.min_mw} > rated_mw {unit.rated_mw}"
-                assert unit.ramp_pct_per_min > 0.0, \
-                    f"{unit.label}: ramp_pct_per_min must be > 0"
+                assert unit.ramp_mw_per_min > 0.0, \
+                    f"{unit.label}: ramp_mw_per_min must be > 0"
                 assert unit.inertia_h >= 0.0, \
                     f"{unit.label}: inertia_h must be >= 0"
                 assert unit.cold_start_min >= 0.0, \
@@ -540,7 +540,7 @@ def test_unit_model() -> bool:
     Grid — the GenerationUnit dataclass itself still exists, so each
     sub-test below constructs its own inline GenerationUnit fixture with
     the same field values the original real-fleet units carried (rated_mw,
-    min_mw, ramp_pct_per_min, etc.), keeping the hand-verified analytical
+    min_mw, ramp_mw_per_min, etc.), keeping the hand-verified analytical
     math identical.
     """
     print("test_unit_model...")
@@ -551,13 +551,13 @@ def test_unit_model() -> bool:
         from data.fleet import GenerationUnit
 
         def _mk_unit(label, station, bus, unit_type, rated_mw, min_mw,
-                     ramp_pct_per_min, inertia_h, cold_start_min,
+                     ramp_mw_per_min, inertia_h, cold_start_min,
                      q_max_mvar=100.0, q_min_mvar=-50.0, can_pump=False,
                      active_from_shift=1):
             return GenerationUnit(
                 label=label, station_label=station, bus_label=bus,
                 unit_type=unit_type, rated_mw=rated_mw, min_mw=min_mw,
-                ramp_pct_per_min=ramp_pct_per_min, inertia_h=inertia_h,
+                ramp_mw_per_min=ramp_mw_per_min, inertia_h=inertia_h,
                 cold_start_min=cold_start_min,
                 q_max_mvar=q_max_mvar, q_min_mvar=q_min_mvar,
                 can_pump=can_pump, active_from_shift=active_from_shift,
@@ -569,7 +569,7 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('RVSD-1', 'RVSD', 'MDBY', 'COAL',
                              rated_mw=300.0, min_mw=90.0,
-                             ramp_pct_per_min=3.0, inertia_h=5.0,
+                             ramp_mw_per_min=9.0, inertia_h=5.0,
                              cold_start_min=240.0)
             um = UnitModel(spec)
             assert um.state == 'OFFLINE', \
@@ -588,7 +588,7 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('RVSD-1', 'RVSD', 'MDBY', 'COAL',
                              rated_mw=300.0, min_mw=90.0,
-                             ramp_pct_per_min=3.0, inertia_h=5.0,
+                             ramp_mw_per_min=9.0, inertia_h=5.0,
                              cold_start_min=240.0)
             um = UnitModel(spec)
             accepted = um.start()
@@ -611,7 +611,7 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('ASHG-1', 'ASHG', 'ASHF', 'CCGT',
                              rated_mw=400.0, min_mw=80.0,
-                             ramp_pct_per_min=8.0, inertia_h=4.0,
+                             ramp_mw_per_min=32.0, inertia_h=4.0,
                              cold_start_min=60.0)   # CCGT: cold_start_min = 60.0
             um = UnitModel(spec)
             um.start()
@@ -640,13 +640,13 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('RVSD-1', 'RVSD', 'MDBY', 'COAL',
                              rated_mw=300.0, min_mw=90.0,
-                             ramp_pct_per_min=3.0, inertia_h=5.0,
-                             cold_start_min=240.0)   # COAL: ramp 3%/min, rated 300 MW
+                             ramp_mw_per_min=9.0, inertia_h=5.0,
+                             cold_start_min=240.0)   # COAL: ramp 9 MW/min, rated 300 MW
             um = UnitModel(spec, initial_mw=90.0)  # start ONLINE at min
 
             um.set_target(300.0)
 
-            # After 1 simulated minute (60 seconds), ramp = 3% × 300 = 9 MW
+            # After 1 simulated minute (60 seconds), ramp = 9 MW
             um.tick(dt_sim_seconds=60.0)
             expected_after_1min = 90.0 + 9.0
             assert abs(um.current_mw - expected_after_1min) < 0.01, \
@@ -660,7 +660,7 @@ def test_unit_model() -> bool:
                 f"After 5 min, expected {expected_after_5min} MW, " \
                 f"got {um.current_mw:.3f} MW"
 
-            print(f"  Ramp rate: {spec.ramp_pct_per_min}%/min on {spec.rated_mw} MW: "
+            print(f"  Ramp rate: {spec.ramp_mw_per_min} MW/min on {spec.rated_mw} MW: "
                   f"+{um.current_mw - 90.0:.1f} MW in 5 min -- PASS")
         except AssertionError as e:
             print(f"  Ramp rate: FAIL -- {e}")
@@ -670,7 +670,7 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('HART-1', 'HART', 'STHW', 'NUCLEAR',
                              rated_mw=700.0, min_mw=490.0,
-                             ramp_pct_per_min=0.5, inertia_h=6.0,
+                             ramp_mw_per_min=3.5, inertia_h=6.0,
                              cold_start_min=480.0)   # NUCLEAR: min 490, rated 700
             um = UnitModel(spec, initial_mw=490.0)
 
@@ -695,7 +695,7 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('DUNH-1', 'DUNH', 'MDBY', 'HYDRO_PUMP',
                              rated_mw=200.0, min_mw=0.0,
-                             ramp_pct_per_min=100.0, inertia_h=3.0,
+                             ramp_mw_per_min=200.0, inertia_h=3.0,
                              cold_start_min=5.0, can_pump=True)   # HYDRO_PUMP: ramp 100%/min, rated 200 MW
             um = UnitModel(spec, initial_mw=200.0)
             assert um.state == 'ONLINE'
@@ -725,7 +725,7 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('RVSD-3', 'RVSD', 'MDBY', 'COAL',
                              rated_mw=300.0, min_mw=90.0,
-                             ramp_pct_per_min=3.0, inertia_h=5.0,
+                             ramp_mw_per_min=9.0, inertia_h=5.0,
                              cold_start_min=240.0)
             um_online = UnitModel(spec, initial_mw=300.0)
             um_online.trip()
@@ -748,7 +748,7 @@ def test_unit_model() -> bool:
         try:
             spec = _mk_unit('WNCN-1', 'WNCN', 'WNCN', 'WIND',
                              rated_mw=250.0, min_mw=0.0,
-                             ramp_pct_per_min=100.0, inertia_h=0.0,
+                             ramp_mw_per_min=250.0, inertia_h=0.0,
                              cold_start_min=0.0, q_max_mvar=0.0, q_min_mvar=0.0)   # WIND
             um = UnitModel(spec)
             assert um.state == 'ONLINE', \
@@ -789,17 +789,17 @@ def test_unit_model() -> bool:
             f_units = [
                 DesignerUnit(label='RVSD-1', station_label='RVSD', bus_label='MDBY',
                              unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-                             ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                             inertia_h=5.0, cold_start_min=240.0,
                              q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
                              active_from_shift=1, description='Test coal unit'),
                 DesignerUnit(label='HART-1', station_label='HART', bus_label='STHW',
                              unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
-                             ramp_pct_per_min=0.5, inertia_h=6.0, cold_start_min=480.0,
+                             inertia_h=6.0, cold_start_min=480.0,
                              q_max_mvar=300.0, q_min_mvar=-150.0, can_pump=False,
                              active_from_shift=1, description='Test nuclear unit 1'),
                 DesignerUnit(label='HART-2', station_label='HART', bus_label='STHW',
                              unit_type='NUCLEAR', rated_mw=700.0, min_mw=490.0,
-                             ramp_pct_per_min=0.5, inertia_h=6.0, cold_start_min=480.0,
+                             inertia_h=6.0, cold_start_min=480.0,
                              q_max_mvar=300.0, q_min_mvar=-150.0, can_pump=False,
                              active_from_shift=1, description='Test nuclear unit 2'),
             ]
@@ -1287,12 +1287,12 @@ def _build_renewables_fixture():
     units = [
         DesignerUnit(label='WNCN-1', station_label='WNCN', bus_label='WIND',
                      unit_type='WIND', rated_mw=250.0, min_mw=0.0,
-                     ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+                     inertia_h=0.0, cold_start_min=0.0,
                      q_max_mvar=0.0, q_min_mvar=0.0, can_pump=False,
                      active_from_shift=1, description='Test wind unit'),
         DesignerUnit(label='SLST-1', station_label='SLST', bus_label='SOLR',
                      unit_type='SOLAR', rated_mw=300.0, min_mw=0.0,
-                     ramp_pct_per_min=100.0, inertia_h=0.0, cold_start_min=0.0,
+                     inertia_h=0.0, cold_start_min=0.0,
                      q_max_mvar=0.0, q_min_mvar=0.0, can_pump=False,
                      active_from_shift=1, description='Test solar unit'),
     ]
@@ -1752,12 +1752,12 @@ def _build_simulation_fixture():
     units = [
         DesignerUnit(label='GENS-1', station_label='GENS', bus_label='GEN',
                      unit_type='COAL', rated_mw=300.0, min_mw=40.0,
-                     ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                     inertia_h=5.0, cold_start_min=240.0,
                      q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
                      active_from_shift=1, description='Test unit, ONLINE via schedule'),
         DesignerUnit(label='GENS-2', station_label='GENS', bus_label='GEN',
                      unit_type='COAL', rated_mw=300.0, min_mw=90.0,
-                     ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                     inertia_h=5.0, cold_start_min=240.0,
                      q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
                      active_from_shift=1, description='Test unit, stays OFFLINE'),
     ]

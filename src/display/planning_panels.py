@@ -407,7 +407,7 @@ def _draw_footer(surf, screen, font) -> None:
         f'[{_key_label(PLANNING_KEY_CONFIRM)}] confirm plan  '
         f'[{_key_label(PLANNING_KEY_BACK)}] back'
     )
-    _label(surf, font, PLANNING_LEFT_MARGIN, y, hint, COL_TEXT_DIM)
+    _label(surf, font, PLANNING_LEFT_MARGIN, y, hint, COL_TEXT_PRIMARY)
 
     if screen._status_timer > 0.0 and screen._status_text:
         _label(surf, font, PLANNING_LEFT_MARGIN, y - PLANNING_ROW_H,

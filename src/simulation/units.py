@@ -254,7 +254,7 @@ class UnitModel:
         (e.g. a cooling fault) — unlike trip(), the unit stays ONLINE and
         keeps producing, just below its nameplate rating. If output is
         currently above the new cap, it ramps down at the unit's normal
-        ramp_pct_per_min rate (via the target setpoint) rather than
+        ramp_mw_per_min rate (via the target setpoint) rather than
         snapping instantly. Clamped to min_mw.
         """
         cap = max(self._spec.min_mw, min(self._spec.rated_mw, float(cap_mw)))
@@ -484,8 +484,7 @@ class UnitModel:
         if self._is_renewable:
             return  # renewable output is set externally
 
-        ramp_mw_per_sec = (self._spec.ramp_pct_per_min / 100.0) \
-                          * self._spec.rated_mw / 60.0
+        ramp_mw_per_sec = self._spec.ramp_mw_per_min / 60.0
         max_delta = ramp_mw_per_sec * dt_sim_seconds
 
         chase_mw = self._target_mw + self._drift_offset_mw
@@ -507,8 +506,7 @@ class UnitModel:
 
     def _tick_shutdown(self, dt_sim_seconds: float) -> None:
         """Ramp down toward 0. Transition to OFFLINE when output reaches 0."""
-        ramp_mw_per_sec = (self._spec.ramp_pct_per_min / 100.0) \
-                          * self._spec.rated_mw / 60.0
+        ramp_mw_per_sec = self._spec.ramp_mw_per_min / 60.0
         max_delta = ramp_mw_per_sec * dt_sim_seconds
 
         self._current_mw = max(0.0, self._current_mw - max_delta)

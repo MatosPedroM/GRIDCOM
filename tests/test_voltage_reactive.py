@@ -56,8 +56,7 @@ def _build_fixture():
     ]
     units = [
         DesignerUnit(label='SLK-1', station_label='SLK', bus_label='SLK',
-                     unit_type='CCGT', rated_mw=800.0, min_mw=0.0,
-                     ramp_pct_per_min=100.0, inertia_h=4.0, cold_start_min=5.0,
+                     unit_type='CCGT', rated_mw=800.0, min_mw=0.0, inertia_h=4.0, cold_start_min=5.0,
                      q_max_mvar=400.0, q_min_mvar=-400.0, can_pump=False,
                      active_from_shift=1, description='Test gen unit'),
     ]
@@ -346,8 +345,7 @@ def _build_weak_bus_sim():
         # Q range clamped tiny so the PV correction pass can't meaningfully
         # prop up WEAK's voltage — isolates the collapse-offset behaviour.
         DesignerUnit(label='SLK-1', station_label='SLK', bus_label='SLK',
-                     unit_type='CCGT', rated_mw=1000.0, min_mw=0.0,
-                     ramp_pct_per_min=100.0, inertia_h=4.0, cold_start_min=5.0,
+                     unit_type='CCGT', rated_mw=1000.0, min_mw=0.0, inertia_h=4.0, cold_start_min=5.0,
                      q_max_mvar=1.0, q_min_mvar=-1.0, can_pump=False,
                      active_from_shift=1, description='weak gen, tiny Q range'),
     ]
@@ -651,8 +649,7 @@ def _build_regional_support_sim():
     ]
     units = [
         DesignerUnit(label='GEN-1', station_label='GEN', bus_label='GEN',
-                     unit_type='CCGT', rated_mw=1000.0, min_mw=0.0,
-                     ramp_pct_per_min=100.0, inertia_h=4.0, cold_start_min=5.0,
+                     unit_type='CCGT', rated_mw=1000.0, min_mw=0.0, inertia_h=4.0, cold_start_min=5.0,
                      q_max_mvar=200.0, q_min_mvar=-200.0, can_pump=False,
                      active_from_shift=1, description='regional support gen'),
     ]
@@ -773,8 +770,7 @@ def _two_path_voltage_model():
     ]
     units = [
         DesignerUnit(label='GEN-1', station_label='GEN', bus_label='GEN',
-                     unit_type='CCGT', rated_mw=1000.0, min_mw=0.0,
-                     ramp_pct_per_min=100.0, inertia_h=4.0, cold_start_min=5.0,
+                     unit_type='CCGT', rated_mw=1000.0, min_mw=0.0, inertia_h=4.0, cold_start_min=5.0,
                      q_max_mvar=200.0, q_min_mvar=-200.0, can_pump=False,
                      active_from_shift=1, description='two-path support gen'),
     ]

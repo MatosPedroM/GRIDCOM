@@ -3,8 +3,9 @@ src/data/designer_io.py
 
 Load / save the Grid Designer JSON file (assets/designer_grid.json).
 Auto-assigned name/default pools used during placement (SUBSTATION_NAME_POOL,
-UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS) live in config/constants.py — see
-label_from_name() below and next_bus_name() for how they're consumed.
+UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS, WIND_SIZE_DEFAULTS, SOLAR_SIZE_DEFAULTS)
+live in config/constants.py — see label_from_name() below and
+next_bus_name() for how they're consumed.
 
 JSON schema version 1:
   {
@@ -16,11 +17,16 @@ JSON schema version 1:
                  active_from_shift, active_until_shift, voltage_kv, parallel,
                  from_port_override, to_port_override, length_km } ],
     "units": [ { label, station_label, bus_label, unit_type, rated_mw, min_mw,
-                 ramp_pct_per_min, inertia_h, cold_start_min,
+                 inertia_h, cold_start_min,
                  q_max_mvar, q_min_mvar, can_pump, active_from_shift, description,
                  station_x, station_y, start_mw, in_service,
                  min_up_time_h, min_down_time_h, station_name } ]
   }
+
+  ramp_mw_per_min is NOT part of this schema — ramp rate is looked up purely by
+  unit_type from constants.py's UNIT_DEFAULTS at load time (see designer_grid.py's
+  _to_unit()), so retuning a technology's ramp rate never requires editing grid
+  JSON files.
 
   start_mw: test-session starting dispatch, MW. -1.0 (default) means "not
   explicitly set" — test-session launch falls back to rated_mw * 0.5.
@@ -47,7 +53,7 @@ import json
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 
-from config.constants import SUBSTATION_NAME_POOL
+from config.constants import SUBSTATION_NAME_POOL, UNIT_DEFAULTS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -124,7 +130,6 @@ class DesignerUnit:
     unit_type:         str
     rated_mw:          float
     min_mw:            float
-    ramp_pct_per_min:  float
     inertia_h:         float
     cold_start_min:    float
     q_max_mvar:        float
@@ -291,6 +296,7 @@ def designer_units_to_fleet(units: list[DesignerUnit]):
     from data.fleet import GenerationUnit
     result = []
     for u in units:
+        ramp_mw_per_min = UNIT_DEFAULTS.get(u.unit_type, UNIT_DEFAULTS['COAL'])['ramp_mw_per_min']
         result.append(GenerationUnit(
             label=u.label,
             station_label=u.station_label,
@@ -298,7 +304,7 @@ def designer_units_to_fleet(units: list[DesignerUnit]):
             unit_type=u.unit_type,
             rated_mw=u.rated_mw,
             min_mw=u.min_mw,
-            ramp_pct_per_min=u.ramp_pct_per_min,
+            ramp_mw_per_min=ramp_mw_per_min,
             inertia_h=u.inertia_h,
             cold_start_min=u.cold_start_min,
             q_max_mvar=u.q_max_mvar,

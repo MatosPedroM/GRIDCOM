@@ -119,7 +119,7 @@ def _draw_footer(surf, builder, font) -> None:
     y = NATIVE_HEIGHT - 60
     hint = ('[TAB/←→] Tabs  [Ctrl+G] Grid  [Ctrl+S] Save  [Ctrl+O] Load  '
             '[Ctrl+Shift+O] Open Campaign  [Ctrl+T] Test  [ESC] Exit')
-    _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y, hint, COL_TEXT_DIM)
+    _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y, hint, COL_TEXT_PRIMARY)
     if builder._status_timer > 0.0 and builder._status_text:
         _label(surf, font, SHIFT_BUILDER_LEFT_MARGIN, y + SHIFT_BUILDER_ROW_H, builder._status_text, builder._status_colour)
 

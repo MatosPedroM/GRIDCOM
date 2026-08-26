@@ -304,6 +304,8 @@ Type aliases:   PascalCase          (BusLabel = str, LoadingPct = float)
 ```
 P           Pause / resume
 F12         Cycle run speed (0.25x -> 1x -> 3x -> 10x -> wrap)
+F2          Full-screen bus/line report (numeric table, does not pause sim)
+F3          Full-screen line flow/loading plot (horizontal bars per line, does not pause sim)
 
 W           Arm ACTIVE power (MW) adjust on the selected unit
 Q           Arm REACTIVE power (AVR setpoint) adjust on the selected unit

@@ -48,6 +48,7 @@ from config.palette import (
     COL_TEXT_VALUE, COL_TEXT_SECONDARY,
     COL_UNIT_ONLINE, COL_VSI_WATCH, COL_VSI_WARNING, COL_VSI_CRITICAL,
     COL_LOAD_WARN, COL_LOAD_HIGH, COL_LOAD_CRIT, COL_LINE_TRIPPED,
+    COL_METER_TICK,
 )
 import config.constants as _sim_const
 from config.constants import (
@@ -66,6 +67,7 @@ from config.constants import (
     REPORT_FONT_SIZE, REPORT_TITLE_FONT_SIZE, REPORT_TITLE_Y,
     REPORT_TABLE_TOP_MARGIN, REPORT_HEADER_H, REPORT_ROW_H,
     REPORT_BOTTOM_MARGIN, REPORT_COL_PAD, REPORT_AVG_WINDOW_MIN,
+    REPORT3_LOAD_PCT_CAP,
     PERF_DEBUG_LOG, PERF_LOG_INTERVAL_S,
     TARGET_FPS, FREQ_HISTORY_WINDOW_S,
     SVC_Q_STEP_MVAR,
@@ -238,6 +240,13 @@ class Renderer:
         self._report_bus_q_hist: dict[str, deque] = {}
         self._report_line_hist:  dict[str, deque] = {}
 
+        # Full-screen line flow/loading bar plot (F3) — independent of F2's
+        # report, same "does not pause the sim" idiom. One table (lines
+        # only), no P/Q trend history needed since the bars themselves show
+        # current magnitude at a glance.
+        self._report3_active: bool = False
+        self._report3_scroll: int  = 0
+
         # Frequency / load-variation history — sampled once per rendered frame,
         # display-only concern (simulation.py holds no history of its own for
         # either). Load variation is MW/min, derived from consecutive load
@@ -358,14 +367,18 @@ class Renderer:
 
     def on_scroll(self, delta: int, pos: tuple[int, int]) -> None:
         """Route mouse wheel to the report screen (if active — left half
-        scrolls buses, right half scrolls lines), else the alarm panel
-        based on native-space position."""
+        scrolls buses, right half scrolls lines) or the line flow plot (if
+        active — single table), else the alarm panel based on native-space
+        position."""
         if self._report_active:
             half_w = self._native.get_width() // 2
             if pos[0] < half_w:
                 self._report_scroll_buses = max(0, self._report_scroll_buses - delta)
             else:
                 self._report_scroll_lines = max(0, self._report_scroll_lines - delta)
+            return
+        if self._report3_active:
+            self._report3_scroll = max(0, self._report3_scroll - delta)
             return
         if pos[1] < self._scaled_topbar_h + self._scaled_canvas_h:
             return
@@ -735,12 +748,14 @@ class Renderer:
 
     def on_escape(self) -> None:
         """
-        Close the report screen if open; otherwise cancel input if active;
-        clear cmd focus if active; otherwise deselect. No-op when nothing is
-        selected — main.py handles global quit.
+        Close the report screen (F2) or line flow plot (F3) if open; otherwise
+        cancel input if active; clear cmd focus if active; otherwise deselect.
+        No-op when nothing is selected — main.py handles global quit.
         """
         if self._report_active:
             self._report_active = False
+        elif self._report3_active:
+            self._report3_active = False
         elif self._input_active:
             self._input_buffer = ''
             self._input_active = False
@@ -772,6 +787,13 @@ class Renderer:
             self._report_bus_p_hist.clear()
             self._report_bus_q_hist.clear()
             self._report_line_hist.clear()
+
+    def on_report3_toggle(self) -> None:
+        """Toggle the full-screen line flow/loading bar plot (F3). Resets
+        scroll on open — independent of F2's report (see on_report_toggle())."""
+        self._report3_active = not self._report3_active
+        if self._report3_active:
+            self._report3_scroll = 0
 
     # ─── Text screen rendering ────────────────────────────────────────────────
 
@@ -960,7 +982,7 @@ class Renderer:
         footer_y = int((NATIVE_HEIGHT - 60) * sc)
         footer_w = self._font.get_rect(footer_hint, size=fsh).width
         footer_x = max(0, (surf_w - footer_w) // 2)
-        self._font.render_to(self._native, (footer_x, footer_y), footer_hint, COL_TEXT_DIM, size=fsh)
+        self._font.render_to(self._native, (footer_x, footer_y), footer_hint, COL_TEXT_PRIMARY, size=fsh)
 
         self._display.blit(self._native, self._letterbox_rect.topleft)
         self._display_dirty = False
@@ -1158,7 +1180,147 @@ class Renderer:
                 '(left = buses, right = lines)')
         hint_y = h - int(REPORT_BOTTOM_MARGIN * sc) + int(10 * sc)
         self._font.render_to(self._native, (int(REPORT_COL_PAD * sc), hint_y),
-                              hint, COL_TEXT_DIM, size=int(REPORT_FONT_SIZE * sc))
+                              hint, COL_TEXT_PRIMARY, size=int(REPORT_FONT_SIZE * sc))
+
+        self._display.blit(self._native, self._letterbox_rect.topleft)
+        self._display_dirty = False
+
+    def _draw_report3_row(self, state, line, x0: int, bar_w: int, y: int,
+                           rh: int, sp: float, sc: float) -> None:
+        """Draw one line's label/route text plus its two horizontal bars
+        (MW flow, centered on zero; loading%, left-aligned) at row y.
+        bar_w is the pixel width available for EACH bar."""
+        flow_mw = state.line_flows_mw.get(line.label, 0.0)
+        loading = state.line_loading_pct.get(line.label, 0.0)
+        status  = state.line_status.get(line.label, 'IN_SERVICE')
+        tripped = status == 'TRIPPED'
+
+        label_w  = int(90  * sc)
+        route_w  = int(160 * sc)
+        val_w    = int(70  * sc)
+        gap      = int(16  * sc)
+
+        tx = x0
+        self._font.render_to(self._native, (tx, y), line.label, COL_TEXT_VALUE, size=sp)
+        tx += label_w
+        route_str = f'{line.from_bus}->{line.to_bus}'
+        self._font.render_to(self._native, (tx, y), route_str, COL_TEXT_VALUE, size=sp)
+        tx += route_w
+
+        bar_h = max(2, int(rh * 0.6))
+        by = y + (rh - bar_h) // 2
+
+        # MW flow bar — centered on zero, scaled to this line's own rating_mw
+        # so every bar's full extent represents +-100% of its own capacity.
+        mw_bar_x0 = tx
+        mw_center = mw_bar_x0 + bar_w // 2
+        pygame.draw.line(self._native, COL_METER_TICK,
+                          (mw_bar_x0, y), (mw_bar_x0, y + rh), 1)
+        pygame.draw.line(self._native, COL_METER_TICK,
+                          (mw_bar_x0 + bar_w, y), (mw_bar_x0 + bar_w, y + rh), 1)
+        pygame.draw.line(self._native, COL_METER_TICK,
+                          (mw_center, y), (mw_center, y + rh), 1)
+        fill_col = COL_LINE_TRIPPED if tripped else COL_UNIT_ONLINE
+        if line.rating_mw > 0.0 and not tripped:
+            frac = max(-1.0, min(1.0, flow_mw / line.rating_mw))
+            half_w = bar_w // 2
+            extent = int(frac * half_w)
+            rect_x = mw_center if extent >= 0 else mw_center + extent
+            rect_w = abs(extent)
+            if rect_w > 0:
+                pygame.draw.rect(self._native, fill_col, (rect_x, by, rect_w, bar_h))
+        tx += bar_w + gap
+        self._font.render_to(self._native, (tx, y), f'{flow_mw:+.0f}', COL_TEXT_VALUE, size=sp)
+        tx += val_w
+
+        # Loading% bar — left-aligned, fixed scale up to REPORT3_LOAD_PCT_CAP
+        # so overload (>100%) is still visible on the bar.
+        pct_bar_x0 = tx
+        loading_col = (COL_LOAD_CRIT if loading >= 95.0 else
+                       COL_LOAD_HIGH if loading >= 80.0 else
+                       COL_LOAD_WARN if loading >= 60.0 else COL_UNIT_ONLINE)
+        pygame.draw.rect(self._native, COL_METER_TICK, (pct_bar_x0, y, bar_w, rh), 1)
+        full_mark_x = pct_bar_x0 + int((100.0 / REPORT3_LOAD_PCT_CAP) * bar_w)
+        pygame.draw.line(self._native, COL_METER_TICK,
+                          (full_mark_x, y), (full_mark_x, y + rh), 1)
+        if not tripped and loading > 0.0:
+            frac = max(0.0, min(1.0, loading / REPORT3_LOAD_PCT_CAP))
+            fill_w = int(frac * bar_w)
+            if fill_w > 0:
+                pygame.draw.rect(self._native, loading_col, (pct_bar_x0, by, fill_w, bar_h))
+        tx += bar_w + gap
+        self._font.render_to(self._native, (tx, y), f'{loading:.0f}%', loading_col, size=sp)
+        tx += val_w
+
+        status_col, status_disp = ((COL_LINE_TRIPPED, 'TRIPPED') if tripped
+                                    else (COL_UNIT_ONLINE, 'IN SVC'))
+        self._font.render_to(self._native, (tx, y), status_disp, status_col, size=sp)
+
+    def tick_report3_screen(self, dt_real_s: float, state, speed_mult: float = 1.0) -> None:
+        """
+        Full-screen line flow/loading bar plot (F3). Does NOT pause the sim —
+        same idiom as tick_report_screen() (F2), which this mirrors: bypasses
+        canvas/strip, paints self._native directly. One table (lines only,
+        no bus half), one row per line with two horizontal bars — MW flow
+        (centered on zero, scaled to the line's own rating_mw) and loading%
+        (left-aligned, fixed scale). Independent of F2's report; both are
+        reachable separately (see on_report3_toggle()/on_scroll()).
+        """
+        self._native.fill(COL_BACKGROUND)
+        sc = self._scale
+
+        fst = int(REPORT_TITLE_FONT_SIZE * sc)
+        title = 'LINE FLOW'
+        if state is not None:
+            hr, mn = int(state.sim_hour) % 24, int((state.sim_hour % 1.0) * 60)
+            title += f'   {hr:02d}:{mn:02d}   {state.frequency_hz:.2f} Hz   {speed_mult:.2f}x'
+        self._font.render_to(self._native, (int(REPORT_COL_PAD * sc), int(REPORT_TITLE_Y * sc)),
+                              title, COL_TEXT_PRIMARY, size=fst)
+
+        if self._grid is None or state is None:
+            self._display.blit(self._native, self._letterbox_rect.topleft)
+            self._display_dirty = False
+            return
+
+        w, h = self._native.get_width(), self._native.get_height()
+        top = int(REPORT_TABLE_TOP_MARGIN * sc)
+        bottom_limit = h - int(REPORT_BOTTOM_MARGIN * sc)
+
+        sp  = int(REPORT_FONT_SIZE * sc)
+        hh  = int(REPORT_HEADER_H  * sc)
+        rh  = max(1, int(REPORT_ROW_H * sc))
+        pad = int(REPORT_COL_PAD * sc)
+
+        lines = sorted(self._grid.get_active_lines(), key=lambda l: l.label)
+        rows_per_screen = max(1, (bottom_limit - top - hh) // rh)
+        max_start = max(0, len(lines) - rows_per_screen)
+        start = max(0, min(self._report3_scroll, max_start))
+        self._report3_scroll = start
+        visible = lines[start:start + rows_per_screen]
+
+        label_w = int(90 * sc)
+        route_w = int(160 * sc)
+        val_w   = int(70 * sc)
+        gap     = int(16 * sc)
+        bar_w   = int(360 * sc)
+
+        x0 = pad
+        hdr_y = top
+        self._font.render_to(self._native, (x0, hdr_y), 'LINE', COL_TEXT_SECONDARY, size=sp)
+        self._font.render_to(self._native, (x0 + label_w, hdr_y), 'FROM->TO', COL_TEXT_SECONDARY, size=sp)
+        self._font.render_to(self._native, (x0 + label_w + route_w, hdr_y), 'FLOW (MW, centred on 0)',
+                              COL_TEXT_SECONDARY, size=sp)
+        self._font.render_to(self._native, (x0 + label_w + route_w + bar_w + gap + val_w, hdr_y),
+                              f'LOADING % (0-{REPORT3_LOAD_PCT_CAP:.0f})', COL_TEXT_SECONDARY, size=sp)
+
+        for i, line in enumerate(visible):
+            y = top + hh + i * rh
+            self._draw_report3_row(state, line, x0, bar_w, y, rh, sp, sc)
+
+        hint = '[F3 / ESC]  Return to Grid View    [MOUSEWHEEL]  Scroll'
+        hint_y = h - int(REPORT_BOTTOM_MARGIN * sc) + int(10 * sc)
+        self._font.render_to(self._native, (int(REPORT_COL_PAD * sc), hint_y),
+                              hint, COL_TEXT_PRIMARY, size=int(REPORT_FONT_SIZE * sc))
 
         self._display.blit(self._native, self._letterbox_rect.topleft)
         self._display_dirty = False
@@ -1198,7 +1360,7 @@ class Renderer:
         self._hint_bar_surf.fill(COL_STRIP_BG)
         self._font.render_to(
             self._hint_bar_surf, (pad, max(1, int(3 * sc))),
-            hint_text, COL_TEXT_DIM, size=int(FONT_SIZE_HINT * sc),
+            hint_text, COL_TEXT_PRIMARY, size=int(FONT_SIZE_HINT * sc),
         )
 
     # ─── Per-frame entry point ────────────────────────────────────────────────

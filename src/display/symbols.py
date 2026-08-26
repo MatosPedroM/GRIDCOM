@@ -18,7 +18,7 @@ import pygame
 from config.constants import (
     FONT_SIZE_OVERLAY,
     LOAD_TRIANGLE_PCT_1, LOAD_TRIANGLE_PCT_2, LOAD_TRIANGLE_PCT_3,
-    LOAD_TRIANGLE_SIZE, LOAD_TRIANGLE_SPACING,
+    LOAD_TRIANGLE_SIZE,
     UNIT_BORDER_W_PX, UNIT_BORDER_W_SELECTED_PX,
     VSI_HALO_RADIUS_PX, VSI_HALO_WIDTH_PX,
     DEVICE_GLYPH_SIZE_PX, DEVICE_GLYPH_OFFSET_PX,
@@ -675,9 +675,8 @@ def draw_load_triangles(
 ) -> None:
     """
     Draw a static per-line load indicator: for each routed segment of an
-    in-service line, a cluster of 1-4 small arrow-triangles at a fixed
-    LOAD_TRIANGLE_SPACING gap, centred on that segment's own midpoint,
-    pointing in the flow direction. Count and colour are bucketed by
+    in-service line, one small arrow-triangle centred on that segment's own
+    midpoint, pointing in the flow direction. Colour is bucketed by
     loading % (grey/green/yellow/red for 0-25/25-50/50-75/75%+), computed
     once per line and repeated identically on every segment.
 
@@ -701,21 +700,19 @@ def draw_load_triangles(
 
         pct = abs(state.line_loading_pct.get(lbl, 0.0))
         if pct < LOAD_TRIANGLE_PCT_1:
-            count, col = 1, COL_LINE_TRIPPED
+            col = COL_LINE_TRIPPED
         elif pct < LOAD_TRIANGLE_PCT_2:
-            count, col = 2, COL_LINE_ENERGISED
+            col = COL_LINE_ENERGISED
         elif pct < LOAD_TRIANGLE_PCT_3:
-            count, col = 3, COL_LOAD_WARN
+            col = COL_LOAD_WARN
         else:
-            count, col = 4, COL_LOAD_CRIT
+            col = COL_LOAD_CRIT
 
         # Positive flow_mw: from_bus -> to_bus, i.e. along the waypoints in
         # their stored order (same convention as context.py's ▶/◀ arrow).
         forward = state.line_flows_mw.get(lbl, 0.0) >= 0.0
         pts = waypoints if forward else waypoints[::-1]
         sz = LOAD_TRIANGLE_SIZE
-        spacing = LOAD_TRIANGLE_SPACING
-        cluster_span = spacing * (count - 1)
 
         for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
             seg_dx, seg_dy = x2 - x1, y2 - y1
@@ -724,12 +721,9 @@ def draw_load_triangles(
                 continue
             dx, dy = seg_dx / length, seg_dy / length
 
-            start_t = max(0.0, (length - cluster_span) / 2.0)
-            for i in range(count):
-                t = start_t + spacing * i
-                cx = x1 + dx * t
-                cy = y1 + dy * t
-                _draw_arrow_triangle(surf, cx, cy, dx, dy, sz, col)
+            cx = x1 + dx * (length / 2.0)
+            cy = y1 + dy * (length / 2.0)
+            _draw_arrow_triangle(surf, cx, cy, dx, dy, sz, col)
 
 
 def _draw_line_segment(

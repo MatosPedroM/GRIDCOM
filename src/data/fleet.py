@@ -32,7 +32,9 @@ class GenerationUnit:
                            'HYDRO_PUMP', 'WIND', or 'SOLAR'
         rated_mw:          Maximum output at rated conditions (MW)
         min_mw:            Minimum stable output when online (MW)
-        ramp_pct_per_min:  Max ramp rate as % of rated_mw per simulated minute
+        ramp_mw_per_min:   Max ramp rate in MW per simulated minute (absolute,
+                           looked up by unit_type from constants.py's
+                           UNIT_DEFAULTS — not authored per-unit)
         inertia_h:         Inertia constant H in seconds (0.0 for wind/solar)
         cold_start_min:    Simulated minutes from OFFLINE to ONLINE
         q_max_mvar:        Maximum reactive power injection (MVAr)
@@ -58,7 +60,7 @@ class GenerationUnit:
     unit_type:         str
     rated_mw:          float
     min_mw:            float
-    ramp_pct_per_min:  float
+    ramp_mw_per_min:   float
     inertia_h:         float
     cold_start_min:    float
     q_max_mvar:        float

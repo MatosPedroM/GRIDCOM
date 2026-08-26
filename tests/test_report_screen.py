@@ -48,7 +48,7 @@ def _build_report_fixture():
     units = [
         DesignerUnit(label='GENS-1', station_label='GENS', bus_label='GEN',
                      unit_type='COAL', rated_mw=300.0, min_mw=40.0,
-                     ramp_pct_per_min=3.0, inertia_h=5.0, cold_start_min=240.0,
+                     inertia_h=5.0, cold_start_min=240.0,
                      q_max_mvar=150.0, q_min_mvar=-80.0, can_pump=False,
                      active_from_shift=1, description='Test unit, ONLINE via schedule'),
     ]

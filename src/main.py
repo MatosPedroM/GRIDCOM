@@ -969,7 +969,7 @@ def main() -> None:
                     elif event.key == pygame.K_ESCAPE:
                         if _const.EDITOR_MODE:
                             _const.EDITOR_MODE = False
-                        elif renderer._report_active:
+                        elif renderer._report_active or renderer._report3_active:
                             renderer.on_escape()
                         elif (renderer._selected_label is not None
                               or renderer._input_active
@@ -1054,6 +1054,10 @@ def main() -> None:
                     elif (event.key == pygame.K_F2 and not _const.EDITOR_MODE
                           and not renderer._input_active):
                         renderer.on_report_toggle()
+
+                    elif (event.key == pygame.K_F3 and not _const.EDITOR_MODE
+                          and not renderer._input_active):
+                        renderer.on_report3_toggle()
 
                     elif (event.key == pygame.K_COMMA and not _const.EDITOR_MODE
                           and not renderer._input_active and not renderer._setpoint_active):
@@ -1170,6 +1174,8 @@ def main() -> None:
 
             if renderer._report_active:
                 renderer.tick_report_screen(dt, state=state, speed_mult=speed)
+            elif renderer._report3_active:
+                renderer.tick_report3_screen(dt, state=state, speed_mult=speed)
             else:
                 renderer.tick(dt, state=state, speed_mult=speed)
 
@@ -1433,7 +1439,7 @@ def main() -> None:
                     shift_held = bool(mods & pygame.KMOD_SHIFT)
 
                     if event.key == pygame.K_ESCAPE:
-                        if _rend._report_active:
+                        if _rend._report_active or _rend._report3_active:
                             _rend.on_escape()
                         else:
                             dest = _designer_test_origin
@@ -1466,6 +1472,9 @@ def main() -> None:
 
                     elif event.key == pygame.K_F2 and not _rend._input_active:
                         _rend.on_report_toggle()
+
+                    elif event.key == pygame.K_F3 and not _rend._input_active:
+                        _rend.on_report3_toggle()
 
                     elif ctrl and not shift_held and event.key == pygame.K_a:
                         _const.AGC_ENABLED = not _const.AGC_ENABLED
@@ -1582,6 +1591,8 @@ def main() -> None:
             if game_state == GameState.DESIGNER_TEST:
                 if _rend._report_active:
                     _rend.tick_report_screen(dt, state=state, speed_mult=speed)
+                elif _rend._report3_active:
+                    _rend.tick_report3_screen(dt, state=state, speed_mult=speed)
                 else:
                     _rend.tick(dt, state=state, speed_mult=speed)
 

@@ -9,9 +9,15 @@ Allows placing buses, generation units, and transmission lines on the
 Saves to assets/designer_grids/<name>.json.
 
 Coordinate system: all positions are in native 1920×1080 space.
-The sidebar (drawn by designer_panels.py) occupies the left
-DESIGNER_SIDEBAR_W (208) px; the canvas area is the remaining
-DESIGNER_CANVAS_W (1712) px on the right.
+Screen composition, top to bottom (mirrors the in-game Renderer's own
+title/topbar/canvas/strip/hint stack, so the designer canvas is
+pixel-identical to the real gameplay canvas):
+  DESIGNER_TITLE_BAR_HEIGHT + DESIGNER_TOPBAR_HEIGHT  — top panel (2 rows)
+  CANVAS_HEIGHT                                        — grid canvas, full width
+  DESIGNER_STRIP_HEIGHT                                — bottom instrument strip
+  DESIGNER_HINT_GAP_HEIGHT + DESIGNER_HINT_BAR_HEIGHT  — shortcut hint row
+The bottom strip (drawn by designer_panels.py) is split into four fixed
+side-by-side columns: Balance, Palette, Properties, Actions.
 """
 
 from __future__ import annotations
@@ -48,7 +54,8 @@ from display.symbols import _draw_dashed_line
 from config.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT, CANVAS_HEIGHT,
     FONT_PATH_MONO_REGULAR,
-    DESIGNER_SIDEBAR_W, DESIGNER_CANVAS_W,
+    DESIGNER_TITLE_BAR_HEIGHT, DESIGNER_TOPBAR_HEIGHT, DESIGNER_STRIP_HEIGHT,
+    DESIGNER_HINT_GAP_HEIGHT, DESIGNER_HINT_BAR_HEIGHT,
     DESIGNER_TARGET_LOADING_PCT,
     DESIGNER_STATUS_DISPLAY_S, DESIGNER_HIT_RADIUS, DESIGNER_LINE_HIT_PX,
     DESIGNER_FONT_SIZE, DESIGNER_FONT_SIZE_LARGE, DESIGNER_UNDO_MAX,
@@ -59,7 +66,7 @@ from config.constants import (
     OVERLOAD_WARN_PCT, OVERLOAD_CRIT_PCT,
     KM_PER_PX, REACTANCE_PU_PER_KM_150KV, REACTANCE_PU_PER_KM_220KV,
     REACTANCE_PU_PER_KM_400KV,
-    UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS,
+    UNIT_DEFAULTS, HYDRO_SIZE_DEFAULTS, WIND_SIZE_DEFAULTS, SOLAR_SIZE_DEFAULTS,
 )
 from utils.helpers import resource_path
 
@@ -82,6 +89,19 @@ MODE_BUS     = 'BUS'
 MODE_UNIT    = 'UNIT'
 MODE_LINE    = 'LINE'
 MODE_DELETE  = 'DELETE'
+
+# Unit types that prompt for a Small/Medium/Large size before the unit-count
+# dialog. Keyed the same way as UNIT_DEFAULTS.
+SIZE_DEFAULTS_BY_TYPE: dict[str, dict] = {
+    'HYDRO': HYDRO_SIZE_DEFAULTS,
+    'WIND':  WIND_SIZE_DEFAULTS,
+    'SOLAR': SOLAR_SIZE_DEFAULTS,
+}
+SIZE_LABEL_BY_TYPE: dict[str, str] = {
+    'HYDRO': 'Hydro plant',
+    'WIND':  'Wind farm',
+    'SOLAR': 'Solar farm',
+}
 
 _VOLT_LINE_COLOUR: dict[float, tuple] = {
     400.0: COL_400KV,
@@ -132,6 +152,12 @@ class GridDesigner:
         # text is rasterized directly at final pixel size instead of being
         # bitmap-stretched afterward (matches Renderer's approach).
         self._native = pygame.Surface((self._letterbox.width, self._letterbox.height)).convert()
+
+        # Screen-region y-bands (logical/native space) — top panel, canvas,
+        # bottom strip. See module docstring for the full vertical stack.
+        self._canvas_y0 = DESIGNER_TITLE_BAR_HEIGHT + DESIGNER_TOPBAR_HEIGHT
+        self._canvas_y1 = self._canvas_y0 + CANVAS_HEIGHT
+        self._strip_y0  = self._canvas_y1
 
         # Fonts — same JetBrains Mono as the in-game renderer
         _font_path = resource_path(FONT_PATH_MONO_REGULAR)
@@ -188,7 +214,8 @@ class GridDesigner:
         self._palette_voltage:      float = 400.0    # for MODE_BUS
         self._palette_load_toggle:  bool  = False    # for MODE_BUS — place a 150kV LOAD bus
         self._palette_unit_type:    str   = 'COAL'   # for MODE_UNIT
-        self._palette_hydro_size:   str   = 'LARGE'  # for MODE_UNIT, HYDRO only — SMALL/MEDIUM/LARGE
+        # for MODE_UNIT, sizable types only (see SIZE_DEFAULTS_BY_TYPE) — SMALL/MEDIUM/LARGE
+        self._palette_gen_size: dict[str, str] = {t: 'LARGE' for t in SIZE_DEFAULTS_BY_TYPE}
 
         # Line-draw state
         self._line_first_bus: DesignerBus | None = None
@@ -271,8 +298,8 @@ class GridDesigner:
         if self._dragging_bus is not None:
             nx = native_pos[0] + self._drag_offset[0]
             ny = native_pos[1] + self._drag_offset[1]
-            nx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, nx))
-            ny = max(0, min(CANVAS_HEIGHT - 1, ny))
+            nx = max(0, min(NATIVE_WIDTH - 1, nx))
+            ny = max(self._canvas_y0, min(self._canvas_y1 - 1, ny))
             nx, ny = self._snap(nx, ny)
             self._dragging_bus.canvas_x = nx
             self._dragging_bus.canvas_y = ny
@@ -285,8 +312,8 @@ class GridDesigner:
         elif self._dragging_station is not None:
             nx = native_pos[0] + self._drag_offset[0]
             ny = native_pos[1] + self._drag_offset[1]
-            nx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, nx))
-            ny = max(0, min(CANVAS_HEIGHT - 1, ny))
+            nx = max(0, min(NATIVE_WIDTH - 1, nx))
+            ny = max(self._canvas_y0, min(self._canvas_y1 - 1, ny))
             nx, ny = self._snap(nx, ny)
             for u in self._units:
                 if u.station_label == self._dragging_station:
@@ -302,14 +329,14 @@ class GridDesigner:
             dy = native_pos[1] - self._group_drag_last[1]
             for b in self._buses:
                 if b.label in self._selected_buses:
-                    bx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, b.canvas_x + dx))
-                    by = max(0, min(CANVAS_HEIGHT - 1, b.canvas_y + dy))
+                    bx = max(0, min(NATIVE_WIDTH - 1, b.canvas_x + dx))
+                    by = max(self._canvas_y0, min(self._canvas_y1 - 1, b.canvas_y + dy))
                     b.canvas_x, b.canvas_y = self._snap(bx, by)
             for station_label in self._selected_stations:
                 for u in self._units:
                     if u.station_label == station_label:
-                        sx = max(DESIGNER_SIDEBAR_W, min(NATIVE_WIDTH - 1, u.station_x + dx))
-                        sy = max(0, min(CANVAS_HEIGHT - 1, u.station_y + dy))
+                        sx = max(0, min(NATIVE_WIDTH - 1, u.station_x + dx))
+                        sy = max(self._canvas_y0, min(self._canvas_y1 - 1, u.station_y + dy))
                         u.station_x, u.station_y = self._snap(sx, sy)
             self._group_drag_last = native_pos
             # Same deferred-resync rationale as single bus/station drag —
@@ -324,12 +351,12 @@ class GridDesigner:
                 min(x0, x1), min(y0, y1), abs(x1 - x0), abs(y1 - y0))
 
     def on_mouse_down(self, native_pos: tuple[int, int]) -> None:
-        if self._dialog_active:
+        if self._dialog_active or self._sidebar_mode != 'normal':
             return
         # Only drag in SELECT mode over the canvas area
         if self._palette_mode != MODE_SELECT:
             return
-        if native_pos[0] < DESIGNER_SIDEBAR_W:
+        if not (self._canvas_y0 <= native_pos[1] < self._canvas_y1):
             return
 
         # If there's an active group selection and the click landed on one
@@ -384,9 +411,19 @@ class GridDesigner:
 
         x, y = native_pos
 
-        # Sidebar click → delegate to panel handler
-        if x < DESIGNER_SIDEBAR_W:
-            self._handle_sidebar_click(x, y)
+        # Modal overlay (save/load/test/analysis) active → delegate to it
+        # and swallow the click regardless of where on screen it landed.
+        if self._sidebar_mode != 'normal':
+            self._handle_modal_click(x, y)
+            return
+
+        # Bottom strip click → delegate to panel handler
+        if y >= self._strip_y0:
+            self._handle_strip_click(x, y - self._strip_y0)
+            return
+
+        # Top panel — read-only for now, no click handling
+        if y < self._canvas_y0:
             return
 
         # Canvas click
@@ -405,8 +442,8 @@ class GridDesigner:
         elif self._palette_mode == MODE_UNIT:
             bus = self._hit_bus(native_pos)
             if bus is not None:
-                if self._palette_unit_type == 'HYDRO':
-                    self._ask_hydro_size(bus)
+                if self._palette_unit_type in SIZE_DEFAULTS_BY_TYPE:
+                    self._ask_gen_size(bus)
                 else:
                     self._ask_unit_count(bus)
 
@@ -967,16 +1004,23 @@ class GridDesigner:
         self._palette_mode  = MODE_SELECT
         self._mark_dirty()
 
-    def _ask_hydro_size(self, bus: DesignerBus) -> None:
-        self._dialog_prompt   = f'Hydro plant size at {bus.label}? (S)mall/50MW  (M)edium/150MW  (L)arge/250MW'
+    def _ask_gen_size(self, bus: DesignerBus) -> None:
+        unit_type = self._palette_unit_type
+        label = SIZE_LABEL_BY_TYPE[unit_type]
+        sizes = SIZE_DEFAULTS_BY_TYPE[unit_type]
+        mw = {tier: sizes[tier]['rated_mw'] for tier in ('SMALL', 'MEDIUM', 'LARGE')}
+        self._dialog_prompt = (
+            f'{label} size at {bus.label}? '
+            f"(S)mall/{mw['SMALL']:.0f}MW  (M)edium/{mw['MEDIUM']:.0f}MW  (L)arge/{mw['LARGE']:.0f}MW"
+        )
         self._dialog_buffer   = 'L'
         self._dialog_active   = True
-        self._dialog_callback = lambda s: self._finish_hydro_size(bus, s)
+        self._dialog_callback = lambda s: self._finish_gen_size(bus, s)
 
-    def _finish_hydro_size(self, bus: DesignerBus, size_str: str) -> None:
+    def _finish_gen_size(self, bus: DesignerBus, size_str: str) -> None:
         size_map = {'S': 'SMALL', 'M': 'MEDIUM', 'L': 'LARGE'}
         key = size_str.strip().upper()[:1]
-        self._palette_hydro_size = size_map.get(key, 'LARGE')
+        self._palette_gen_size[self._palette_unit_type] = size_map.get(key, 'LARGE')
         self._ask_unit_count(bus)
 
     def _ask_unit_count(self, bus: DesignerBus) -> None:
@@ -1002,8 +1046,9 @@ class GridDesigner:
         start_index = len(existing_units) + 1
         sx, sy = bus.canvas_x, max(0, bus.canvas_y - 20)
         defaults = UNIT_DEFAULTS.get(unit_type, UNIT_DEFAULTS['COAL'])
-        if unit_type == 'HYDRO':
-            defaults = {**defaults, **HYDRO_SIZE_DEFAULTS[self._palette_hydro_size]}
+        if unit_type in SIZE_DEFAULTS_BY_TYPE:
+            size = self._palette_gen_size[unit_type]
+            defaults = {**defaults, **SIZE_DEFAULTS_BY_TYPE[unit_type][size]}
         for i in range(start_index, start_index + count):
             unit_label = f'{station_label}-{i}'
             unit = DesignerUnit(
@@ -1013,7 +1058,6 @@ class GridDesigner:
                 unit_type=unit_type,
                 rated_mw=defaults['rated_mw'],
                 min_mw=defaults['min_mw'],
-                ramp_pct_per_min=defaults['ramp_pct_per_min'],
                 inertia_h=defaults['inertia_h'],
                 cold_start_min=defaults['cold_start_min'],
                 q_max_mvar=defaults['q_max_mvar'],
@@ -1157,16 +1201,28 @@ class GridDesigner:
         self._clear_selection()
         self._mark_dirty()
 
-    # ─── Sidebar interaction ─────────────────────────────────────────────────
+    # ─── Bottom strip / modal interaction ────────────────────────────────────
 
-    def _handle_sidebar_click(self, sx: int, sy: int) -> None:
-        """sx, sy are relative to sidebar left edge."""
-        # In overlay mode, route clicks to the overlay handler in designer_panels
+    def _handle_strip_click(self, sx: int, sy: int) -> None:
+        """sx, sy are relative to the bottom strip's top-left corner."""
+        from display.designer_panels import strip_button_at
+        action = strip_button_at(sx, sy, self)
+        if action is None:
+            return
+        self._dispatch_action(action)
+
+    def _handle_modal_click(self, x: int, y: int) -> None:
+        """x, y are native (screen) coords; modal bounds are resolved here."""
+        from display.designer_panels import modal_click_at, modal_bounds_for
+        mx0, my0, mw, mh = modal_bounds_for(self._sidebar_mode, self)
+        if not (mx0 <= x < mx0 + mw and my0 <= y < my0 + mh):
+            return   # click outside modal — no-op, matches _draw_dialog's behaviour
+        sx, sy = x - mx0, y - my0
+
         if self._sidebar_mode in ('save_dialog', 'load_browser', 'test_browser'):
-            from display.designer_panels import sidebar_overlay_click_at
-            action = sidebar_overlay_click_at(sx, sy, self)
+            action = modal_click_at(sx, sy, self)
             if action == 'load_browser_item':
-                pass   # already handled by sidebar_overlay_click_at via select callback
+                pass   # already handled by modal_click_at via select callback
             elif action == 'overlay_cancel':
                 self._sidebar_mode = 'normal'
             elif action == 'save_dialog_commit':
@@ -1185,11 +1241,16 @@ class GridDesigner:
                     self._sidebar_mode = 'normal'
             return
 
-        from display.designer_panels import sidebar_button_at
-        action = sidebar_button_at(sx, sy, self)
+        # 'analysis' mode — modal hosts both the analysis summary/RUN/CLOSE
+        # buttons and (when an element is selected) its editable properties,
+        # sharing the same action-string dispatch as the normal strip.
+        action = modal_click_at(sx, sy, self)
         if action is None:
             return
+        self._dispatch_action(action)
 
+    def _dispatch_action(self, action: str) -> None:
+        """Shared action-string dispatch for both the strip and the analysis modal."""
         if action == 'bus_load_toggle':
             self._palette_mode        = MODE_BUS
             self._palette_load_toggle = not self._palette_load_toggle
@@ -1483,8 +1544,11 @@ class GridDesigner:
         surf = self._native
         surf.fill(COL_BACKGROUND)
 
+        self._draw_top_panel(surf)
         self._draw_canvas(surf)
-        self._draw_sidebar(surf)
+        self._draw_bottom_strip(surf)
+        self._draw_hint_bar(surf)
+        self._draw_modal(surf)
         self._draw_dialog(surf)
         self._draw_status(surf)
 
@@ -1556,17 +1620,18 @@ class GridDesigner:
             return
         sc = self._scale
         step = DESIGNER_GRID_SPACING_PX
-        x0 = ((DESIGNER_SIDEBAR_W + step - 1) // step) * step  # first on-canvas grid line
-        for gx in range(x0, NATIVE_WIDTH, step):
+        y0 = self._canvas_y0 + (step - self._canvas_y0 % step) % step  # first on-canvas grid line
+        for gx in range(0, NATIVE_WIDTH, step):
             sgx = int(gx * sc)
-            for gy in range(0, CANVAS_HEIGHT, step):
+            for gy in range(y0, self._canvas_y1, step):
                 surf.set_at((sgx, int(gy * sc)), COL_DESIGNER_GRID_DOT)
 
     def _draw_canvas(self, surf: pygame.Surface) -> None:
-        # Canvas clip region — occupies the right side, sidebar is on the left
+        # Canvas clip region — full width, between the top panel and the
+        # bottom strip.
         sc = self._scale
-        canvas_rect = pygame.Rect(int(DESIGNER_SIDEBAR_W * sc), 0,
-                                  int(DESIGNER_CANVAS_W * sc), int(CANVAS_HEIGHT * sc))
+        canvas_rect = pygame.Rect(0, int(self._canvas_y0 * sc),
+                                  int(NATIVE_WIDTH * sc), int(CANVAS_HEIGHT * sc))
         pygame.draw.rect(surf, (10, 10, 10), canvas_rect)
 
         if self._canvas_dirty:
@@ -1574,10 +1639,9 @@ class GridDesigner:
 
         if self._buses:
             # GridCanvas.draw() always blits at (0,0) of the surface it's
-            # given, and bus/line positions are native-space (not offset by
-            # the sidebar) — so it must draw directly onto the full native
-            # surf, never a subsurface (a subsurface would double-offset
-            # every position by the sidebar width).
+            # given, and bus/line positions are native-space — so it must
+            # draw directly onto the full native surf, never a subsurface
+            # (a subsurface would double-offset every position).
             self._canvas.draw(surf, state=None, blink_on=True,
                               selected_label=self._selected_label_for_canvas())
 
@@ -1733,14 +1797,14 @@ class GridDesigner:
             fx = self._line_first_bus.canvas_x
             fy = self._line_first_bus.canvas_y
             mx, my = self._mouse_pos
-            if mx >= DESIGNER_SIDEBAR_W:
+            if self._canvas_y0 <= my < self._canvas_y1:
                 pygame.draw.line(surf, COL_DESIGNER_LINE_DRAW,
                                  (int(fx * sc), int(fy * sc)), (int(mx * sc), int(my * sc)), 1)
 
         # Delete cursor hint
         if self._palette_mode == MODE_DELETE:
             mx, my = self._mouse_pos
-            if mx >= DESIGNER_SIDEBAR_W:
+            if self._canvas_y0 <= my < self._canvas_y1:
                 pygame.draw.circle(surf, COL_DESIGNER_DELETE_CURSOR,
                                    (int(mx * sc), int(my * sc)),
                                    int(DESIGNER_HIT_RADIUS * sc), 1)
@@ -1753,8 +1817,8 @@ class GridDesigner:
         hint_map = {
             MODE_SELECT: select_hint,
             MODE_BUS:    bus_hint,
-            MODE_UNIT:   (f'PLACE UNIT  HYDRO  (click a bus, then choose size)'
-                          if self._palette_unit_type == 'HYDRO'
+            MODE_UNIT:   (f'PLACE UNIT  {self._palette_unit_type}  (click a bus, then choose size)'
+                          if self._palette_unit_type in SIZE_DEFAULTS_BY_TYPE
                           else f'PLACE UNIT  {self._palette_unit_type}  (click a bus)'),
             MODE_LINE:   ('Click first bus' if self._line_first_bus is None
                           else f'Click second bus  (from {self._line_first_bus.label})'),
@@ -1763,15 +1827,42 @@ class GridDesigner:
         hint = hint_map.get(self._palette_mode, '')
         if hint:
             self._font.render_to(surf,
-                                 (int((DESIGNER_SIDEBAR_W + 8) * sc), int((CANVAS_HEIGHT - 20) * sc)),
+                                 (int(8 * sc), int((self._canvas_y1 - 20) * sc)),
                                  hint, COL_DESIGNER_STATUS_INFO, size=int(DESIGNER_FONT_SIZE * sc))
 
-    def _draw_sidebar(self, surf: pygame.Surface) -> None:
-        from display.designer_panels import draw_sidebar
+    def _draw_top_panel(self, surf: pygame.Surface) -> None:
+        from display.designer_panels import draw_top_panel
         sc = self._scale
-        sidebar_surf = surf.subsurface(
-            (0, 0, int(DESIGNER_SIDEBAR_W * sc), int(NATIVE_HEIGHT * sc)))
-        draw_sidebar(sidebar_surf, self, self._font, self._font_bold, sc)
+        top_surf = surf.subsurface(
+            (0, 0, int(NATIVE_WIDTH * sc), int(self._canvas_y0 * sc)))
+        draw_top_panel(top_surf, self, self._font, self._font_bold, sc)
+
+    def _draw_bottom_strip(self, surf: pygame.Surface) -> None:
+        from display.designer_panels import draw_bottom_strip
+        sc = self._scale
+        strip_surf = surf.subsurface(
+            (0, int(self._strip_y0 * sc), int(NATIVE_WIDTH * sc), int(DESIGNER_STRIP_HEIGHT * sc)))
+        draw_bottom_strip(strip_surf, self, self._font, self._font_bold, sc)
+
+    def _draw_hint_bar(self, surf: pygame.Surface) -> None:
+        from display.designer_panels import draw_hint_bar
+        sc = self._scale
+        y0 = self._strip_y0 + DESIGNER_STRIP_HEIGHT + DESIGNER_HINT_GAP_HEIGHT
+        hint_surf = surf.subsurface(
+            (0, int(y0 * sc), int(NATIVE_WIDTH * sc), int(DESIGNER_HINT_BAR_HEIGHT * sc)))
+        draw_hint_bar(hint_surf, self, self._font, sc)
+
+    def _draw_modal(self, surf: pygame.Surface) -> None:
+        if self._sidebar_mode == 'normal':
+            return
+        from display.designer_panels import modal_bounds_for, draw_modal_content
+        sc = self._scale
+        mx0, my0, mw, mh = modal_bounds_for(self._sidebar_mode, self)
+        rect = pygame.Rect(int(mx0 * sc), int(my0 * sc), int(mw * sc), int(mh * sc))
+        pygame.draw.rect(surf, (0, 0, 0), rect)
+        pygame.draw.rect(surf, COL_PANEL_BORDER, rect, 1)
+        modal_surf = surf.subsurface(rect)
+        draw_modal_content(modal_surf, self, self._font, self._font_bold, sc, self._sidebar_mode)
 
     def get_sidebar_mode(self) -> str:
         return self._sidebar_mode
@@ -1780,10 +1871,10 @@ class GridDesigner:
         if not self._dialog_active:
             return
         sc = self._scale
-        # Modal dialog box centred on the canvas region (right of the sidebar)
+        # Modal dialog box centred on the canvas region
         dw, dh = int(500 * sc), int(90 * sc)
-        dx = int(DESIGNER_SIDEBAR_W * sc) + (int(DESIGNER_CANVAS_W * sc) - dw) // 2
-        dy = (int(CANVAS_HEIGHT * sc) - dh) // 2
+        dx = (int(NATIVE_WIDTH * sc) - dw) // 2
+        dy = int(self._canvas_y0 * sc) + (int(CANVAS_HEIGHT * sc) - dh) // 2
         fsz = int(DESIGNER_FONT_SIZE * sc)
         pygame.draw.rect(surf, (0, 0, 0), (dx, dy, dw, dh))
         pygame.draw.rect(surf, COL_PANEL_BORDER, (dx, dy, dw, dh), 1)
@@ -1802,8 +1893,8 @@ class GridDesigner:
             return
         sc = self._scale
         rect_w = min(int(700 * sc), int((len(self._status_text) * 9 + 16) * sc))
-        rect_x = int(DESIGNER_SIDEBAR_W * sc) + (int(DESIGNER_CANVAS_W * sc) - rect_w) // 2
-        rect_y = int((CANVAS_HEIGHT - 50) * sc)
+        rect_x = (int(NATIVE_WIDTH * sc) - rect_w) // 2
+        rect_y = int((self._canvas_y1 - 50) * sc)
         rect_h = int(28 * sc)
         pygame.draw.rect(surf, (0, 0, 0), (rect_x, rect_y, rect_w, rect_h))
         pygame.draw.rect(surf, self._status_colour, (rect_x, rect_y, rect_w, rect_h), 1)

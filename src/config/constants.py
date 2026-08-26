@@ -57,7 +57,9 @@ SLACK_BUS: str = 'MDBY'         # Slack bus — voltage angle reference (θ = 0)
 # LOAD FLOW NUMERICAL
 # ─────────────────────────────────────────────
 YSHUNT_REG:  float = 1e-6   # DC load flow B matrix: diagonal shunt for numerical stability
-VSHUNT_REG:  float = 0.1    # Voltage B' matrix: stronger shunt for isolated load buses
+VSHUNT_REG:  float = 0.01   # Voltage B' matrix: shunt for isolated load buses — kept low so
+                            # manual Q/SVC/shunt-bank adjustments move voltage by a visible
+                            # amount; raise if a weak/radial bus ever produces an unstable solve
 
 # ─────────────────────────────────────────────
 # VOLTAGE THRESHOLDS (per-unit)
@@ -145,37 +147,39 @@ SUBSTATION_NAME_POOL: tuple[str, ...] = (
     'Quarrymoor',   'Rushgate',     'Stonewick',    'Thistlecombe', 'Woolhurst',
 )
 
-# Default unit parameters by type
+# Default unit parameters by type. ramp_mw_per_min is an absolute rate (not a
+# percentage of rated_mw) — centralizing it here means retuning a technology's
+# ramp rate never requires touching per-unit fields in grid JSON files.
 UNIT_DEFAULTS: dict[str, dict] = {
-    'COAL':       {'rated_mw': 300.0, 'min_mw': 105.0, 'ramp_pct_per_min': 3.0,
+    'COAL':       {'rated_mw': 300.0, 'min_mw': 105.0, 'ramp_mw_per_min': 4.0,
                    'inertia_h': 5.0, 'cold_start_min': 240.0,
                    'q_max_mvar': 150.0, 'q_min_mvar': -50.0,
                    'min_up_time_h': 6.0, 'min_down_time_h': 8.0},
-    'CCGT':       {'rated_mw': 400.0, 'min_mw': 100.0, 'ramp_pct_per_min': 8.0,
+    'CCGT':       {'rated_mw': 400.0, 'min_mw': 100.0, 'ramp_mw_per_min': 15.0,
                    'inertia_h': 4.0, 'cold_start_min': 60.0,
                    'q_max_mvar': 180.0, 'q_min_mvar': -60.0,
                    'min_up_time_h': 2.0, 'min_down_time_h': 2.0},
-    'NUCLEAR':    {'rated_mw': 700.0, 'min_mw': 420.0, 'ramp_pct_per_min': 1.0,
+    'NUCLEAR':    {'rated_mw': 700.0, 'min_mw': 420.0, 'ramp_mw_per_min': 3.5,
                    'inertia_h': 6.0, 'cold_start_min': 480.0,
                    'q_max_mvar': 300.0, 'q_min_mvar': -100.0,
                    'min_up_time_h': 24.0, 'min_down_time_h': 24.0},
-    'HYDRO':      {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
+    'HYDRO':      {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_mw_per_min': 250.0,
                    'inertia_h': 3.0, 'cold_start_min': 5.0,
                    'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
                    'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'HYDRO_ROR':  {'rated_mw': 30.0,  'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
+    'HYDRO_ROR':  {'rated_mw': 30.0,  'min_mw': 0.0,   'ramp_mw_per_min': 30.0,
                    'inertia_h': 3.0, 'cold_start_min': 5.0,
                    'q_max_mvar': 15.0, 'q_min_mvar': -5.0,
                    'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'HYDRO_PUMP': {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_pct_per_min': 100.0,
+    'HYDRO_PUMP': {'rated_mw': 250.0, 'min_mw': 25.0,  'ramp_mw_per_min': 250.0,
                    'inertia_h': 3.0, 'cold_start_min': 8.0,
                    'q_max_mvar': 120.0, 'q_min_mvar': -40.0,
                    'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'WIND':       {'rated_mw': 300.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
+    'WIND':       {'rated_mw': 300.0, 'min_mw': 0.0,   'ramp_mw_per_min': 300.0,
                    'inertia_h': 0.0, 'cold_start_min': 0.0,
                    'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
                    'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
-    'SOLAR':      {'rated_mw': 400.0, 'min_mw': 0.0,   'ramp_pct_per_min': 100.0,
+    'SOLAR':      {'rated_mw': 400.0, 'min_mw': 0.0,   'ramp_mw_per_min': 400.0,
                    'inertia_h': 0.0, 'cold_start_min': 0.0,
                    'q_max_mvar': 0.0,  'q_min_mvar': 0.0,
                    'min_up_time_h': 0.0, 'min_down_time_h': 0.0},
@@ -183,7 +187,7 @@ UNIT_DEFAULTS: dict[str, dict] = {
 
 # Size variants for the plain HYDRO palette entry (not HYDRO_ROR/HYDRO_PUMP,
 # which are already distinct fixed-size types). Only rated_mw/min_mw/
-# q_max_mvar/q_min_mvar vary by size — ramp_pct_per_min, inertia_h,
+# q_max_mvar/q_min_mvar vary by size — ramp_mw_per_min, inertia_h,
 # cold_start_min, min_up_time_h, min_down_time_h are shared, taken from
 # UNIT_DEFAULTS['HYDRO']. LARGE matches UNIT_DEFAULTS['HYDRO'] exactly, so
 # an untouched HYDRO placement (default size) is unchanged from before this
@@ -192,6 +196,24 @@ HYDRO_SIZE_DEFAULTS: dict[str, dict] = {
     'SMALL':  {'rated_mw': 50.0,  'min_mw': 5.0,  'q_max_mvar': 24.0,  'q_min_mvar': -8.0},
     'MEDIUM': {'rated_mw': 150.0, 'min_mw': 15.0, 'q_max_mvar': 72.0,  'q_min_mvar': -24.0},
     'LARGE':  {'rated_mw': 250.0, 'min_mw': 25.0, 'q_max_mvar': 120.0, 'q_min_mvar': -40.0},
+}
+
+# Size variants for the WIND and SOLAR palette entries, same placement-time
+# convenience as HYDRO_SIZE_DEFAULTS above. Unlike hydro, min_mw and
+# q_max_mvar/q_min_mvar stay at 0.0 across all three tiers — wind and solar
+# are uncontrollable renewables with zero reactive capability and can run
+# down to zero output, so only rated_mw varies. LARGE matches
+# UNIT_DEFAULTS['WIND']/['SOLAR'] exactly, so an untouched placement
+# (default size) is unchanged from before this was added.
+WIND_SIZE_DEFAULTS: dict[str, dict] = {
+    'SMALL':  {'rated_mw': 10.0,  'min_mw': 0.0, 'q_max_mvar': 0.0, 'q_min_mvar': 0.0},
+    'MEDIUM': {'rated_mw': 20.0, 'min_mw': 0.0, 'q_max_mvar': 0.0, 'q_min_mvar': 0.0},
+    'LARGE':  {'rated_mw': 50.0, 'min_mw': 0.0, 'q_max_mvar': 0.0, 'q_min_mvar': 0.0},
+}
+SOLAR_SIZE_DEFAULTS: dict[str, dict] = {
+    'SMALL':  {'rated_mw': 5.0,  'min_mw': 0.0, 'q_max_mvar': 0.0, 'q_min_mvar': 0.0},
+    'MEDIUM': {'rated_mw': 10.0, 'min_mw': 0.0, 'q_max_mvar': 0.0, 'q_min_mvar': 0.0},
+    'LARGE':  {'rated_mw': 30.0, 'min_mw': 0.0, 'q_max_mvar': 0.0, 'q_min_mvar': 0.0},
 }
 
 # Generator reactive-power target (MVAr) — player-editable, clamped per unit
@@ -342,14 +364,6 @@ OVERLOAD_SEVERITY_MAX_MULT: float = 6.0   # hard ceiling on the accrual multipli
 # it dips to 99%. Decay is this multiple of real elapsed time, so recovery
 # is faster than accumulation but not free.
 OVERLOAD_DECAY_RATE: float = 2.0
-
-# ─────────────────────────────────────────────
-# RAMP RATES (% of rated MW per simulated minute)
-# ─────────────────────────────────────────────
-RAMP_COAL_PCT_MIN:    float = 1.333  # 4 MW/min for a 300MW unit
-RAMP_CCGT_PCT_MIN:    float = 3.75   # 15 MW/min for a 400MW unit
-RAMP_NUCLEAR_PCT_MIN: float = 0.5    # 3.5 MW/min for a 700MW unit
-RAMP_HYDRO_PCT_MIN:   float = 100.0  # Near-instant
 
 # ─────────────────────────────────────────────
 # INERTIA CONSTANTS (seconds)
@@ -566,6 +580,11 @@ REPORT_ROW_H:            int   = 22   # px — per-element data row height
 REPORT_BOTTOM_MARGIN:    int   = 60   # px — reserved for footer hint line
 REPORT_COL_PAD:          int   = 16   # px — left/right padding within each half
 REPORT_AVG_WINDOW_MIN:   float = 5.0  # simulated minutes averaged for the P/Q/flow trend
+
+# ─────────────────────────────────────────────
+# LINE FLOW PLOT SCREEN (F3 — full-screen line MW/loading bar plot, does not pause sim)
+# ─────────────────────────────────────────────
+REPORT3_LOAD_PCT_CAP: float = 120.0  # loading% bar's fixed right-edge scale (>100% visible)
 
 SPLASH_DURATION_S:  float = 4.0   # seconds before splash auto-advances to main menu
 MENU_FONT_SIZE:     int   = 20    # px — menu item font size
@@ -785,11 +804,10 @@ SOUND_VOLUME_WARNING_PING: float = 0.5
 # ─────────────────────────────────────────────
 # LINE LOAD TRIANGLE INDICATOR
 # ─────────────────────────────────────────────
-LOAD_TRIANGLE_PCT_1: float = 25.0  # 1 triangle below this loading %
-LOAD_TRIANGLE_PCT_2: float = 50.0  # 2 triangles below this loading %
-LOAD_TRIANGLE_PCT_3: float = 75.0  # 3 triangles below this loading %, else 4
+LOAD_TRIANGLE_PCT_1: float = 25.0  # grey below this loading %
+LOAD_TRIANGLE_PCT_2: float = 50.0  # green below this loading %
+LOAD_TRIANGLE_PCT_3: float = 75.0  # yellow below this loading %, else red
 LOAD_TRIANGLE_SIZE:  int   = 6     # px — side length of each load-indicator triangle
-LOAD_TRIANGLE_SPACING: int = 10    # px — fixed gap between consecutive load-indicator triangles
 
 # ─────────────────────────────────────────────
 # DEBUG OVERLAY
@@ -799,9 +817,46 @@ DEBUG_CLICK_DISPLAY_S: float = 3.0         # seconds to display clicked coordina
 
 # ─────────────────────────────────────────────
 # GRID DESIGNER MODE
+#
+# Screen composition (top to bottom, sums to NATIVE_HEIGHT=1080) —
+# deliberately mirrors the in-game TITLE_BAR_HEIGHT/TOPBAR_HEIGHT/
+# CANVAS_HEIGHT/STRIP_HEIGHT/HINT_GAP_HEIGHT/HINT_BAR_HEIGHT stack so the
+# designer canvas is pixel-identical (WYSIWYG) to the real gameplay canvas:
+#   DESIGNER_TITLE_BAR_HEIGHT (22)  — top panel row 1: grid name + dirty flag
+#   DESIGNER_TOPBAR_HEIGHT    (60)  — top panel row 2: reserved/framed only
+#   CANVAS_HEIGHT             (762) — shared constant with in-game, full width
+#   DESIGNER_STRIP_HEIGHT     (192) — bottom instrument strip, 4 columns
+#   DESIGNER_HINT_GAP_HEIGHT  (22)  — blank gap
+#   DESIGNER_HINT_BAR_HEIGHT  (22)  — full-width shortcut hint row
 # ─────────────────────────────────────────────
-DESIGNER_SIDEBAR_W:          int   = 208    # px — sidebar panel width (left edge)
-DESIGNER_CANVAS_W:           int   = NATIVE_WIDTH - DESIGNER_SIDEBAR_W  # px — canvas area width (right edge)
+DESIGNER_TITLE_BAR_HEIGHT:  int = 22     # px — top panel row 1: grid name + dirty indicator
+DESIGNER_TOPBAR_HEIGHT:     int = 60     # px — top panel row 2: reserved, framed only
+DESIGNER_STRIP_HEIGHT:      int = 192    # px — bottom instrument strip
+DESIGNER_HINT_GAP_HEIGHT:   int = 22     # px — blank gap between strip and hint row
+DESIGNER_HINT_BAR_HEIGHT:   int = 22     # px — bottom-most keyboard-shortcut hint row
+
+# Bottom strip column layout — fixed-width side-by-side regions, left to
+# right: Balance, Palette, Properties, Actions. Widths sum to NATIVE_WIDTH.
+DESIGNER_PANEL_BALANCE_X:    int = 0
+DESIGNER_PANEL_BALANCE_W:    int = 230
+DESIGNER_PANEL_PALETTE_X:    int = 230
+DESIGNER_PANEL_PALETTE_W:    int = 260
+DESIGNER_PANEL_PROPERTIES_X: int = 490
+DESIGNER_PANEL_PROPERTIES_W: int = 900
+DESIGNER_PANEL_ACTIONS_X:    int = 1390
+DESIGNER_PANEL_ACTIONS_W:    int = 530
+
+# Properties panel internal multi-column field layout (fits 3 columns in
+# the 900px Properties region with PAD on both edges).
+DESIGNER_PROPS_COL_W:   int = 280   # px — width of one field column
+DESIGNER_PROPS_COL_GAP: int = 20    # px — gap between adjacent field columns
+
+# Centered modal dialogs (save/load/test-grid/analysis overlays).
+DESIGNER_MODAL_W:         int = 640   # px — save dialog / analysis panel
+DESIGNER_MODAL_BROWSER_W: int = 520   # px — load/test grid file browser
+DESIGNER_MODAL_ROW_H:     int = 22    # px — browser row height
+DESIGNER_MODAL_MAX_ROWS:  int = 20    # rows visible before scrolling
+
 DESIGNER_X_SCALE:            float = 0.05   # superseded by KM_PER_PX/REACTANCE_PU_PER_KM_* below; no remaining call sites
 KM_PER_PX:                   float = 0.35   # Manhattan-distance px -> km, new-line placement/length editing
 REACTANCE_PU_PER_KM_150KV:   float = 0.015556  # X_pu/km = 0.35 Ohm/km OHL reactance / Z_BASE(150kV, S_BASE=1000MVA)=22.5 Ohm

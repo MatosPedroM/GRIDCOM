@@ -118,10 +118,13 @@ The actual output instruction given to a unit. In GRIDCOM: the player sets
 dispatch targets via context panel or autopilot. Units ramp toward their target
 at their rated ramp rate.
 
-**Ramp Rate (%/min)**
-The maximum rate at which a unit can change its output, expressed as a percentage
-of rated MW per simulated minute. In GRIDCOM: enforced in UnitModel.update().
-Hydro: 100%/min (near-instant). Coal: 1.333%/min (slow). Nuclear: 0.5%/min (very slow).
+**Ramp Rate (MW/min)**
+The maximum rate at which a unit can change its output, expressed as an absolute
+MW-per-simulated-minute value looked up by unit_type (constants.py's UNIT_DEFAULTS)
+— not a percentage of that unit's own rated_mw, and not authored per-unit in grid
+JSON. In GRIDCOM: enforced in UnitModel._tick_online()/_tick_shutdown().
+Hydro: 250 MW/min (near-instant). Coal: 4.0 MW/min (slow). Nuclear: 3.5 MW/min
+(very slow).
 
 **Spinning Reserve (MW)**
 Headroom available from online, synchronised units — the difference between their
@@ -146,22 +149,22 @@ ONLINE. During STARTING: contributes no power, no inertia, no AGC response.
 ## Generation Unit Types
 
 **COAL**
-Thermal unit burning coal. Slow ramp (1.333%/min). High inertia (H=5.0s).
+Thermal unit burning coal. Slow ramp (4.0 MW/min). High inertia (H=5.0s).
 High carbon cost. In GRIDCOM stations: RVSD (Riverside, 3×300MW, COALCOM easter egg),
 THNF (Thornfield, 3×300MW). Both at 400kV.
 
 **CCGT (Combined Cycle Gas Turbine)**
-Gas-fired unit. Medium ramp (3.75%/min). Medium inertia (H=4.0s).
+Gas-fired unit. Medium ramp (15.0 MW/min). Medium inertia (H=4.0s).
 Gas price exposed. In GRIDCOM stations: ASHG (Ashford, 2×400MW),
 WRNG (Wrentham, 2×400MW). Both at 220kV.
 
 **NUCLEAR**
-Baseload unit. Very slow ramp (0.5%/min). High inertia (H=6.0s).
+Baseload unit. Very slow ramp (3.5 MW/min). High inertia (H=6.0s).
 Zero carbon. Always online (cannot be shut down by player in campaign).
 In GRIDCOM: HART (Hartwell, 2×700MW, 400kV).
 
 **HYDRO (reservoir, pumped storage)**
-Reversible pump-turbine. Near-instant ramp (100%/min). Medium inertia (H=3.0s).
+Reversible pump-turbine. Near-instant ramp (250 MW/min). Medium inertia (H=3.0s).
 Can generate (source) or pump (sink). In GRIDCOM stations: BARR, KELM, DUNH
 (upper reservoirs, 400kV). Has downstream lower plant.
 

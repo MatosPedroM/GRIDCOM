@@ -35,7 +35,6 @@ from display.canvas import GridCanvas
 from display.geometry import point_segment_dist
 from display.context import draw_unit_context, draw_bus_context, draw_line_context
 from display.editor import GridEditor
-from display.symbols import draw_load_triangles
 from display.panels import (
     draw_frequency_panel, draw_topbar_panel,
     draw_dispatch_panel, draw_alarm_panel,
@@ -73,6 +72,8 @@ from config.constants import (
     LOAD_SHED_STEP_FRACTION,
     UNIT_MW_STEP, UNIT_MW_STEP_FAST_MULT,
     GEN_Q_SETPOINT_STEP_MVAR, GEN_Q_SETPOINT_STEP_FAST_MULT,
+    CONTEXT_OVERLAY_X, CONTEXT_OVERLAY_Y, CONTEXT_OVERLAY_W,
+    CONTEXT_OVERLAY_PAD, CONTEXT_OVERLAY_ROW_H, CONTEXT_OVERLAY_HDR_H,
 )
 from utils.helpers import resource_path
 from gameplay.shifts.loader import load_shift_config
@@ -261,6 +262,23 @@ class Renderer:
         }
         # Sentinel objects force a full draw on the first frame
         self._panel_keys: dict[str, object] = {k: object() for k in self._panel_cache}
+
+        # Context overlay cache: unlike the strip panels above, draw_unit_context/
+        # draw_bus_context/draw_line_context paint directly onto self._canvas_surf
+        # at a fixed top-left position, which GridCanvas.draw() re-blits over
+        # (its cached schematic) every frame — so the overlay can't simply be
+        # skipped on an unchanged frame the way strip panels are, or it would be
+        # erased the next frame. Instead it's rendered into its own small cached,
+        # per-pixel-alpha surface (sized to the tallest possible context panel —
+        # 8 rows, see draw_unit_context's is_dispatchable+show_q_target+show_mode
+        # case) that's redrawn only when its content key changes, then composited
+        # over the canvas every frame same as the triangle/schematic layers.
+        _ctx_max_rows = 8
+        _ctx_h = int((CONTEXT_OVERLAY_HDR_H + _ctx_max_rows * CONTEXT_OVERLAY_ROW_H
+                      + CONTEXT_OVERLAY_PAD * 2) * _sc)
+        _ctx_w = int(CONTEXT_OVERLAY_W * _sc)
+        self._context_cache = pygame.Surface((_ctx_w, _ctx_h), pygame.SRCALPHA)
+        self._context_key: object = None  # None = nothing selected, nothing to blit
 
         # Shortcut hint bar: redrawn only when the hint text changes (see
         # _build_shortcut_hint()/tick()) — sentinel forces the first-frame draw.
@@ -1247,11 +1265,9 @@ class Renderer:
             self._perf_last_ms['canvas'] = (_t1 - _t0) * 1000.0
             _t0 = _t1
 
-        # ── Line load triangles (drawn on top of canvas) ──────────────────────
-        if state is not None:
-            draw_load_triangles(self._canvas_surf, state,
-                                self._canvas._lines, self._canvas._line_waypoints)
-            native_changed = True
+        # Line load direction triangles are now drawn inside GridCanvas._redraw_to()
+        # (folded into the cached schematic — see canvas.py) rather than as a
+        # separate uncached per-frame pass here.
 
         # ── Overload trip countdowns (live, uncached — see draw_overload_countdowns) ──
         if state is not None and state.overload_timers:
@@ -1273,7 +1289,7 @@ class Renderer:
 
         if _perf:
             _t1 = time.perf_counter()
-            self._perf_last_ms['triangles'] = (_t1 - _t0) * 1000.0
+            self._perf_last_ms['overlay'] = (_t1 - _t0) * 1000.0
             _t0 = _t1
 
         # ── Draw instrument strip panels (cached — only redrawn when data changes) ─
@@ -1411,53 +1427,123 @@ class Renderer:
             self._perf_last_ms['panels'] = (_t1 - _t0) * 1000.0
             _t0 = _t1
 
-        # ── Unit context overlay ──────────────────────────────────────────────
+        # ── Unit/bus/line context overlay ──────────────────────────────────────
+        # Rendered into a small cached surface (self._context_cache), redrawn
+        # only when context_key changes, then blitted every frame — see the
+        # cache's construction comment in __init__ for why a plain skip-if-
+        # unchanged (like the strip panels) doesn't work here: the overlay
+        # draws directly onto self._canvas_surf, which GridCanvas.draw() blits
+        # its cached schematic over every frame regardless of its own cache
+        # state, so a skipped draw would be erased on the very next frame.
         selected_unit = self._get_selected_unit()
-        if selected_unit is not None and state is not None:
-            draw_unit_context(
-                self._canvas_surf, self._font,
-                unit=selected_unit,
-                unit_state=state.unit_states.get(selected_unit.label, 'OFFLINE'),
-                output_mw=state.unit_outputs_mw.get(selected_unit.label, 0.0),
-                target_mw=state.unit_targets_mw.get(selected_unit.label, 0.0),
-                input_buffer=self._input_buffer,
-                input_active=self._input_active,
-                blink_on=self._blink_on,
-                cmd_active=self._cmd_active,
-                font_scale=_fs,
-                is_maintenance=selected_unit.label in state.unit_maintenance,
-                q_target_mvar=state.unit_q_target_mvar.get(selected_unit.label),
-                q_mvar=state.unit_q_injections_mvar.get(selected_unit.label),
-                q_reserve_mvar=state.unit_q_reserve_mvar.get(selected_unit.label),
-                setpoint_buffer=self._setpoint_buffer,
-                setpoint_active=self._setpoint_active,
-                dispatch_mode=(
-                    state.unit_dispatch_modes.get(selected_unit.label)
-                    if selected_unit.label in state.unit_has_schedule else None
-                ),
-                mode_cmd_active=self._mode_cmd_active,
-                adjust_active=self._adjust_active,
-                setpoint_adjust_active=self._setpoint_adjust_active,
-            )
-            native_changed = True
-        elif self._selected_label is not None:
+        selected_bus  = None
+        selected_line = None
+        if selected_unit is None and self._selected_label is not None:
             selected_bus = self._canvas._bus_map.get(self._selected_label)
-            if selected_bus is not None:
-                draw_bus_context(self._canvas_surf, self._font,
-                                 bus=selected_bus, state=state, font_scale=_fs,
-                                 svc_cmd_active=self._svc_cmd_active)
-                native_changed = True
-            else:
+            if selected_bus is None:
                 selected_line = next(
                     (l for l in self._canvas._lines if l.label == self._selected_label),
                     None,
                 )
-                if selected_line is not None:
-                    draw_line_context(self._canvas_surf, self._font,
-                                      line=selected_line, state=state,
-                                      cmd_active=self._line_cmd_active,
-                                      font_scale=_fs)
-                    native_changed = True
+
+        if selected_unit is not None and state is not None:
+            context_key = (
+                'unit', selected_unit.label,
+                state.unit_states.get(selected_unit.label, 'OFFLINE'),
+                round(state.unit_outputs_mw.get(selected_unit.label, 0.0), 1),
+                round(state.unit_targets_mw.get(selected_unit.label, 0.0), 1),
+                self._input_buffer, self._input_active,
+                self._blink_on, self._cmd_active,
+                selected_unit.label in state.unit_maintenance,
+                round(state.unit_q_target_mvar.get(selected_unit.label) or 0.0, 1),
+                round(state.unit_q_injections_mvar.get(selected_unit.label) or 0.0, 1),
+                round(state.unit_q_reserve_mvar.get(selected_unit.label) or 0.0, 1),
+                self._setpoint_buffer, self._setpoint_active,
+                (state.unit_dispatch_modes.get(selected_unit.label)
+                 if selected_unit.label in state.unit_has_schedule else None),
+                self._mode_cmd_active, self._adjust_active, self._setpoint_adjust_active,
+                _fs,
+            )
+            if context_key != self._context_key:
+                self._context_cache.fill((0, 0, 0, 0))
+                draw_unit_context(
+                    self._context_cache, self._font,
+                    unit=selected_unit,
+                    unit_state=state.unit_states.get(selected_unit.label, 'OFFLINE'),
+                    output_mw=state.unit_outputs_mw.get(selected_unit.label, 0.0),
+                    target_mw=state.unit_targets_mw.get(selected_unit.label, 0.0),
+                    input_buffer=self._input_buffer,
+                    input_active=self._input_active,
+                    blink_on=self._blink_on,
+                    cmd_active=self._cmd_active,
+                    font_scale=_fs,
+                    is_maintenance=selected_unit.label in state.unit_maintenance,
+                    q_target_mvar=state.unit_q_target_mvar.get(selected_unit.label),
+                    q_mvar=state.unit_q_injections_mvar.get(selected_unit.label),
+                    q_reserve_mvar=state.unit_q_reserve_mvar.get(selected_unit.label),
+                    setpoint_buffer=self._setpoint_buffer,
+                    setpoint_active=self._setpoint_active,
+                    dispatch_mode=(
+                        state.unit_dispatch_modes.get(selected_unit.label)
+                        if selected_unit.label in state.unit_has_schedule else None
+                    ),
+                    mode_cmd_active=self._mode_cmd_active,
+                    adjust_active=self._adjust_active,
+                    setpoint_adjust_active=self._setpoint_adjust_active,
+                    x=0, y=0,
+                )
+                self._context_key = context_key
+            self._canvas_surf.blit(
+                self._context_cache,
+                (int(CONTEXT_OVERLAY_X * _fs), int(CONTEXT_OVERLAY_Y * _fs)),
+            )
+            native_changed = True
+        elif selected_bus is not None:
+            context_key = (
+                'bus', selected_bus.label,
+                round(state.bus_voltages.get(selected_bus.label, 0.0), 3) if state else None,
+                state.bus_vsi_tier.get(selected_bus.label) if state else None,
+                round((state.bus_load_q_mvar.get(selected_bus.label) if selected_bus.bus_type == 'LOAD'
+                       else state.bus_q_injection_mvar.get(selected_bus.label)) or 0.0, 1) if state else None,
+                round(state.bus_loads.get(selected_bus.label) or 0.0, 1) if state else None,
+                state.bus_shunt_step.get(selected_bus.label, 0) if state else 0,
+                round(state.bus_shunt_mvar.get(selected_bus.label) or 0.0, 1) if state else None,
+                round(state.bus_svc_mvar.get(selected_bus.label) or 0.0, 1) if state else None,
+                self._svc_cmd_active, _fs,
+            )
+            if context_key != self._context_key:
+                self._context_cache.fill((0, 0, 0, 0))
+                draw_bus_context(self._context_cache, self._font,
+                                 bus=selected_bus, state=state, font_scale=_fs,
+                                 svc_cmd_active=self._svc_cmd_active, x=0, y=0)
+                self._context_key = context_key
+            self._canvas_surf.blit(
+                self._context_cache,
+                (int(CONTEXT_OVERLAY_X * _fs), int(CONTEXT_OVERLAY_Y * _fs)),
+            )
+            native_changed = True
+        elif selected_line is not None:
+            context_key = (
+                'line', selected_line.label,
+                state.line_status.get(selected_line.label) if state else None,
+                round(state.line_flows_mw.get(selected_line.label) or 0.0, 1) if state else None,
+                round(state.line_loading_pct.get(selected_line.label) or 0.0, 1) if state else None,
+                self._line_cmd_active, _fs,
+            )
+            if context_key != self._context_key:
+                self._context_cache.fill((0, 0, 0, 0))
+                draw_line_context(self._context_cache, self._font,
+                                  line=selected_line, state=state,
+                                  cmd_active=self._line_cmd_active,
+                                  font_scale=_fs, x=0, y=0)
+                self._context_key = context_key
+            self._canvas_surf.blit(
+                self._context_cache,
+                (int(CONTEXT_OVERLAY_X * _fs), int(CONTEXT_OVERLAY_Y * _fs)),
+            )
+            native_changed = True
+        else:
+            self._context_key = None
 
         if _perf:
             _t1 = time.perf_counter()
@@ -1612,7 +1698,7 @@ class Renderer:
         n = max(1, self._perf_accum_frames)
         avg_fps = n / self._perf_log_timer if self._perf_log_timer > 0.0 else 0.0
         parts = [f'fps={avg_fps:.1f}']
-        for key in ('frame_total', 'canvas', 'triangles', 'panels', 'context', 'blit'):
+        for key in ('frame_total', 'canvas', 'overlay', 'panels', 'context', 'blit'):
             total = self._perf_accum_ms.get(key)
             if total is not None:
                 parts.append(f'{key}={total / n:.2f}ms')
@@ -1671,8 +1757,8 @@ class Renderer:
 
         # Perf section timings — top-right, fourth line (only when DEBUG_PERF is on)
         if _sim_const.DEBUG_PERF and self._perf_last_ms:
-            order = ('frame_total', 'canvas', 'triangles', 'panels', 'context', 'blit')
-            labels = {'frame_total': 'frame', 'canvas': 'cnv', 'triangles': 'tri',
+            order = ('frame_total', 'canvas', 'overlay', 'panels', 'context', 'blit')
+            labels = {'frame_total': 'frame', 'canvas': 'cnv', 'overlay': 'ovl',
                       'panels': 'pnl', 'context': 'ctx', 'blit': 'blit'}
             perf_str = '  '.join(
                 f'{labels[k]} {self._perf_last_ms[k]:.1f}'

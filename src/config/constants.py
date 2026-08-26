@@ -756,8 +756,21 @@ RANDOM_DERATE_REASONS_HYDRO: tuple[str, ...] = (
 # ALARM DISPLAY
 # ─────────────────────────────────────────────
 ALARM_BLINK_RATE_HZ:   float = 2.0          # Unacknowledged alarms blink at 2Hz
-ALARM_RECENT_FADE_S:   float = 10.0         # Acknowledged alarms shown for 10s then removed
 ALARM_MESSAGE_MAX_LEN: int   = 60           # Max characters in alarm message
+
+# Acknowledged-alarm expiry (GridSimulation._expire_alarms(), called once per tick —
+# see simulation.py). INFO/TUTOR are low-stakes and fade fast; CRITICAL/WARNING are kept
+# longer after ack so a player can still review what just happened, but must still expire
+# eventually — previously they never did, letting the active-alarm list (and therefore
+# draw_alarm_panel's per-frame cost) grow without bound for the rest of a rough shift.
+ALARM_FADE_INFO_TUTOR_MIN:    float = 60.0  # sim-minutes after ack before INFO/TUTOR expire
+ALARM_FADE_CRIT_WARN_MIN:     float = 15.0  # sim-minutes after ack before CRITICAL/WARNING expire
+
+# Hard backstop on total alarm-list length, independent of the fade rules above — caps
+# draw_alarm_panel's worst-case cost even mid-cascade, while many alarms are still
+# unacknowledged. Oldest alarms are dropped first once the cap is hit (see
+# GridSimulation._expire_alarms()).
+ALARM_LIST_MAX: int = 200
 
 # ─────────────────────────────────────────────
 # SOUND

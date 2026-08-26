@@ -10,7 +10,305 @@
 
 ## Current Status
 
-**COMPLETE** — Session 112: retired topology.py's/fleet.py's hardcoded campaign network data —
+**COMPLETE** — Session 116: fixed a severe FPS collapse (60 -> 2-5 FPS reported by the
+developer) on grid_medium (46 buses/83 lines/14 units) during a "shoulder scenario" with
+several alarms and line manoeuvres in flight. Root cause: `GridSimulation._expire_alarms()`
+only ever pruned acknowledged INFO/TUTOR alarms — CRITICAL/WARNING alarms were never
+removed, so a rough shift's alarm list grew without bound — combined with
+`draw_alarm_panel()` paying O(alarms) `pygame.freetype.Font.get_rect()` calls (word-wrap)
+plus an O(alarms²) scroll-window scan on every 2Hz-gated redraw. Also brought two other
+per-frame draws in line with the dirty-key caching convention the rest of the renderer
+already used (strip panels): the line-load-direction triangles and the unit/bus/line
+context overlay were previously redrawn unconditionally every frame.
+- **`src/config/constants.py`**: replaced dead/unused `ALARM_RECENT_FADE_S` with
+  `ALARM_FADE_INFO_TUTOR_MIN` (60 sim-min, same value the old hardcoded `_expire_alarms()`
+  literal used), `ALARM_FADE_CRIT_WARN_MIN` (15 sim-min — new), and `ALARM_LIST_MAX` (200 —
+  hard backstop, independent of ack-based fade, so `draw_alarm_panel`'s worst case is
+  always bounded even mid-cascade while many alarms are still unacknowledged).
+- **`src/simulation/simulation.py`**: `_expire_alarms()` now prunes acknowledged
+  CRITICAL/WARNING alarms after `ALARM_FADE_CRIT_WARN_MIN` (previously never expired),
+  keeps the existing INFO/TUTOR behaviour, and trims the tail (oldest first — the list is
+  newest-first via `_raise_alarm()`'s `insert(0, ...)`) once `ALARM_LIST_MAX` is exceeded.
+- **`src/display/panels.py`**: `draw_alarm_panel()`'s scroll-window lookup no longer
+  exact-wraps (`_wrap_text`, real glyph-shaping via `get_rect()`) every alarm in the list
+  just to find which rows are visible — a new cheap `_estimate_row_units()` (character-
+  count heuristic, no font shaping) locates the window first, and only the alarms actually
+  in the visible slice get exact-wrapped before rendering. The O(alarms²) suffix-resum
+  scroll scan was replaced with a single O(alarms) backward pass.
+- **`src/display/canvas.py`**: `draw_load_triangles()` (line flow-direction indicators)
+  folded into `GridCanvas._redraw_to()`'s cached schematic redraw instead of being called
+  as a separate uncached pass every frame from `renderer.py` — its inputs (loading,
+  in-service status, flow direction) are now part of `_canvas_key` (`loading_sig` already
+  covered loading/status; added `flow_dir_sig` since `line_loading_pct` is `abs()`-based
+  and can't detect a direction reversal at roughly-constant magnitude on its own).
+- **`src/display/renderer.py`**: removed the standalone per-frame `draw_load_triangles`
+  call. Added a small cached, per-pixel-alpha `_context_cache` surface (sized to the
+  tallest possible context panel, 8 rows) for the unit/bus/line context overlay — redrawn
+  only when a new `context_key` tuple (all the values the panel actually shows) changes,
+  then composited onto the canvas every frame; previously `draw_unit_context`/
+  `draw_bus_context`/`draw_line_context` ran unconditionally every frame with zero dirty-
+  key gating, the only screen region that didn't follow the convention used everywhere
+  else. Renamed the `'triangles'` perf bucket to `'overlay'` (now measures the overload-
+  countdown text + canvas border line only, since triangles moved into the canvas's own
+  `'canvas'` bucket).
+- **`src/display/context.py`**: `draw_unit_context`/`draw_bus_context`/`draw_line_context`
+  gained optional `x`/`y` params (default to `CONTEXT_OVERLAY_X`/`_Y` as before) so the
+  renderer can draw into its own cache surface at origin `(0, 0)` instead of the canvas's
+  absolute position.
+- **`tests/test_alarm_perf.py`** (new): headless stress test on the real grid_medium
+  Designer grid — asserts `_expire_alarms()` caps list length under a 600-alarm flood and
+  prunes acknowledged CRITICAL/WARNING alarms by age, and that both `draw_alarm_panel()`
+  and `Renderer.tick()` cost stay roughly flat (not scaling with alarm count) from a
+  10-alarm baseline up to a 500-alarm flood. Note: absolute per-call timings in this
+  headless (`SDL_VIDEODRIVER=dummy`) environment are far higher than in a real windowed
+  session — pygame.freetype's font-shaping cost under the dummy driver measured
+  ~0.5-1ms/call standalone — so the test asserts cost *ratios*, not wall-clock budgets.
+  Manually verified against a real `DEBUG_PERF=True` run (30-burst trip/close + alarm-flood
+  scenario on grid_medium, temporarily toggled at runtime, never left enabled on disk):
+  `panels` bucket stayed in a 7.7-12.8ms band as active alarm count grew from 16 to the
+  200-alarm cap (293+ ever raised) — no runaway growth.
+- Two pre-existing, unrelated test failures confirmed unchanged before/after this session
+  (via `git stash` bisection): `test_designer_analysis.py::test_shift10_n1_cross_check`
+  (expects line L12 in an N-1 sweep) and `test_voltage_reactive.py::
+  test_warning_to_critical_alarms_and_crisis` (expects a CRITICAL alarm for bus WEAK) — not
+  touched this session, flagged here so they aren't mistaken for a regression later. Several
+  other tests (`test_simulation.py`, `test_designer_analysis.py`,
+  `test_voltage_reactive.py`) also still show the pre-existing `ModuleNotFoundError:
+  simulation.constants` staleness from the constants.py relocation in Session 115 — not
+  addressed this session, out of scope.
+
+---
+
+**COMPLETE** — Session 115: reworked the Grid Designer screen layout from a full-height
+left sidebar to a bottom-panel layout matching the in-game Phase 2 screen's exact
+composition (top panel / full-width canvas / bottom instrument strip / hint row), so the
+designer canvas is now pixel-identical in size and position to the real gameplay canvas —
+grids built in the designer preview at the same width/position players will see in Phase 2.
+- **`src/config/constants.py`**: removed `DESIGNER_SIDEBAR_W`/`DESIGNER_CANVAS_W`; added
+  `DESIGNER_TITLE_BAR_HEIGHT`/`DESIGNER_TOPBAR_HEIGHT` (top panel, 2 rows, 82px total),
+  `DESIGNER_STRIP_HEIGHT` (192px, matches in-game `STRIP_HEIGHT`), `DESIGNER_HINT_GAP_HEIGHT`/
+  `DESIGNER_HINT_BAR_HEIGHT` (bottom shortcut row); `DESIGNER_PANEL_BALANCE/PALETTE/
+  PROPERTIES/ACTIONS_X/_W` (4 fixed-width strip columns summing to `NATIVE_WIDTH`);
+  `DESIGNER_PROPS_COL_W`/`_COL_GAP` (Properties' internal multi-column field layout);
+  `DESIGNER_MODAL_W`/`_MODAL_BROWSER_W`/`_MODAL_ROW_H`/`_MODAL_MAX_ROWS` (centered modal
+  dialogs, replacing what were previously local-only `_BROWSER_ROWS`/`_BROWSER_ROW_H`
+  constants in designer_panels.py). `CANVAS_HEIGHT` itself is reused directly (not
+  duplicated) for the designer's canvas height — deliberate, since the whole point is
+  WYSIWYG parity with in-game and a second constant that merely started equal would drift.
+- **`src/display/designer.py`**: canvas now spans full width (`x=0..1920`), `y=canvas_y0..
+  canvas_y1` where `canvas_y0 = DESIGNER_TITLE_BAR_HEIGHT + DESIGNER_TOPBAR_HEIGHT`. All 12
+  `DESIGNER_SIDEBAR_W` call sites updated: drag clamps (bus/station/group, ×2 axes each)
+  switched from an X-axis sidebar-edge clamp to a Y-axis canvas-top/bottom clamp; click
+  dispatch (`on_click`) now routes by Y-band across three regions (top panel — no-op for
+  now / canvas / bottom strip) plus a new modal-click branch; `_handle_sidebar_click` →
+  `_handle_strip_click` (dispatch body unchanged, only how sx/sy are computed changed) with
+  the old overlay-mode branch extracted into a new `_handle_modal_click`; new
+  `_draw_top_panel`/`_draw_bottom_strip`/`_draw_hint_bar`/`_draw_modal` draw methods;
+  `_draw_dialog`/`_draw_status` recentered against full `NATIVE_WIDTH`.
+- **`src/display/designer_panels.py`** (the bulk of the rework): `draw_sidebar()` →
+  `draw_bottom_strip()`, restructured from one vertical-flow narrow column into four
+  fixed-width side-by-side columns (Balance/Palette/Properties/Actions), mirroring the
+  in-game strip's Freq/Dispatch/Forecast/GenMix/Alarm arrangement. Palette's 8 unit-type
+  buttons reflow into a 2×4 grid (were single-column-stacked) to fit the 192px strip
+  height. Properties — the section with the most selection-dependent content — reflows
+  from a single tall column into up to 3 side-by-side field columns per selection type
+  (bus/line/unit), each column's fields grouped by role (identity / type-specific /
+  behaviour). Actions' 6 buttons reflow into a 2×3 grid; the grid-name/dirty-indicator text
+  that used to trail the Actions list moved to a new top-panel row instead. Save/Load/Test-
+  browser and Analysis mode moved out of the strip entirely into a new centered modal
+  dialog over the canvas (`modal_bounds_for`/`draw_modal_content`), following the existing
+  `_draw_dialog()` precedent; the strip's own Properties column shows a placeholder
+  ("Editing in Analysis dialog") while the modal is open, avoiding two live editable
+  hit-rect sets for the same field.
+- **Bug caught by rendering, not by review**: the analysis modal's Properties sub-panel
+  (stacked below the ANALYSIS MODE summary when an element is selected) initially had its
+  height estimated by a hand-written parallel calculation (`_properties_height`) mirroring
+  `_draw_properties`'s row arithmetic — it drifted out of sync in three places (each
+  missing the final row's own height) and produced visibly overlapping/clipped text
+  (confirmed via headless-rendered screenshots, not caught by the automated test suite,
+  which has no pixel-level coverage of this screen). Fixed by replacing the parallel
+  calculation with a "measuring" mode: `_draw_properties` now runs for real (module-level
+  `_measuring` flag short-circuits every actual surface write in `_r`/`_draw_rect`/
+  `_label`, while still tracking the lowest y-extent reached), so modal sizing is
+  structurally guaranteed to match the real draw and can't drift again independently.
+- **Data safety**: confirmed (and empirically verified against all 11 saved grids in
+  `src/assets/designer_grids/`) that `GridCanvas.draw()` has no baked-in sidebar-offset
+  assumption — it consumes bus/unit `canvas_x`/`canvas_y` as raw native-space pixels — so
+  no JSON migration was needed; every saved grid loads and draws cleanly under the new
+  layout, with a few previously off-canvas buses (invisible under the old narrower/shorter
+  layout) now simply rendering normally.
+- **Verified**: `python -m pytest tests/` 34/34 pass (unchanged surface). Headless
+  (`SDL_VIDEODRIVER=dummy`) smoke tests: all 11 saved grids load and draw without error;
+  every Properties selection type (none/group/bus-transmission/bus-load/line/unit,
+  including a multi-unit station and every analysis-mode field) rendered via
+  `pygame.image.save()` and visually reviewed — save dialog, load/test browser, and
+  analysis modal (bus/line/unit, including the worst-case multi-sibling-unit + full
+  analysis-field case) all confirmed clipping-free after the measuring-mode fix; click
+  routing (top panel no-op, strip button dispatch, modal-local click-to-cancel) and drag
+  clamping (bus dragged toward the old sidebar's former position now moves freely) verified
+  programmatically.
+- **Not done this session**: no live interactive playtest with a real mouse/window (this
+  project's designer screen has no existing project run-skill; verification used the same
+  headless-render approach as prior sessions' F2/F3 work). The new top panel's second row
+  is intentionally left reserved/blank per the developer's own scoping — a framed row with
+  no content yet, not an oversight.
+- Edited: `src/config/constants.py`, `src/display/designer.py`, `src/display/designer_panels.py`.
+
+---
+
+**COMPLETE (prior)** — Session 114: added F3, a new full-screen line flow/loading bar-plot panel,
+fully independent of the existing F2 bus/line text report. Mirrors F2's established
+structure in `renderer.py` (bool flag on the Renderer instance, own tick/draw method,
+does not pause the sim) almost exactly, since that pattern already solves full-screen
+swap, scroll/paging, and Escape handling.
+- **Reactive power (MVAr) per line was requested but doesn't exist in this model** —
+  confirmed the DC-load-flow + decoupled-voltage architecture tracks Q strictly per-bus,
+  never per-line (`loadflow.py` solves `θ = B⁻¹ × P`, MW/angle only; no `line_q_mvar`
+  anywhere in `SimulationState`). Per developer decision, F3 shows two horizontal plots
+  per line instead — **MW flow** (bidirectional, centered on zero, scaled to that line's
+  own `rating_mw`) and **loading %** (left-aligned, fixed 0-120% scale so overload is
+  visible past the rating mark) — rather than inventing a per-line MVAr approximation or
+  changing simulation physics (CLAUDE.md Rule 6).
+- **`src/config/constants.py`**: one new constant, `REPORT3_LOAD_PCT_CAP = 120.0` (the
+  loading% bar's fixed right-edge scale). Everything else (title/margin/padding/row-height)
+  reuses F2's existing `REPORT_*` block rather than duplicating a parallel set.
+- **`src/display/renderer.py`**: new `_report3_active`/`_report3_scroll` state fields
+  (next to F2's `_report_*` fields); `on_report3_toggle()` (mirrors `on_report_toggle()`,
+  no history to clear since F3 has no trend column); `on_escape()`/`on_scroll()` extended
+  with a `_report3_active` branch each; new `_draw_report3_row()` (draws one line's label/
+  route text plus its two `pygame.draw.rect` bars) and `tick_report3_screen()` (top-level
+  draw method, mirrors `tick_report_screen()`'s title/guard/paging/footer shape). Imported
+  `COL_METER_TICK` (not previously used in this file) for bar gridlines/tick marks;
+  loading% bar color reuses the exact `COL_LOAD_CRIT`/`HIGH`/`WARN`/`COL_UNIT_ONLINE`
+  thresholds F2's line table already uses, at the developer's request, for visual
+  consistency.
+- **`src/main.py`**: wired F3 at the same sites F2 uses — `PLAYING` loop keypress + tick/
+  draw dispatch, `DESIGNER_TEST` loop keypress + tick/draw dispatch. **Also found and
+  fixed two Escape-handling sites the initial plan had missed**: both game loops have a
+  top-level `K_ESCAPE` branch that checks `_report_active` *before* falling through to
+  quit-confirm (`PLAYING` loop) or exiting `DESIGNER_TEST` mode entirely — without adding
+  `_report3_active` to those same two `if` checks, pressing Escape while F3 was open (and
+  nothing else selected) would have skipped closing F3 and gone straight to the
+  quit-confirm dialog / kicked the player out of Designer test mode. Caught by re-grepping
+  every `_report_active` reference in `main.py` after the four "planned" sites were done,
+  not by the original plan itself.
+- **`CLAUDE.md`**: added `F2` and `F3` to the Phase 2 keyboard shortcuts list — F2 itself
+  was never documented there (shipped in a commit after this doc was last updated), so
+  both were added together to close that gap rather than leaving F2 undocumented while F3
+  gets added next to it.
+- **Verified**: `python -m compileall src/` clean; `python -m pytest tests/` 34/34 pass
+  (unchanged — F3 is additive, doesn't touch any existing test surface). Headless,
+  against the real `grid_small.json` (not a synthetic fixture): constructed a real
+  `Renderer`/`GridSimulation` pair, tripped a line and confirmed the TRIPPED-row render
+  path, pushed RIVE-1 near its rated output to get real (non-trivial) flows/loadings
+  including a reversed-direction line (negative `flow_mw`) and confirmed the bidirectional
+  bar handles it, toggled F3 open/closed via `on_scroll()`/`on_escape()`, and confirmed F2
+  still opens/renders correctly afterward (independence check).
+- **Not done this session**: no in-game manual playtest of F3's actual visual layout
+  (matches this project's established headless/synthetic-surface verification pattern) —
+  whether the bar proportions/column spacing read well at native resolution is explicitly
+  unresolved pending the developer's own look. Column x-offsets in `_draw_report3_row()`
+  are hardcoded inline (matching F2's existing convention in this file, not a regression).
+- Edited: `src/config/constants.py`, `src/display/renderer.py`, `src/main.py`,
+  `CLAUDE.md`.
+
+---
+
+**COMPLETE (prior)** — Session 113: fixed two grid_small.json playtest complaints — coal ramp rate
+"looks too fast" and reactive-power (Q) adjustments not visibly moving load-bus voltage.
+Both traced to real, independent tuning/documentation drifts, not wiring bugs (full trace
+in both cases: keypress/tick → simulation → solver, confirmed dimensionally correct
+throughout).
+- **Ramp rate — converted from %/min to absolute MW/min, centralized in constants.py
+  only.** `UNIT_DEFAULTS`'s ramp values (COAL 3.0%/min, CCGT 8.0%/min, NUCLEAR 1.0%/min)
+  were ~2x the values documented in DOMAIN_GLOSSARY.md and the dead `RAMP_COAL_PCT_MIN`
+  (1.333)/`RAMP_CCGT_PCT_MIN` (3.75)/`RAMP_NUCLEAR_PCT_MIN` (0.5) constants — the two were
+  authored independently at different times and never reconciled. Rather than just
+  correcting the numbers, the developer asked for a bigger change: `ramp_pct_per_min`
+  (percent of a unit's own `rated_mw`) became `ramp_mw_per_min` (absolute MW/min),
+  looked up **purely by `unit_type`** from `UNIT_DEFAULTS` — no longer authored per-unit
+  in grid JSON at all, so retuning a technology's ramp rate never requires touching every
+  grid file again. New values: COAL 4.0, CCGT 15.0, NUCLEAR 3.5 (matching
+  DOMAIN_GLOSSARY.md's documented rates); HYDRO/HYDRO_ROR/HYDRO_PUMP/WIND/SOLAR kept
+  "near-instant" at an absolute value matching their own rated_mw (250/30/250/300/400
+  respectively) — behaviourally unchanged from the old 100%/min. Audited all 10 grid JSON
+  files (95 units, all 8 unit types) before removing the field — confirmed zero per-unit
+  overrides existed anywhere (every unit's old `ramp_pct_per_min` exactly matched its
+  type's `UNIT_DEFAULTS` value; the Designer UI has no post-placement field to create one),
+  so nothing was lost. `GenerationUnit.ramp_pct_per_min` renamed to `ramp_mw_per_min`
+  (`fleet.py`, frozen dataclass — no in-place mutation call sites to worry about);
+  `DesignerUnit.ramp_pct_per_min` removed outright (`designer_io.py`) since it's no longer
+  part of the schema; both `designer_grid.py::_to_unit()` and
+  `designer_io.py::designer_units_to_fleet()` now populate `ramp_mw_per_min` via a
+  `UNIT_DEFAULTS[unit_type]` lookup instead of reading it off the designer record;
+  `display/designer.py`'s placement-time seeding of the now-removed field deleted;
+  `units.py`'s ramp formula simplified from `(ramp_pct_per_min/100)*rated_mw/60` to
+  `ramp_mw_per_min/60` (no longer depends on `rated_mw` at all — ramp is now a pure
+  per-type constant); `phase1.py`'s 4 auto-scheduler call sites simplified the same way.
+  The dead `RAMP_COAL_PCT_MIN`/`RAMP_CCGT_PCT_MIN`/`RAMP_NUCLEAR_PCT_MIN`/
+  `RAMP_HYDRO_PCT_MIN` constants deleted (values folded into `UNIT_DEFAULTS` directly).
+  `simulation/renewables.py`'s same-named `ramp_pct_per_min` parameter (renewables
+  output-noise smoothing rate, fed by `WIND_NOISE_RAMP_PCT_MIN`/`SOLAR_NOISE_RAMP_PCT_MIN`)
+  is unrelated and was explicitly left untouched. Headless-verified: RIVE-1 now ramps
+  105→300 MW in ~122 real seconds at 1x speed (was ~65s before the fix), matching the new
+  4.0 MW/min rate exactly.
+- **Reactive/voltage sensitivity — reduced `VSHUNT_REG` 0.1 → 0.01.** Traced end-to-end
+  (keypress → `renderer.on_setpoint_adjust()` → `sim.set_unit_q_target()` →
+  `UnitModel.set_q_target()` → `FleetModel.q_injections()` → `VoltageModel.solve()`) and
+  confirmed no wiring bug — Q flows from the player's command to the solver completely
+  unmodified. The complaint was pure numerical scale: `S_BASE=1000` MVA divides even a
+  full generator Q-range swing down to a small per-unit injection, and `VSHUNT_REG=0.1`
+  (a B' diagonal regularizer added for numerical stability on weak/radial buses) was
+  stiffening every bus against voltage movement on top of that. On `grid_small.json`, a
+  full RIVE-1 Q swing (200 MVAr) moved its own bus by only ~1.4% and a remote load bus
+  (HOLL) by ~0.34% before the fix; after reducing `VSHUNT_REG` to 0.01, the same swing
+  moves RIVE by ~1.7% and HOLL by ~0.55% headlessly verified — visibly better, and a
+  single keypress nudge is now perceptible too. Chosen over three alternatives the
+  developer explicitly considered and rejected: increasing Q/SVC/shunt step sizes alone
+  (doesn't fix the "even a full swing is small" root cause), reducing `S_BASE` (shared
+  identically with the DC load flow's active-power solver — much larger blast radius),
+  and reducing line reactance for lower voltage tiers (conflates voltage tuning with
+  active-power flow distribution, since `reactance_pu` feeds both solvers). Verified the
+  new value stays numerically safe: `grid_small.json`'s weakest bus (BATH, B' diagonal
+  ~1.09) and the reduced-matrix condition number (~54, very well-conditioned) both checked
+  headlessly. **Found in passing, not fixed** (out of scope, pre-existing, unrelated to
+  this session): `shift10.json`'s `CLUV` (Clunview) bus has zero connected lines — fully
+  isolated, held solvable only by the `VSHUNT_REG` regulariser at either old or new value.
+  Also updated `GRID_SIMULATION_MECHANICS.md` §5.2 (documents `VSHUNT_REG`'s dual role)
+  and §5.7 (previously described the pre-F9 AVR/PV-bus model — rewritten to describe
+  direct-Q, which has been the actual primary generator reactive control since Session 79)
+  and `DOMAIN_GLOSSARY.md`'s ramp-rate entries (%/min → MW/min).
+- **Verified**: `python -m pytest tests/` 34/34 pass; `test_simulation.py`'s direct
+  print-based harness 5/10 (matches the pre-existing baseline exactly, confirmed via
+  `git stash` — the 5 failures are all pre-existing `ModuleNotFoundError`/
+  `AttributeError` issues unrelated to this session, same as prior sessions have noted);
+  `python -m compileall src/` clean. Headless ramp-time and Q-sweep verification against
+  the real `grid_small.json` (not just test fixtures) confirmed both fixes numerically, as
+  detailed above.
+- **Not done this session**: no in-game manual playtest (matches this project's
+  established headless/synthetic-surface verification pattern) — whether the new ramp
+  pacing and voltage sensitivity *feel* right is explicitly unresolved pending the
+  developer's own playtest. The exact `ramp_mw_per_min` values for
+  HYDRO/HYDRO_ROR/HYDRO_PUMP/WIND/SOLAR were chosen to preserve "near-instant" behaviour
+  rather than derived from any real-world figure — fine to retune later since they're now
+  centralized in one place. `shift10.json`'s orphaned `CLUV` bus was found but not fixed
+  (pre-existing, unrelated).
+- Edited: `src/config/constants.py` (`UNIT_DEFAULTS` ramp fields, deleted dead
+  `RAMP_*_PCT_MIN` block, `VSHUNT_REG`), `src/data/fleet.py` (field rename),
+  `src/simulation/units.py` (ramp formula simplified, one docstring fix),
+  `src/simulation/designer_grid.py` (`UNIT_DEFAULTS` lookup added), `src/data/designer_io.py`
+  (`DesignerUnit` field removed, schema doc updated, `designer_units_to_fleet()`
+  `UNIT_DEFAULTS` lookup added), `src/display/designer.py` (removed dead placement-time
+  seed line), `src/gameplay/phase1.py` (4 call sites simplified),
+  `src/assets/designer_grids/*.json` (all 10 files — removed `ramp_pct_per_min` per unit,
+  mechanical/no data loss), `DOMAIN_GLOSSARY.md`, `GRID_SIMULATION_MECHANICS.md`,
+  `tests/test_simulation.py`/`test_voltage_reactive.py`/`test_designer_analysis.py`/
+  `test_report_screen.py`, `scripts/render_voltage_verify.py` (mechanical field
+  rename/removal to match).
+
+---
+
+**COMPLETE (prior)** — Session 112: retired topology.py's/fleet.py's hardcoded campaign network data —
 campaign and continuous modes now load exclusively from Grid Designer JSON (GRID_SOURCE), with no
 runtime fallback to a hardcoded 46-bus/47-unit array. Prompted by the developer wanting the campaign
 to run entirely off designer-authored grid files rather than a parallel hardcoded topology.

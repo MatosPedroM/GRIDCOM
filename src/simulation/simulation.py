@@ -40,6 +40,7 @@ from config.constants import (
     V_COLLAPSE_GAIN, V_COLLAPSE_SEVERITY_LOW, V_COLLAPSE_SEVERITY_FLOOR,
     V_COLLAPSE_RECOVERY_PU_S,
     ALARM_MESSAGE_MAX_LEN,
+    ALARM_FADE_INFO_TUTOR_MIN, ALARM_FADE_CRIT_WARN_MIN, ALARM_LIST_MAX,
     INTC_N_CAPACITY_MW, INTC_S_CAPACITY_MW,
     DEBUG_SIMULATION, SIM_DEBUG_LOG,
     TRIP_DELAY_S, TIME_COMPRESSION,
@@ -1957,11 +1958,22 @@ class GridSimulation:
             self._freq_alarm_state = new_state
 
     def _expire_alarms(self) -> None:
-        self._alarms = [
-            a for a in self._alarms
-            if not (a.acknowledged and a.priority in ('INFO', 'TUTOR')
-                    and self._sim_time_min - a.timestamp_min > 60.0)
-        ]
+        def _expired(a: Alarm) -> bool:
+            if not a.acknowledged:
+                return False
+            age_min = self._sim_time_min - a.timestamp_min
+            if a.priority in ('INFO', 'TUTOR'):
+                return age_min > ALARM_FADE_INFO_TUTOR_MIN
+            return age_min > ALARM_FADE_CRIT_WARN_MIN
+
+        self._alarms = [a for a in self._alarms if not _expired(a)]
+
+        # Hard backstop: newest-first list (see _raise_alarm's insert(0, ...)), so
+        # trimming the tail drops the oldest alarms once the cap is exceeded — keeps
+        # draw_alarm_panel's cost bounded even mid-cascade, before ack-based fade
+        # above has had a chance to catch up.
+        if len(self._alarms) > ALARM_LIST_MAX:
+            del self._alarms[ALARM_LIST_MAX:]
 
     # ─────── CRISIS STATE ─────────────────────────────────────────────────
 

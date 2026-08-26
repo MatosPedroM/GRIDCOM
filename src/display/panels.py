@@ -493,6 +493,28 @@ def _wrap_text(
     return lines
 
 
+# Rough chars-per-line estimate for scroll-window sizing only (see
+# _estimate_row_units below) — a monospace-ish average width in px per
+# character at FONT_SIZE_PANEL, used purely to pick which alarms are near
+# the visible window before paying for exact pygame.freetype.Font.get_rect()
+# shaping via _wrap_text. Only needs to be in the right ballpark: an
+# under/over-estimate here shifts scroll position by at most a row or two,
+# never affects what actually gets rendered (render always uses the exact
+# _wrap_text result for the rows it draws).
+_ALARM_DETAIL_EST_PX_PER_CHAR: float = 7.5
+
+
+def _estimate_row_units(detail: str, size: int, max_width: int) -> int:
+    """Cheap (no font shaping) upper-bound estimate of how many extra detail
+    lines an alarm's row will take, for scroll-window bookkeeping only."""
+    if not detail:
+        return 1
+    px_per_char = _ALARM_DETAIL_EST_PX_PER_CHAR * (size / max(1, 16))
+    chars_per_line = max(1, int(max_width / px_per_char))
+    n_lines = max(1, -(-len(detail) // chars_per_line))  # ceil div
+    return 1 + n_lines
+
+
 def draw_alarm_panel(
     surf:       pygame.Surface,
     font:       pygame.freetype.Font,
@@ -531,21 +553,27 @@ def draw_alarm_panel(
     msg_x  = time_x + int(54 * fs)
     detail_max_w = max(1, w - msg_x - pad)
 
-    # Pre-wrap detail text and compute each row's height (in row units) so
-    # scroll/visibility math can work over variable-height entries.
-    wrapped: list[list[str]] = []
-    row_units: list[int] = []
-    for pri, ts, msg, acked, detail in alarms:
-        detail_lines = _wrap_text(font, detail, sp, detail_max_w) if detail else []
-        wrapped.append(detail_lines)
-        row_units.append(1 + len(detail_lines))
+    # Locate the scroll window using a cheap per-alarm row-count *estimate*
+    # (no font shaping) rather than exact-wrapping every alarm up front —
+    # exact wrapping via _wrap_text()/get_rect() is real glyph-shaping work,
+    # too expensive to pay for the whole (potentially large) alarm list on
+    # every redraw. Only alarms that end up in the visible slice get exact-
+    # wrapped below, right before rendering.
+    total          = len(alarms)
+    est_row_units  = [
+        _estimate_row_units(detail, sp, detail_max_w) if detail else 1
+        for _, _, _, _, detail in alarms
+    ]
+    visible_units  = max(1, (surf.get_height() - hh) // rh)
 
-    total        = len(alarms)
-    visible_units = max(1, (surf.get_height() - hh) // rh)
-    max_start     = total
+    # Suffix sum of est_row_units, built once in a single backward pass
+    # (O(total) instead of re-summing a slice per candidate row).
+    suffix_units = [0] * (total + 1)
+    for i in range(total - 1, -1, -1):
+        suffix_units[i] = suffix_units[i + 1] + est_row_units[i]
+    max_start = total
     for i in range(total):
-        units = sum(row_units[i:])
-        if units <= visible_units:
+        if suffix_units[i] <= visible_units:
             max_start = i
             break
     start = max(0, min(scroll_row, max_start))
@@ -553,9 +581,9 @@ def draw_alarm_panel(
     y = hh + max(1, int(2 * fs))
     bottom_limit = surf.get_height()
     for i in range(start, total):
-        pri, ts, msg, acked, _detail = alarms[i]
-        detail_lines = wrapped[i]
-        row_h = rh * row_units[i]
+        pri, ts, msg, acked, detail = alarms[i]
+        detail_lines = _wrap_text(font, detail, sp, detail_max_w) if detail else []
+        row_h = rh * (1 + len(detail_lines))
         if y + row_h > bottom_limit and i > start:
             break
 

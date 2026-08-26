@@ -62,6 +62,8 @@ def draw_unit_context(
     mode_cmd_active: bool = False,
     adjust_active:  bool = False,
     setpoint_adjust_active: bool = False,
+    x: int | None = None,
+    y: int | None = None,
 ) -> None:
     """
     Draw the unit context panel at the top-left of the canvas surface.
@@ -94,10 +96,16 @@ def draw_unit_context(
                         (Q + Up/Down) is armed
                         for this unit — shown as a magenta Target field border,
                         distinct from input_active's green typed-entry border.
+        x, y:         Top-left origin in surf's own pixel space, pre-scaled by
+                        font_scale by the caller if needed — defaults to
+                        CONTEXT_OVERLAY_X/Y (scaled by font_scale here) for
+                        drawing straight onto the canvas surface. Renderer
+                        passes x=0, y=0 when drawing into its own dedicated,
+                        already-positioned context cache surface.
     """
     fs  = font_scale
-    x   = int(CONTEXT_OVERLAY_X   * fs)
-    y   = int(CONTEXT_OVERLAY_Y   * fs)
+    x   = int(CONTEXT_OVERLAY_X * fs) if x is None else x
+    y   = int(CONTEXT_OVERLAY_Y * fs) if y is None else y
     w   = int(CONTEXT_OVERLAY_W   * fs)
     pad = int(CONTEXT_OVERLAY_PAD * fs)
     rh  = int(CONTEXT_OVERLAY_ROW_H * fs)
@@ -292,6 +300,8 @@ def draw_bus_context(
     state,
     font_scale:   float = 1.0,
     svc_cmd_active: bool = False,
+    x: int | None = None,
+    y: int | None = None,
 ) -> None:
     """
     Draw a bus context panel at the top-left of the canvas surface. Mostly
@@ -301,10 +311,12 @@ def draw_bus_context(
     Args:
         svc_cmd_active: Whether the SVC adjust command has keyboard focus
                         (mirrors the line TRIP/CLOSE cmd_active convention).
+        x, y:           See draw_unit_context's x/y — defaults to
+                        CONTEXT_OVERLAY_X/Y when not given.
     """
     fs  = font_scale
-    x   = int(CONTEXT_OVERLAY_X   * fs)
-    y   = int(CONTEXT_OVERLAY_Y   * fs)
+    x   = int(CONTEXT_OVERLAY_X * fs) if x is None else x
+    y   = int(CONTEXT_OVERLAY_Y * fs) if y is None else y
     w   = int(CONTEXT_OVERLAY_W   * fs)
     pad = int(CONTEXT_OVERLAY_PAD * fs)
     rh  = int(CONTEXT_OVERLAY_ROW_H * fs)
@@ -414,11 +426,17 @@ def draw_line_context(
     state,
     cmd_active: bool  = False,
     font_scale: float = 1.0,
+    x: int | None = None,
+    y: int | None = None,
 ) -> None:
-    """Draw the line context panel at the top-left of the canvas surface."""
+    """Draw the line context panel at the top-left of the canvas surface.
+
+    x, y: see draw_unit_context's x/y — defaults to CONTEXT_OVERLAY_X/Y when
+    not given.
+    """
     fs  = font_scale
-    x   = int(CONTEXT_OVERLAY_X   * fs)
-    y   = int(CONTEXT_OVERLAY_Y   * fs)
+    x   = int(CONTEXT_OVERLAY_X * fs) if x is None else x
+    y   = int(CONTEXT_OVERLAY_Y * fs) if y is None else y
     w   = int(CONTEXT_OVERLAY_W   * fs)
     pad = int(CONTEXT_OVERLAY_PAD * fs)
     rh  = int(CONTEXT_OVERLAY_ROW_H * fs)

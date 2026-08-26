@@ -35,6 +35,7 @@ from display.symbols import (
     draw_unit_square, draw_station_collector,
     draw_transmission_line, draw_hydraulic_connector,
     draw_vsi_halo, draw_shunt_glyph, draw_svc_glyph,
+    draw_load_triangles,
     UNIT_SIZE, UNIT_GAP, PARALLEL_LINE_OFFSET_PX, HALF_BUS, HALF_UNIT,
     get_port_point,
     _draw_dashed_line,
@@ -644,6 +645,16 @@ class GridCanvas:
             for line in self._lines
         )
 
+        # Flow direction sign per line — line_loading_pct is abs()-based (see
+        # loadflow.py) so it alone can't detect a direction reversal at
+        # roughly-constant magnitude (e.g. flow redistributing after a nearby
+        # line trips/recloses); draw_load_triangles (folded into _redraw_to
+        # below) needs this to point its arrows the right way.
+        flow_dir_sig = tuple(
+            state.line_flows_mw.get(line.label, 0.0) >= 0.0
+            for line in self._lines
+        )
+
         # Unit outputs quantised to 5% of rated — same reasoning
         output_sig = tuple(
             round(state.unit_outputs_mw.get(u.label, 0.0) / u.rated_mw * 20)
@@ -676,7 +687,7 @@ class GridCanvas:
 
         return (
             tripped_lines, blacked_buses, unit_state_sig, unit_mode_sig,
-            loading_sig, output_sig, intc_sig,
+            loading_sig, flow_dir_sig, output_sig, intc_sig,
             vsi_tier_sig, shunt_sig, svc_hosts_sig,
             selected_label, blink_key, font_scale, voltage_view,
         )
@@ -836,6 +847,13 @@ class GridCanvas:
 
         # ── Layer 9: Node labels ───────────────────────────────────────────────
         self._draw_labels(target, font_scale)
+
+        # ── Layer 10: Line load direction triangles ────────────────────────────
+        # Folded into the cached redraw (was a separate uncached per-frame pass
+        # in Renderer.tick()) — its inputs (line_status/loading/flow direction)
+        # are all part of canvas_key already (loading_sig + flow_dir_sig), so it
+        # only needs to run when the rest of the schematic does.
+        draw_load_triangles(target, state, self._lines, self._line_waypoints)
 
     # ─── Label drawing ────────────────────────────────────────────────────────
 

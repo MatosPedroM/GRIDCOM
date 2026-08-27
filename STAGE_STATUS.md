@@ -10,7 +10,68 @@
 
 ## Current Status
 
-**COMPLETE** — Session 116: fixed a severe FPS collapse (60 -> 2-5 FPS reported by the
+**COMPLETE** — Session 117: fixed a persistent ±0.08-0.15 Hz cyclical AGC hunting
+oscillation reported on the `grid_medium_1` Designer test grid (RIVE-1/RIVE-2 stepped down
+to their 105 MW technical minimum, frequency never settled to nominal — cycled indefinitely
+instead). Found the working tree already carried uncommitted, undocumented hand-edits to
+`AGC_KP` (100→500), `AGC_KD` (2000→3000), and `FREQ_DYNAMICS_SCALE` (0.01→0.005) — reverted
+those first (developer confirmed treating them as exploratory, not a deliberate retune) to
+get back to the last committed, known baseline before diagnosing further.
+- **Root cause, isolated empirically (not guessed)**: `AGC_KI = 5.0` was too high relative
+  to the AGC-eligible HYDRO/CCGT fleet's ramp rate and the one-tick delay between AGC
+  issuing a target and that correction reaching the swing equation (`_apply_agc()`,
+  `simulation.py:1321`, sets `target_mw` every tick; the unit's actual `current_mw` then
+  chases it via the ramp-limited `_tick_online()` path, `units.py:479`). The integral term
+  wound up faster than the fleet could physically deliver, so by the time the correction
+  landed, AGC had already over-corrected and reversed — a sustained limit cycle, not a
+  transient. Swept `AGC_KD` first (per Known Issues' longstanding guidance that KD was the
+  more likely lever) and found the opposite of what that guidance predicted: lowering KD
+  made the oscillation *worse*, raising it *helped* — confirming KD was already
+  compensating/damping, not causing. `AGC_KI` was the actual lever; `AGC_KP`/`AGC_KD` were
+  swept too and both left unchanged, already near their own local optimum.
+- **`src/config/constants.py`**: `AGC_KI` 5.0 → **1.0** (only functional change).
+  `AGC_KP`/`AGC_KD`/`AGC_MAX_RATE_MW_S`/`AGC_DEADBAND_HZ`/`AGC_INTEGRAL_MAX`/
+  `FREQ_DYNAMICS_SCALE` all confirmed back at their last-committed values (`git diff`
+  checked clean before starting the retune). Comments on `AGC_KI`/`AGC_INTEGRAL_MAX`
+  updated to explain the new value and reference the harness.
+- **New `scripts/verify_agc_tuning.py`** (headless tuning harness, not part of
+  `pytest`/`test_simulation.py`, matching the existing `scripts/verify_freq_dynamics_scale.py`/
+  `scripts/verify_reaction_window.py` pattern): builds `grid_medium_1` via the same
+  `substation_load_mw` derivation `main.py`'s `_make_designer_test()` uses (each LOAD bus's
+  `peak_load_mw` × `DEMAND_PROFILE_NORMALISED`), but with its own water-filled initial
+  dispatch (every non-renewable unit at `min_mw`, remaining load need split proportionally
+  by headroom) — `_make_designer_test()`'s own default dispatch (each unit at `start_mw` or
+  50% of `rated_mw`) badly oversupplies this specific grid and pins frequency at a hard
+  clamp before AGC ever engages, which isn't the bug being tuned. Started at hour 12 (near
+  this grid's demand peak) since the full 14-unit fleet's combined technical minimum
+  (1300 MW) exceeds hour-0 demand (~1053 MW) and can't balance that early without taking
+  units offline. `run_trial()` reproduces the report exactly: settle to nominal, step
+  RIVE-1/RIVE-2 to 105 MW, measure steady-state peak-to-peak frequency amplitude and mean
+  error over the tail of a follow-on window. Confirmed old `AGC_KI=5.0` → 0.168 Hz
+  peak-to-peak / 0.048 Hz mean error (persistent hunting); new `AGC_KI=1.0` → 0.022 Hz
+  peak-to-peak / 0.006 Hz mean error (steady-state within the ±0.01 Hz target), reproduced
+  from both a settled and a cold (T+0 disturbance) start.
+- **Verified**: `python -m pytest tests/` — 38/38 pass (no pre-existing AGC-specific
+  coverage exists to regress; confirms nothing else broke). `scripts/verify_agc_tuning.py`
+  run directly — before/after contrast and the KI narrowing sweep all reproduce as
+  documented above.
+- **Not done this session**: no in-game manual playtest of the new `AGC_KI` value on a real
+  campaign shift (matches this project's established headless-first verification pattern) —
+  whether 1.0 still corrects a *sustained* real-shift deficit briskly enough (not just this
+  one grid_medium_1 scenario) is unconfirmed; the harness's long-run (600s) measurement
+  window showed frequency eventually pinning at a clamp on `grid_medium_1` specifically, but
+  traced that to the harness's own hour-12-to-18 demand profile declining past what the
+  fleet's dispatch floor supports over that window — a test-scenario artifact, not an AGC
+  regression (confirmed by the shorter 120s/300s windows and the cold-start check all
+  landing in the same ~0.02 Hz band). `AGC_SPEED_MULT`'s per-shift scaling
+  (`AGC_KI * AGC_SPEED_MULT`) was not re-verified against the new base `AGC_KI=1.0` for any
+  specific shift's `AGC_SPEED_MULT` value.
+- Edited: `src/config/constants.py` (`AGC_KI`, comments on `AGC_KI`/`AGC_INTEGRAL_MAX`).
+- Added: `scripts/verify_agc_tuning.py`.
+
+---
+
+**COMPLETE (prior)** — Session 116: fixed a severe FPS collapse (60 -> 2-5 FPS reported by the
 developer) on grid_medium (46 buses/83 lines/14 units) during a "shoulder scenario" with
 several alarms and line manoeuvres in flight. Root cause: `GridSimulation._expire_alarms()`
 only ever pruned acknowledged INFO/TUTOR alarms — CRITICAL/WARNING alarms were never

@@ -295,19 +295,30 @@ FREQ_HISTORY_WINDOW_S: float = 60.0  # Real seconds of history shown in the freq
 # ─────────────────────────────────────────────
 AGC_ENABLED:       bool  = True  # Toggled at runtime via Ctrl+A; starts disabled
 AGC_KP:            float = 100.0    # Proportional gain (MW per Hz of error)
-AGC_KI:            float = 5.0    # Integral gain (MW per Hz·sim-second of error) —
-                                   # raised from 0.01 so integral action is numerically
-                                   # significant against AGC_INTEGRAL_MAX (was capped at
-                                   # 0.05 MW, effectively dead — AGC parked at a P-term-only
-                                   # offset instead of returning frequency to nominal).
+AGC_KI:            float = 1.0    # Integral gain (MW per Hz·sim-second of error) —
+                                   # cut from 5.0 (headless-verified against grid_medium_1's
+                                   # Designer test grid, RIVE-1/2 stepped to their 105 MW
+                                   # floor — see scripts/verify_agc_tuning.py): at 5.0 the
+                                   # integral term winds up faster than the AGC-eligible
+                                   # HYDRO/CCGT fleet's ramp rate + one-tick electrical-
+                                   # feedback delay can actually deliver, so it overshoots
+                                   # and reverses every cycle — a sustained ±0.08-0.15 Hz
+                                   # hunting oscillation around F_NOMINAL that never damps.
+                                   # 1.0 settles to a steady-state ~±0.01 Hz band (target)
+                                   # instead. AGC_KP/AGC_KD were swept too and left
+                                   # unchanged — both were already near their own optimum.
 AGC_KD:            float = 2000.0  # Derivative gain (MW per Hz/sim-second of error) —
                                    # cut from 1000.0 so it damps transients without
                                    # dominating now that KI is doing real work.
 AGC_MAX_RATE_MW_S: float = 100.0   # Max total AGC correction rate (MW per sim-second)
 AGC_DEADBAND_HZ:   float = 0.01   # ±Hz inside which AGC is silent
 AGC_INTEGRAL_MAX:  float = 60.0   # Anti-windup clamp on integral accumulator (Hz·s) —
-                                   # raised from 5.0; AGC_KI * AGC_INTEGRAL_MAX = 300 MW,
-                                   # sized to fully close realistic sustained deficits.
+                                   # AGC_KI * AGC_INTEGRAL_MAX = 60 MW ceiling on the
+                                   # integral term's own contribution (was 300 MW before
+                                   # AGC_KI's hunting-fix cut to 1.0 — swept independently
+                                   # in scripts/verify_agc_tuning.py and found to have
+                                   # negligible effect on the hunting oscillation itself,
+                                   # so left unchanged rather than re-derived).
 AGC_LOG:           bool  = True  # Write per-tick PID data to agc_log.csv when True
 
 # Unit types eligible for AGC dispatch. Fixed for every shift at every

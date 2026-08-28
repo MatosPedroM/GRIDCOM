@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "name": "grid_medium_1",
+  "name": "grid_medium_
+  ",
   "buses": [
     {
       "label": "RIVE",
@@ -215,8 +216,8 @@
       "name": "Applecroft",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 345,
-      "canvas_y": 610,
+      "canvas_x": 395,
+      "canvas_y": 635,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 200.0,
@@ -242,7 +243,7 @@
       "voltage_kv": 400.0,
       "bus_type": "TRANSMISSION",
       "canvas_x": 695,
-      "canvas_y": 575,
+      "canvas_y": 560,
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
@@ -285,7 +286,7 @@
       "active_from_shift": 1,
       "is_slack": false,
       "peak_load_mw": 0.0,
-      "label_anchor": "top",
+      "label_anchor": "left",
       "substation_type": "MIXED"
     },
     {
@@ -462,7 +463,7 @@
       "name": "Merryhurst",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 635,
+      "canvas_x": 695,
       "canvas_y": 675,
       "active_from_shift": 1,
       "is_slack": false,
@@ -475,7 +476,7 @@
       "name": "Bracknell End",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 775,
+      "canvas_x": 835,
       "canvas_y": 675,
       "active_from_shift": 1,
       "is_slack": false,
@@ -488,7 +489,7 @@
       "name": "Ferngate",
       "voltage_kv": 220.0,
       "bus_type": "TRANSMISSION",
-      "canvas_x": 890,
+      "canvas_x": 950,
       "canvas_y": 675,
       "active_from_shift": 1,
       "is_slack": false,
@@ -514,7 +515,7 @@
       "name": "Highbourne",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 590,
+      "canvas_x": 650,
       "canvas_y": 720,
       "active_from_shift": 1,
       "is_slack": false,
@@ -527,7 +528,7 @@
       "name": "Gorsecombe",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 685,
+      "canvas_x": 745,
       "canvas_y": 720,
       "active_from_shift": 1,
       "is_slack": false,
@@ -540,7 +541,7 @@
       "name": "Wexfield",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 775,
+      "canvas_x": 835,
       "canvas_y": 720,
       "active_from_shift": 1,
       "is_slack": false,
@@ -553,7 +554,7 @@
       "name": "Ledgemoor",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 695,
+      "canvas_x": 755,
       "canvas_y": 640,
       "active_from_shift": 1,
       "is_slack": false,
@@ -566,7 +567,7 @@
       "name": "Hartswell",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 890,
+      "canvas_x": 950,
       "canvas_y": 720,
       "active_from_shift": 1,
       "is_slack": false,
@@ -579,7 +580,7 @@
       "name": "Stourbridge Fen",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 980,
+      "canvas_x": 1040,
       "canvas_y": 720,
       "active_from_shift": 1,
       "is_slack": false,
@@ -592,7 +593,7 @@
       "name": "Chalkdown",
       "voltage_kv": 150.0,
       "bus_type": "LOAD",
-      "canvas_x": 1070,
+      "canvas_x": 1130,
       "canvas_y": 720,
       "active_from_shift": 1,
       "is_slack": false,
@@ -1018,10 +1019,7 @@
         "S",
         0
       ],
-      "to_port_override": [
-        "N",
-        1
-      ],
+      "to_port_override": null,
       "length_km": 82.2
     },
     {
@@ -1444,10 +1442,7 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": [
-        "W",
-        0
-      ],
+      "from_port_override": null,
       "to_port_override": null,
       "length_km": 28.0
     },
@@ -1461,10 +1456,7 @@
       "active_from_shift": 1,
       "active_until_shift": 99,
       "parallel": 0,
-      "from_port_override": [
-        "W",
-        1
-      ],
+      "from_port_override": null,
       "to_port_override": null,
       "length_km": 28.0
     },
@@ -1551,6 +1543,26 @@
       "from_port_override": null,
       "to_port_override": null,
       "length_km": 63.0
+    },
+    {
+      "label": "L66",
+      "from_bus": "LONG",
+      "to_bus": "APPL",
+      "reactance_pu": 0.9528,
+      "rating_mw": 175.0,
+      "voltage_kv": 150.0,
+      "active_from_shift": 1,
+      "active_until_shift": 99,
+      "parallel": 0,
+      "from_port_override": [
+        "N",
+        0
+      ],
+      "to_port_override": [
+        "E",
+        1
+      ],
+      "length_km": 61.2
     },
     {
       "label": "L67",
@@ -1842,80 +1854,6 @@
         1
       ],
       "length_km": 54.2
-    },
-    {
-      "label": "L66",
-      "from_bus": "LONG",
-      "to_bus": "SHEL",
-      "reactance_pu": 0.6201,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": [
-        "S",
-        1
-      ],
-      "length_km": 85.8
-    },
-    {
-      "label": "L84",
-      "from_bus": "LONG",
-      "to_bus": "SHEL",
-      "reactance_pu": 0.6201,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": null,
-      "to_port_override": [
-        "S",
-        0
-      ],
-      "length_km": 85.8
-    },
-    {
-      "label": "L85",
-      "from_bus": "YEWB",
-      "to_bus": "FERN",
-      "reactance_pu": 0.7846,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "S",
-        0
-      ],
-      "to_port_override": [
-        "N",
-        1
-      ],
-      "length_km": 108.5
-    },
-    {
-      "label": "L86",
-      "from_bus": "YEWB",
-      "to_bus": "FERN",
-      "reactance_pu": 0.7846,
-      "rating_mw": 400.0,
-      "voltage_kv": 220.0,
-      "active_from_shift": 1,
-      "active_until_shift": 99,
-      "parallel": 0,
-      "from_port_override": [
-        "S",
-        1
-      ],
-      "to_port_override": [
-        "N",
-        0
-      ],
-      "length_km": 108.5
     }
   ],
   "units": [
@@ -2071,11 +2009,11 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "Yewbarrow Ccgt Unit 1",
-      "station_x": 650,
-      "station_y": 535,
+      "station_x": 625,
+      "station_y": 510,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top",
+      "label_anchor": "right",
       "min_up_time_h": 2.0,
       "min_down_time_h": 2.0,
       "station_name": "Yewbarrow"
@@ -2094,11 +2032,11 @@
       "can_pump": false,
       "active_from_shift": 1,
       "description": "Yewbarrow Ccgt Unit 2",
-      "station_x": 650,
-      "station_y": 535,
+      "station_x": 625,
+      "station_y": 510,
       "start_mw": -1.0,
       "in_service": true,
-      "label_anchor": "top",
+      "label_anchor": "right",
       "min_up_time_h": 2.0,
       "min_down_time_h": 2.0,
       "station_name": "Yewbarrow"

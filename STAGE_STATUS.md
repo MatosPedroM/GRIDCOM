@@ -6,11 +6,75 @@
 
 ## Current Stage
 
-**STAGE 37 — Campaign-wide AGC: fixed eligible types (CCGT + HYDRO, never per-shift) + per-shift response speed**
+**STAGE 38 — Campaign Phase A: basic shift structure for all 10 shifts**
 
 ## Current Status
 
-**COMPLETE** — Session 117: fixed a persistent ±0.08-0.15 Hz cyclical AGC hunting
+**COMPLETE** — Session 118: Phase A of the campaign implementation plan in
+`GRIDCOM_CAMPAIGN_BRAINSTORM.md` (untracked design doc; plan itself lives at
+`.claude/plans/read-the-gridcom-campaign-brainstorm-md-bubbly-cray.md`) — every
+campaign shift (1-10) now boots, balances at handover, and runs
+BRIEFING -> (PLANNING if `USES_PLANNING`) -> PLAYING -> DEBRIEF without crashing,
+with a real win condition and a real fail condition. Previously Shifts 1-4 and 6-9
+were pure docstring stubs (`GRID_SOURCE` only, no handover notes, no win/fail
+conditions) and Shifts 8/9/10 pointed `GRID_SOURCE` at `'grid_big'`, which never
+existed as a file on disk — those three shifts were unplayable.
+- **Fixed the dead `grid_big` reference**: `shift_08.py`/`shift_09.py`/`shift_10.py`
+  now point at `'grid_large'` (93 buses/184 lines/37 units), the real Act III grid
+  tier. `shift_10.py`'s old "The Cold Snap" content (Stourbrook/Welbeck/Hartwell
+  station names, `PORT`/`TRUS`/`WREK`/`MILL`/`CARR`/`SEDG` bus labels) was authored
+  against a grid that no longer matches `grid_large.json` at all (its real anchors
+  are `CLOV` nuclear, `RIVE` coal, `DOWN` CCGT; its 5 INDUSTRIAL buses are
+  `BATH`/`APPL`/`SOUT`/`LAMB`/`MOSS`) — reduced to the same Phase A placeholder
+  shape as every other shift rather than patching individual labels (developer
+  decision); a full Act III rebuild against the real grid and the brainstorm's
+  narrative is queued as the first sub-task of the next content-authoring session,
+  ahead of Shifts 1-9's real narrative content.
+- **Shifts 1-4** (`grid_small`, Act I): added `HANDOVER_NOTES` (Part 1's per-shift
+  one-liners), a balanced `INITIAL_SCHEDULE` at a 22:00 handover (OAKE-1/OAKE-2
+  hydro + RIVE-1 coal covering ~277 MW demand), `RIVE-2`/`RIVE-3` on
+  `MAINTENANCE_UNITS` (the brainstorm's Act I framing — "RIVE-1 and two Oakendale
+  hydro units are the whole world... two out-of-service Riverside units"),
+  `AGC_ENABLED = False` (manual-control tutorial premise), and frequency-band
+  win/fail conditions.
+- **Shifts 5-9** (`grid_medium`/`grid_large`, Act II/III): added
+  `USES_PLANNING = True` to Shifts 6-9 (5 and 10 already had it) plus
+  `HANDOVER_NOTES`/win/fail conditions to all of 5-9. No `INITIAL_SCHEDULE` needed
+  for any `USES_PLANNING` shift — `phase1.py`'s `_default_init_schedule()` always
+  seeds blank, and the confirmed plan supplies handover dispatch
+  (`load_schedule_json()` in `_make_sim_and_renderer()`), confirmed by reading
+  `main.py`'s existing generic `uses_planning` dispatch (no `main.py` changes were
+  needed).
+- **`SCRIPTED_EVENTS` deliberately left empty (`[]`) on every shift** — real
+  archetype-driven content (the brainstorm's Part 2 typology, Part 2.5 Weather
+  Regimes) is later work, gated on the still-missing `LINE_DERATE`/`LINE_RESTORE`
+  engine primitive (see Known Issues) for several archetypes.
+- **Verified headlessly**: `load_shift_config(n)` for all 10 shifts (correct grid
+  tier, non-empty handover notes, 2 win + 2 fail conditions each);
+  `build_planning_model(n, starting_budget_eur=...)` for Shifts 5-10 (13-32 unit
+  specs depending on grid tier); a real 60-simulated-second run per shift (Shifts
+  1-4 against their `INITIAL_SCHEDULE` directly, Shifts 5-10 via `auto_schedule()`
+  + `write_schedule_json()`/`load_schedule_json()`, mirroring `main.py`'s actual
+  PLANNING->PLAYING handoff) — frequency stayed within a few hundredths of a Hz of
+  50.0 nominal on every shift, no exceptions. `python -m pytest tests/` — 38/38
+  pass, unchanged from the pre-session baseline.
+- **Not done this session**: no manual/human playtest of any shift's BRIEFING ->
+  DEBRIEF flow in the real game window. `SUBSTATION_TYPES`/`SHUNT_BANK_OVERRIDES`/
+  `INITIAL_Q_MVAR` were not authored for any shift (all default empty) — voltage/
+  reactive-power content is narrative-authoring work, deferred with everything else
+  in `SCRIPTED_EVENTS`. Shift 10's real Act III content does not exist yet — it is
+  currently a placeholder identical in shape to Shifts 5-9, not a finale.
+- Edited: `src/gameplay/shifts/shift_01.py` through `shift_10.py` (all ten).
+- Left untouched (separate, in-progress, uncommitted work not part of this
+  session): the persistent campaign-EUR-budget system (`data/campaign_save.py`,
+  `utils/save_paths.py`, `CAMPAIGN_STARTING_BUDGET_EUR`/`GRADE_TO_BUDGET_DELTA_EUR`/
+  `CAMPAIGN_BUDGET_FLOOR_EUR` in `constants.py`, the uncommitted `main.py`/
+  `phase1.py`/`menus.py` diffs) — from `GRIDCOM_LONG_TERM_REWARD_BRAINSTORM.md`,
+  a different design doc than this session's `GRIDCOM_CAMPAIGN_BRAINSTORM.md`.
+
+---
+
+**COMPLETE (prior)** — Session 117: fixed a persistent ±0.08-0.15 Hz cyclical AGC hunting
 oscillation reported on the `grid_medium_1` Designer test grid (RIVE-1/RIVE-2 stepped down
 to their 105 MW technical minimum, frequency never settled to nominal — cycled indefinitely
 instead). Found the working tree already carried uncommitted, undocumented hand-edits to
@@ -3338,49 +3402,44 @@ contains working code unless listed above as complete.
 
 ## Next Session Objective
 
-**Human playtest Shift 10 "The Bad Night," then re-author Shifts 1/4/5 against direct-Q
-and the early end of the AGC curve**
+**Phase B: build `LINE_DERATE`/`LINE_RESTORE`, then rebuild Shift 10 as the Act III
+finale**
 
-Session 79 completed F9 (direct reactive-power control) and Movement 2 of
-`SHIFT10_BAD_NIGHT_PLAN.md`; Session 80 built the campaign-wide AGC difficulty curve
-(per-shift eligible types + response speed) and rewrote Shift 10's Act 3 around it — see
-both session log entries for full detail. Shift 10 is a real, playable four-act shift with
-a verified (headless) do-nothing-fails / responsive-player-wins split, now under the new
-AGC baseline. Two things remain:
+Session 118 completed Phase A of the campaign implementation plan (see this
+session's log entry above, and
+`.claude/plans/read-the-gridcom-campaign-brainstorm-md-bubbly-cray.md`) — every
+shift now has a minimal, playable, headless-verified structure. Two phases remain
+before real per-shift narrative content can be authored, per the plan's locked
+sequencing:
 
-1. **Play Shift 10 for real** (Ctrl+T from the Shift Builder, or the real campaign path),
-   twice: once to complete it, once deliberately trying to lose. This is the first actual
-   human playtest of the shift — everything so far is headless-verified only. Specifically
-   judge the question the whole slice exists to answer: *does hand-flying frequency all
-   night (not just during one Act 3 crisis window) carry the shift, or does something else
-   (Act 1's overnight unit-commitment puzzle, Act 4's cascade) end up being what sticks?*
-   That answer should drive how Shifts 6-9 get authored, including where along the AGC
-   curve each one should sit. Also worth judging in real play (headless traces can't tell
-   you this): whether the direct-Q `W`/`Q` control scheme feels good, whether hand-flying
-   Ashgrove's CCGT continuously from handover (never AGC-tracked this shift at all) reads
-   as earned difficulty or exhausting micromanagement, whether Act 3's further narrowing
-   lands as a real "further loss" or barely registers against an already-thin baseline, and
-   whether the 20:00-05:00 overnight pacing (~22.5 real min at 1x) is too long unaccelerated.
-2. **Re-author Shifts 1, 4, 5 against direct-Q and declare their early-curve AGC values.**
-   All three are currently docstring-only stubs (reverted in Session 79) — their old content
-   depended entirely on the AVR voltage setpoint, which no longer exists. Shift 4's whole
-   lesson was "raise Batherton's AVR setpoint toward 1.05 pu"; under direct-Q that becomes
-   "raise Batherton's MVAr output," a different shape of lesson since voltage is no longer
-   something the player targets directly — it's a consequence of Q dispatch. Their Designer
-   grids (`shift4.json`, `shift5.json`) still exist and are still usable; only the shift-file
-   content needs rewriting. `INITIAL_Q_MVAR` (was `INITIAL_VOLTAGE_SETPOINTS`) is the schema
-   key. Expect real retuning, not just a find-replace — voltage no longer self-corrects as
-   load moves the way an AVR-held setpoint did, so alarm pacing (`V_WATCH_LOW`/
-   `V_WARNING_LOW`) may need review per-shift. **New this session**: these are also the
-   natural place to declare the AGC curve's "fast, broad" endpoint — `AGC_ELIGIBLE_TYPES =
-   frozenset({'HYDRO', 'HYDRO_PUMP', 'CCGT'})` and `AGC_SPEED_MULT >= 1.0` (or simply leave
-   both undeclared, since `constants.py`'s defaults are already `{HYDRO, CCGT}`/`1.0` — the
-   open question is whether the tutorial shifts specifically want the wider `HYDRO_PUMP`
-   inclusion or the plain default). No numeric values are chosen yet; nothing currently
-   verifies the middle of the curve (Shifts 6-9, still untouched stubs) either — the
-   mechanism supports a smooth per-shift interpolation whenever they're authored, but this
-   session only populated its two endpoints in the abstract (constants.py's defaults) and
-   one concrete point (Shift 10).
+1. **Phase B — `LINE_DERATE`/`LINE_RESTORE`** (see the plan file's Phase B section
+   for full detail): the one confirmed engine gap the event typology
+   (`GRIDCOM_CAMPAIGN_BRAINSTORM.md` Part 2's B5, and the whole Part 2.5 Weather
+   Regime tier) depends on. Mirrors `UNIT_DERATE`'s existing pattern — a per-line
+   effective-rating override, a new scripted-action pair, and `loadflow.py` reading
+   the override instead of `line.rating_mw` directly. Confirmed this session:
+   neither `LINE_DERATE` nor `LINE_RESTORE` exist anywhere in `src/` yet; everything
+   else in the typology (A1-A5, B1-B4, C1-C4) is already buildable from existing
+   primitives (`SCRIPTED_EVENTS`, `DEMAND_OVERRIDE`, `UNIT_DERATE`, `UNIT_TRIP`,
+   `LINE_OPEN`, `LOAD_SHED`/`LOAD_RESTORE`) with no engine changes needed.
+2. **Shift 10 full rebuild** (developer decision, Session 118): the first piece of
+   real content-authoring work, ahead of Shifts 1-9. Shift 10 is currently a Phase A
+   placeholder only (see this session's log entry) — its previous "The Cold Snap"
+   content was discarded because it was authored against a grid (`grid_big.json`)
+   that never existed on disk, and its station/bus names don't exist in
+   `grid_large.json` (the grid it actually needs to run on: `CLOV` nuclear, `RIVE`
+   coal, `DOWN` CCGT anchors; `BATH`/`APPL`/`SOUT`/`LAMB`/`MOSS` the 5 INDUSTRIAL
+   buses). Rebuild it against `grid_large.json`'s real topology and
+   `GRIDCOM_CAMPAIGN_BRAINSTORM.md`'s Act III narrative (Part 1: "everything you
+   already know, all at once, without enough time to think about each thing
+   individually" — ideally a full three-channel Heatwave or full-intensity
+   High-Wind Storm Weather Regime per Part 2.5, which needs Phase B's
+   `LINE_DERATE` to be done first for the thermal-derate channel).
+
+Only after both of the above should Shifts 1-9's real narrative content
+(`SCRIPTED_EVENTS`, full `HANDOVER_NOTES`, the typology archetypes per act) be
+authored — treat each shift or small group of shifts as its own sub-session, per
+the plan file's Phase C guidance, rather than attempting all nine in one pass.
 
 ---
 

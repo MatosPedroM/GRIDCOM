@@ -1,17 +1,60 @@
 """
 src/gameplay/shifts/shift_04.py
 
-Shift 4 scenario definition — placeholder, pending re-authoring against
-direct reactive-power control (F9, Session 2026-08-21). Previously "Local
-Support," the voltage/reactive-power tutorial; reverted to a stub because
-its entire lesson — "raise Batherton's AVR setpoint" — no longer applies
-now that generator voltage control is direct-Q (W = MW, Q = MVAr) rather
-than an AVR setpoint. No constants defined; load_shift_config() falls back
-to its defaults (empty schedule, AGC off, zero peak demand) if this shift
-is loaded.
+Shift 4 scenario definition — Phase A minimal structure pass (see
+shift_01.py's docstring for the pattern this follows). Same grid_small
+fleet/handover balance as Shifts 1-3; full narrative content (the
+brainstorm's Part 1 frames this as "a month in, they're trusting you with
+the board when it's not quiet" — a real overload threat) is deferred to a
+later authoring pass.
+
+Previously a placeholder noting its old content ("Local Support," the
+voltage/reactive-power tutorial built around raising Batherton's AVR
+setpoint) no longer applies now that generator voltage control is
+direct-Q (W = MW, Q = MVAr) rather than an AVR setpoint. That history is
+superseded — every shift in Act I now gets its own real (if minimal)
+win/fail-condition structure regardless.
 """
 
 from __future__ import annotations
 
 
 GRID_SOURCE: str = 'grid_small'
+
+SHIFT_DATE: str = 'WED 07 DEC 1994'
+
+DIFFICULTY_LABEL: str = 'Tutorial'
+
+START_HOUR: float = 22.0
+
+DURATION_HOURS: float = 6.0
+
+HANDOVER_NOTES: tuple[str, ...] = (
+    'A month in. They\'re trusting you with the board when it\'s not quiet.',
+)
+
+INITIAL_SCHEDULE: dict[str, float] = {
+    'OAKE-1': 35.0,
+    'OAKE-2': 35.0,
+    'RIVE-1': 215.0,
+}
+
+MAINTENANCE_UNITS: set[str] = {'RIVE-2', 'RIVE-3'}
+
+MAINTENANCE_LINES: set[str] = set()
+
+AGC_ENABLED: bool = False
+
+SCRIPTED_EVENTS: list[dict] = []
+
+WIN_CONDITIONS: list[dict] = [
+    {'metric': 'FREQUENCY_HZ', 'op': '>=', 'value': 49.2},
+    {'metric': 'FREQUENCY_HZ', 'op': '<=', 'value': 50.8},
+]
+
+FAIL_CONDITIONS: list[dict] = [
+    {'metric': 'FREQUENCY_HZ', 'op': '<', 'value': 47.5, 'sustained_s': 10.0,
+     'message': 'Frequency collapse — protective systems isolated the network.'},
+    {'metric': 'FREQUENCY_HZ', 'op': '>', 'value': 52.5, 'sustained_s': 10.0,
+     'message': 'Over-frequency — protective systems isolated the network.'},
+]

@@ -995,15 +995,15 @@ PLANNING_PREV_DAY_FRAC_HYDRO_PUMP:  float = 1.0
 # ─────────────────────────────────────────────
 # ECONOMICS (Phase 1 — scheduler budget)
 # ─────────────────────────────────────────────
-# Dummy/placeholder values — this is scaffolding for a real economy later,
-# not a tuned constraint yet. Cost is a per-TECHNOLOGY property (looked up
-# by unit_type), not a per-fleet-unit override — every unit of a given
-# unit_type costs the same to start/run. PLANNING_INITIAL_BUDGET_EUR is
-# deliberately huge so it never blocks a plan at this stage; the per-type
-# cost tables below exist so PlanningModel has something real to sum.
-# Baseline VARIABLE_COST_EUR_PER_MWH_BY_TYPE values carried over from the
-# orphaned COST_MAP that used to live in simulation.py's unused
-# run_forecast_mode().
+# Cost is a per-TECHNOLOGY property (looked up by unit_type), not a
+# per-fleet-unit override — every unit of a given unit_type costs the
+# same to start/run. The budget these costs draw against is now
+# persistent across the whole campaign (CAMPAIGN_STARTING_BUDGET_EUR,
+# below) rather than a fixed per-shift reset, so the budget gate
+# (PlanningScreen._confirm_plan) can meaningfully fire on a
+# poorly-managed campaign. Baseline VARIABLE_COST_EUR_PER_MWH_BY_TYPE
+# values carried over from the orphaned COST_MAP that used to live in
+# simulation.py's unused run_forecast_mode().
 STARTUP_COST_EUR_BY_TYPE: dict = {
     'NUCLEAR':    50000.0,
     'COAL':       8000.0,
@@ -1033,7 +1033,7 @@ AGC_AVAILABILITY_COST_EUR_PER_HOUR: float = 150.0
 # Difficulty cost multiplier — scales STARTUP_COST_EUR_BY_TYPE,
 # VARIABLE_COST_EUR_PER_MWH_BY_TYPE and AGC_AVAILABILITY_COST_EUR_PER_HOUR
 # uniformly, same trainee/standard/dispatcher keys as DIFFICULTY_MULT
-# (above). Only the COSTS scale — PLANNING_INITIAL_BUDGET_EUR itself does
+# (above). Only the COSTS scale — CAMPAIGN_STARTING_BUDGET_EUR itself does
 # not change with difficulty — so a lower multiplier on trainee stretches
 # the same EUR budget further (a bigger relative cushion), while dispatcher
 # makes every action cost more against that same fixed budget.
@@ -1043,11 +1043,45 @@ DIFFICULTY_COST_MULT: dict[str, float] = {
     'dispatcher': 1.6,
 }
 
-# Starting Phase 1 budget. Deliberately huge for now — large enough that no
-# plan a player could plausibly build against Shift 10's fleet can exceed
-# it, so the budget gate exists (PlanningScreen._confirm_plan) but never
-# actually fires yet. Not scaled by difficulty (see DIFFICULTY_COST_MULT).
-PLANNING_INITIAL_BUDGET_EUR: float = 100_000_000.0
+# Opening balance for a new campaign's persistent EUR budget (see
+# gameplay/scoring.py's GRADE_TO_BUDGET_DELTA_EUR and data/campaign_save.py
+# — this replaces the old PLANNING_INITIAL_BUDGET_EUR per-shift-reset
+# constant now that the budget carries forward across the whole campaign
+# instead of resetting every shift). PLACEHOLDER — picked as a rough
+# multiple of what one Shift 10-scale plan's total_cost() looks like
+# against the cost tables above (order of tens-to-low-hundreds-of-
+# thousands EUR per shift), so several shifts can be played before grade
+# deltas meaningfully move it. Not empirically tuned yet — expect this,
+# GRADE_TO_BUDGET_DELTA_EUR and CAMPAIGN_BUDGET_FLOOR_EUR to all need
+# retuning together after real playtesting, the same way AGC_KI and
+# other constants in this file were tuned after the fact rather than
+# calculated up front.
+CAMPAIGN_STARTING_BUDGET_EUR: float = 500_000.0
+
+# EUR added to (or, for FAILED, subtracted from) the persistent campaign
+# budget at each shift's debrief, keyed by grade_shift()'s overall grade
+# string. FAILED is a flat penalty (developer decision, 2026-08-28) —
+# same amount regardless of failure cause, not scaled by how the shift
+# failed. Still subject to CAMPAIGN_BUDGET_FLOOR_EUR like every other
+# grade (main.py's debrief handler applies the same max(floor, ...) clamp
+# uniformly), so a FAILED shift can hurt but Shift 10 always stays
+# technically plannable. PLACEHOLDER values.
+GRADE_TO_BUDGET_DELTA_EUR: dict[str, float] = {
+    'EXCELLENT':     40000.0,
+    'SATISFACTORY':  20000.0,
+    'MARGINAL':       5000.0,
+    'UNSATISFACTORY':    0.0,
+    'FAILED':       -15000.0,
+}
+
+# The persistent campaign budget can never drop below this floor, however
+# many poor/FAILED shifts precede it — the simplest guard against an
+# unrecoverable early-game "death spiral" that would make a later shift
+# (esp. Shift 10) mechanically impossible to plan regardless of the
+# player's in-the-moment skill by that point. PLACEHOLDER — a rubber-band
+# catch-up curve could replace this later without changing the
+# surrounding architecture.
+CAMPAIGN_BUDGET_FLOOR_EUR: float = 50_000.0
 
 # ─────────────────────────────────────────────
 # SHIFT SCORING (gameplay/scoring.py)

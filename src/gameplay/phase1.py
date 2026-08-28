@@ -10,8 +10,13 @@ window is a sub-window of that day, highlighted by the display layer via
 in_shift_window(). The real-time handover dispatch is seeded from the
 schedule's start_hour column (e.g. 06:00 for Shift 10), not column 0.
 
-Scope: Shift 10 only (build_planning_model_for_shift10()). Other shifts are
-not wired in yet — see STAGE_STATUS.md.
+Any shift whose shift_NN.py sets USES_PLANNING = True routes through here
+(currently Shifts 5 and 10) — build_planning_model(shift_number, ...) is
+the real entry point; build_planning_model_for_shift10() is an unused
+convenience wrapper. budget_eur now carries the player's persisted
+campaign budget (see data/campaign_save.py), not a fixed per-shift reset
+— every caller of build_planning_model() must pass starting_budget_eur
+explicitly. See STAGE_STATUS.md for current wiring status.
 """
 
 from __future__ import annotations
@@ -43,7 +48,7 @@ from config.constants import (
     PLANNING_AGC_RESERVE_MW,
     PLANNING_STEP_HOURS,
     STARTUP_COST_EUR_BY_TYPE, VARIABLE_COST_EUR_PER_MWH_BY_TYPE,
-    AGC_AVAILABILITY_COST_EUR_PER_HOUR, PLANNING_INITIAL_BUDGET_EUR,
+    AGC_AVAILABILITY_COST_EUR_PER_HOUR, CAMPAIGN_STARTING_BUDGET_EUR,
     DIFFICULTY_COST_MULT,
 )
 from simulation.demand import DemandModel
@@ -148,7 +153,12 @@ class PlanningModel:
     # than starting from nothing enrolled.
     agc_enrolled:   dict[str, bool] = field(default_factory=dict)
 
-    budget_eur: float = PLANNING_INITIAL_BUDGET_EUR
+    # Defaults to a fresh campaign's opening balance, but build_planning_model()
+    # always passes the caller's actual persisted campaign budget explicitly
+    # (see starting_budget_eur below) — this default only applies to a
+    # PlanningModel built directly (e.g. in tests) without going through
+    # that factory.
+    budget_eur: float = CAMPAIGN_STARTING_BUDGET_EUR
 
     # trainee/standard/dispatcher — scales per-technology costs via
     # DIFFICULTY_COST_MULT (constants.py). Does not affect budget_eur itself.
@@ -849,11 +859,18 @@ def load_schedule_json(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_planning_model_for_shift10() -> PlanningModel:
-    """Build a PlanningModel for Shift 10 (the only wired-in shift so far)."""
-    return build_planning_model(10)
+    """Build a PlanningModel for Shift 10 using a fresh campaign's starting
+    budget. No current call site uses this — real campaign play always
+    goes through build_planning_model() directly with the player's actual
+    persisted budget (see main.py's BRIEFING handler)."""
+    return build_planning_model(10, starting_budget_eur=CAMPAIGN_STARTING_BUDGET_EUR)
 
 
-def build_planning_model(shift_number: int, difficulty: str = 'standard') -> PlanningModel:
+def build_planning_model(
+    shift_number: int,
+    starting_budget_eur: float,
+    difficulty: str = 'standard',
+) -> PlanningModel:
     cfg = load_shift_config(shift_number)
 
     grid_source = cfg.get('grid_source')
@@ -891,6 +908,7 @@ def build_planning_model(shift_number: int, difficulty: str = 'standard') -> Pla
         renewable_specs=renewable_specs,
         renewable_forecast=renewable_forecast,
         maintenance_units=frozenset(cfg['maintenance_units']),
+        budget_eur=starting_budget_eur,
         difficulty=difficulty,
     )
     _default_init_schedule(model)

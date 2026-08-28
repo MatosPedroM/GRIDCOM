@@ -30,6 +30,7 @@ Controls (PLAYING state):
 
 import sys
 import os
+import datetime
 from enum import Enum
 
 # Ensure the src directory is on the path when running as `python src/main.py`
@@ -53,6 +54,9 @@ from display.menus import (
 )
 from data.layout_override import load_layout
 from data.profiles import DEMAND_PROFILE_NORMALISED
+from data.campaign_save import (
+    CampaignSaveState, save_campaign, load_campaign, has_campaign_save,
+)
 from gameplay.scoring import count_unit_trips, grade_campaign, grade_shift
 from gameplay.shifts.loader import load_shift_config
 from simulation.simulation import GridSimulation
@@ -64,6 +68,7 @@ from config.constants import (
     TYPEWRITER_CHARS_PER_SEC,
     AGC_ELIGIBLE_TYPES as _AGC_ELIGIBLE_TYPES_DEFAULT,
     LANDING_FREEZE_S as _LANDING_FREEZE_S_DEFAULT,
+    CAMPAIGN_STARTING_BUDGET_EUR, GRADE_TO_BUDGET_DELTA_EUR, CAMPAIGN_BUDGET_FLOOR_EUR,
 )
 import config.constants as _const
 
@@ -529,7 +534,7 @@ def main() -> None:
 
     # ── Menu state ───────────────────────────────────────────────────────────
     menu_selected = 0
-    _raw = build_main_menu_items()   # [NEW GAME, CONTINUE, GRID DESIGNER, TEST GRID, SHIFT BUILDER, QUIT]
+    _raw = build_main_menu_items(has_save=has_campaign_save())   # [NEW GAME, CONTINUE, GRID DESIGNER, TEST GRID, SHIFT BUILDER, QUIT]
     main_menu_items = [
         _raw[0],
         ('', None),
@@ -566,6 +571,13 @@ def main() -> None:
     shift_select_items  = build_shift_select_items(shift_grades)
     shift_select_idx    = 0
 
+    # Persistent campaign budget (EUR) — carries forward across shifts via
+    # data/campaign_save.py, rather than resetting every Phase 1 plan.
+    # Reset to CAMPAIGN_STARTING_BUDGET_EUR at DIFFICULTY_SELECT (new
+    # campaign) or restored from disk at MAIN_MENU's CONTINUE (loaded
+    # campaign). See gameplay/phase1.py's build_planning_model().
+    campaign_budget: float = CAMPAIGN_STARTING_BUDGET_EUR
+
     # ── Campaign intro ───────────────────────────────────────────────────────
     intro_screens    = build_campaign_intro_screens()
     intro_screen_idx = 0
@@ -582,6 +594,10 @@ def main() -> None:
     campaign_end_lines: list = []
     campaign_end_chars  = 0.0
     campaign_start_time = pygame.time.get_ticks()   # ms — for total watch time
+    # Wall-clock timestamp of campaign start, display-only, saved/restored
+    # with the campaign (unlike campaign_start_time above, which is a
+    # pygame tick count only meaningful within the current process).
+    campaign_start_time_iso = datetime.datetime.now().isoformat()
 
     running = True
     while running:
@@ -620,8 +636,16 @@ def main() -> None:
                         if idx == 0:   # NEW GAME
                             game_state    = GameState.MODE_SELECT
                             menu_selected = 0
-                        elif idx == 2: # CONTINUE — disabled
-                            pass
+                        elif idx == 2: # CONTINUE — load saved campaign
+                            saved                   = load_campaign()
+                            difficulty              = saved.difficulty
+                            shift_grades            = saved.shift_grades
+                            campaign_budget         = saved.budget_eur
+                            campaign_start_time_iso = saved.campaign_start_time_iso
+                            campaign_start_time     = pygame.time.get_ticks()
+                            shift_select_items      = build_shift_select_items(shift_grades)
+                            shift_select_idx        = max(shift_grades.keys(), default=0)
+                            game_state              = GameState.SHIFT_SELECT
                         elif idx == 4: # GRID DESIGNER
                             from display.designer import GridDesigner
                             _designer  = GridDesigner(display_surf)
@@ -767,10 +791,6 @@ def main() -> None:
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         difficulty_map = {0: 'trainee', 1: 'standard', 2: 'dispatcher'}
                         difficulty     = difficulty_map.get(menu_selected, 'standard')
-                        # TESTING: campaign entry temporarily wired to Shift 10
-                        # ("The Bad Night") instead of Shift 1 for playtest.
-                        # Revert to shift = 1 once Shift 10 testing is done.
-                        shift = 10
                         # sim/grid deliberately NOT built here — for a
                         # USES_PLANNING shift the real dispatch only exists
                         # once the Phase 1 plan is confirmed, so building
@@ -784,12 +804,21 @@ def main() -> None:
                         # agnostic for menu/text screens) carries through
                         # unchanged.
                         campaign_start_time = pygame.time.get_ticks()
-                        # SKIP: campaign intro sequence disabled for now — go
-                        # straight to shift 1's briefing (see CAMPAIGN_INTRO
-                        # for the intro-screens flow this bypasses).
-                        briefing_lines = build_briefing_lines(shift)
-                        briefing_chars = 0.0
-                        game_state = GameState.BRIEFING
+                        # New campaign begins here — fresh budget, no prior
+                        # shift grades. A loaded campaign (MAIN_MENU's
+                        # CONTINUE) skips DIFFICULTY_SELECT entirely and
+                        # goes straight to SHIFT_SELECT, so this branch only
+                        # ever runs for a genuinely new campaign.
+                        shift_grades             = {}
+                        campaign_budget          = CAMPAIGN_STARTING_BUDGET_EUR
+                        campaign_start_time_iso  = datetime.datetime.now().isoformat()
+                        # Campaign intro (6 typewriter screens, see
+                        # build_campaign_intro_screens()) plays first; its own
+                        # completion handler sets shift = 1 and routes to
+                        # BRIEFING once the player has clicked through it.
+                        intro_screen_idx = 0
+                        intro_chars      = 0.0
+                        game_state = GameState.CAMPAIGN_INTRO
                     elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MODE_SELECT
                         menu_selected = 0
@@ -876,7 +905,10 @@ def main() -> None:
                     else:
                         if load_shift_config(shift).get('uses_planning'):
                             from gameplay.phase1 import build_planning_model
-                            _planning_model = build_planning_model(shift, difficulty=difficulty)
+                            _planning_model = build_planning_model(
+                                shift, starting_budget_eur=campaign_budget,
+                                difficulty=difficulty,
+                            )
                             game_state = GameState.PLANNING
                         else:
                             sim, grid, renderer = _make_sim_and_renderer(
@@ -892,8 +924,8 @@ def main() -> None:
 
         # ── PLANNING (Phase 1 — pre-shift unit scheduling) ──────────────────────
         # Entered from BRIEFING when the shift's config declares
-        # uses_planning (shift_NN.py's USES_PLANNING = True) — currently
-        # Shift 10. Other shifts skip straight to PLAYING as before.
+        # uses_planning (shift_NN.py's USES_PLANNING = True). Other shifts
+        # skip straight to PLAYING as before.
         elif game_state == GameState.PLANNING:
             if _planning_screen is None:
                 from display.planning import PlanningScreen
@@ -901,9 +933,16 @@ def main() -> None:
 
             if _planning_screen.on_plan_complete is None:
                 def _on_plan_complete(model) -> None:
-                    nonlocal game_state, sim, grid, renderer, state, sim_accum, speed, _planning_screen
+                    nonlocal game_state, sim, grid, renderer, state, sim_accum, speed, _planning_screen, campaign_budget
                     from gameplay.phase1 import write_schedule_json
                     write_schedule_json(model, shift)
+                    # Confirmed plan's actual EUR spend comes out of the
+                    # persistent campaign budget now, not just the in-screen
+                    # display — carried forward at the next debrief's save
+                    # (see the DEBRIEF handler below).
+                    campaign_budget = max(
+                        CAMPAIGN_BUDGET_FLOOR_EUR, campaign_budget - model.total_cost()
+                    )
                     sim, grid, renderer = _make_sim_and_renderer(
                         display_surf, shift=shift, difficulty=difficulty,
                         use_planned_schedule=True,
@@ -1241,11 +1280,28 @@ def main() -> None:
                         # Capture grade from current sim state. Same rubric the
                         # debrief screen just displayed — one implementation,
                         # in gameplay/scoring.py.
-                        shift_grades[shift] = grade_shift(
+                        this_grade = grade_shift(
                             sim.get_state(),
                             failed=sim.is_shift_failed(),
                             failed_objective=sim.get_failed_objective(),
                         )['grade']
+                        shift_grades[shift] = this_grade
+
+                        # Persistent campaign budget: grade adds a bonus,
+                        # or for FAILED a flat penalty (see constants.py's
+                        # GRADE_TO_BUDGET_DELTA_EUR) — floored so even a
+                        # failed shift can never make a later shift's plan
+                        # mechanically impossible.
+                        campaign_budget = max(
+                            CAMPAIGN_BUDGET_FLOOR_EUR,
+                            campaign_budget + GRADE_TO_BUDGET_DELTA_EUR.get(this_grade, 0.0),
+                        )
+                        save_campaign(CampaignSaveState(
+                            difficulty=difficulty,
+                            shift_grades=dict(shift_grades),
+                            budget_eur=campaign_budget,
+                            campaign_start_time_iso=campaign_start_time_iso,
+                        ))
 
                         if shift < 10:
                             shift_select_items = build_shift_select_items(shift_grades)

@@ -83,11 +83,13 @@ def build_shift_select_items(completed_grades: dict) -> list:
     return items
 
 
-def build_main_menu_items() -> list:
-    """Returns list of (label, enabled) for the main menu."""
+def build_main_menu_items(has_save: bool = False) -> list:
+    """Returns list of (label, enabled) for the main menu. CONTINUE is
+    enabled only when a campaign save exists (data/campaign_save.py's
+    has_campaign_save())."""
     return [
         ('NEW GAME',      True),
-        ('CONTINUE',      False),   # disabled — no save system yet
+        ('CONTINUE',      has_save),
         ('GRID DESIGNER', True),
         ('TEST GRID',     True),
         ('SHIFT BUILDER', True),

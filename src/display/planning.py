@@ -25,7 +25,7 @@ import pygame
 import pygame.freetype
 
 from config.palette import COL_BACKGROUND, COL_DESIGNER_STATUS_INFO, COL_TEXT_CRIT
-from gameplay.phase1 import PlanningModel
+from gameplay.phase1 import PlanningModel, handoff_imbalance
 from config.constants import (
     NATIVE_WIDTH, NATIVE_HEIGHT,
     FONT_PATH_MONO_REGULAR,
@@ -274,6 +274,31 @@ class PlanningScreen:
             self._pending_confirm = False
             self._set_status(
                 f'Cannot confirm: plan is EUR {-remaining:,.0f} over budget',
+                COL_TEXT_CRIT)
+            return
+
+        # Start-hour handoff check — a plan whose generation/load diff at
+        # start_hour exceeds what the AGC-eligible fleet can absorb on its
+        # own would hand off to PLAYING already saturated (or still
+        # unbalanced) — see gameplay.phase1.handoff_imbalance() and
+        # main.py's _apply_handoff_stability_nudge(), which silently
+        # absorbs any SMALLER diff at handoff. This is the case that
+        # nudge can't fix, so it's caught here instead, before it's ever
+        # written to disk.
+        start_hour = self._model.start_hour
+        imbalance = handoff_imbalance(
+            unit_specs=self._model.unit_specs,
+            initial_schedule=self._model.to_initial_schedule(),
+            agc_eligible_types=self._model.agc_eligible_types,
+            load_mw=(self._model.load_forecast.get(start_hour, 0.0)
+                     + self._model.renewable_total(start_hour)),
+        )
+        if not imbalance['correctable']:
+            self._pending_confirm = False
+            self._set_status(
+                f'Cannot confirm: {start_hour:.0f}:00 imbalance '
+                f'({imbalance["diff_mw"]:+.0f} MW) exceeds available AGC '
+                f'headroom ({imbalance["headroom_mw"]:.0f} MW) — adjust the plan',
                 COL_TEXT_CRIT)
             return
 

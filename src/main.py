@@ -130,8 +130,15 @@ def _menu_title_lines() -> list:
 
 # ─── Text screen content builders ────────────────────────────────────────────
 
-def build_briefing_lines(shift_number: int) -> list:
-    """Return list of (text, colour) pairs for the pre-shift briefing screen."""
+def build_briefing_lines(shift_number: int, campaign_budget: float | None = None) -> list:
+    """Return list of (text, colour) pairs for the pre-shift briefing screen.
+
+    campaign_budget: the player's current persistent campaign balance (EUR).
+    Shown as a plain balance only — how a shift's grade moves it is debrief
+    content (see build_debrief_lines()), not briefing content. None (the
+    pre-campaign-start placeholder briefing built at module init, before a
+    real campaign_budget exists) omits the line entirely.
+    """
     H = COL_TEXT_SCREEN_HDR
     B = COL_TEXT_BODY
     cfg = load_shift_config(shift_number)
@@ -156,6 +163,13 @@ def build_briefing_lines(shift_number: int) -> list:
         ('', B),
         (_SEP, H),
         (f' DURATION: {int(cfg["duration_hours"]):02d}H 00M    PEAK FORECAST: {cfg["peak_demand_mw"]:.0f} MW', B),
+    ]
+    if campaign_budget is not None:
+        lines += [
+            (_SEP, H),
+            (f' CAMPAIGN BUDGET: €{campaign_budget:,.0f}', H),
+        ]
+    lines += [
         (_SEP, H),
     ]
     return lines
@@ -217,7 +231,24 @@ def build_debrief_lines(shift_number: int, state, failed: bool = False,
         (f'   Total active: {alarms}', B),
         ('', B),
         (_SEP, H),
+        (' SCORING BREAKDOWN:', H),
+    ]
+    axis_labels = {
+        'frequency': 'Frequency', 'loading': 'Line loading', 'voltage': 'Voltage',
+        'trips':     'Unit trips', 'shedding': 'Load shedding',
+    }
+    for key, label in axis_labels.items():
+        lines.append((f'   {label:<14} {result["axes"][key]}', B))
+    lines += [
+        ('', B),
+        (f'   {result["reason"]}', B),
+        (_SEP, H),
         (f' ASSESSMENT: {assessment}', H),
+    ]
+    budget_delta = GRADE_TO_BUDGET_DELTA_EUR.get(result['grade'], 0.0)
+    sign = '+' if budget_delta >= 0 else '-'
+    lines += [
+        (f' CAMPAIGN BUDGET: {sign}€{abs(budget_delta):,.0f}', H),
         (_SEP, H),
     ]
     return lines
@@ -236,6 +267,66 @@ def _to_native(
     return (
         max(0, min(letterbox.width  - 1, nx)),
         max(0, min(letterbox.height - 1, ny)),
+    )
+
+
+def _apply_handoff_stability_nudge(
+    initial_schedule: dict,
+    grid,
+    cfg: dict,
+) -> dict:
+    """
+    Silently correct initial_schedule's start_hour generation/load diff,
+    within the AGC-eligible online fleet's own headroom, before it is
+    passed to GridSimulation — see gameplay.phase1.handoff_imbalance()/
+    apply_handoff_nudge() for the mechanics and _make_sim_and_renderer()'s
+    call site for why this exists. Computes the real start_hour load the
+    same deterministic way build_planning_model() does (DemandModel has no
+    noise, so this exactly matches what GridSimulation will compute at
+    tick 0 for the same hour) plus the deterministic renewable forecast at
+    that hour. Returns initial_schedule unchanged if the diff is within
+    HANDOFF_NUDGE_TOLERANCE_MW or exceeds the fleet's correctable headroom.
+    """
+    from gameplay.phase1 import handoff_imbalance, apply_handoff_nudge
+    from data.profiles import get_substation_demand_specs
+    from simulation.demand import DemandModel
+    from simulation.renewables import RenewablesModel
+    from config.constants import HANDOFF_NUDGE_TOLERANCE_MW
+
+    start_hour = cfg['start_hour']
+    renewables = RenewablesModel(grid)
+    renewable_forecast = renewables.forecast_by_hour(start_hour, start_hour, step=1.0)
+    renewable_mw = sum(
+        by_hour.get(start_hour, 0.0) for by_hour in renewable_forecast.values()
+    )
+
+    substation_specs = get_substation_demand_specs(
+        cfg['substation_load_mw'], None
+    )
+    demand = DemandModel(cfg['peak_demand_mw'], substation_specs)
+    # total_generation_mw passed here matches what FleetModel.total_generation_mw()
+    # will report at tick 0 (dispatchable schedule + renewables), so the
+    # losses estimate (LOSSES_FRACTION * generation) matches what
+    # GridSimulation itself will compute for the same hour.
+    demand.update(start_hour, sum(initial_schedule.values()) + renewable_mw)
+    load_mw = demand.total_load_mw - renewable_mw
+
+    dispatchable_units = [
+        u for u in grid.get_active_units() if u.unit_type not in ('WIND', 'SOLAR')
+    ]
+    imbalance = handoff_imbalance(
+        unit_specs=dispatchable_units,
+        initial_schedule=initial_schedule,
+        agc_eligible_types=_AGC_ELIGIBLE_TYPES_DEFAULT,
+        load_mw=load_mw,
+    )
+    if not imbalance['correctable']:
+        return initial_schedule
+    if abs(imbalance['diff_mw']) <= HANDOFF_NUDGE_TOLERANCE_MW:
+        return initial_schedule
+    return apply_handoff_nudge(
+        initial_schedule, dispatchable_units, _AGC_ELIGIBLE_TYPES_DEFAULT,
+        imbalance['diff_mw'],
     )
 
 
@@ -283,6 +374,25 @@ def _make_sim_and_renderer(
     # load_shift_config() already derives substation_load_mw from the grid's
     # own per-bus peak_load_mw (GRID_SOURCE shifts) or from SUBSTATION_LOAD_MW.
     substation_load_mw = cfg['substation_load_mw'] or None
+
+    # Handoff-stability nudge — a confirmed plan (hand-edited after
+    # auto_schedule(), or a Shift 1-4 static INITIAL_SCHEDULE that was
+    # never balance-checked at all) can still hand off a nonzero
+    # generation/load diff at start_hour. FrequencyModel always starts at
+    # exactly F_NOMINAL regardless of that diff, and every scheduled unit
+    # starts instantly at its initial_schedule MW (UnitModel.__init__), so
+    # an uncorrected diff becomes a live swing-equation input from the
+    # first unfrozen tick. Silently absorb it here, within the AGC-eligible
+    # fleet's own real headroom, before GridSimulation is ever constructed
+    # — units then start already at their corrected value with zero
+    # ramp-in gap. A diff beyond that headroom is left uncorrected (nothing
+    # safe to apply): for USES_PLANNING shifts this case is already caught
+    # earlier at plan-confirm time (see display/planning.py's
+    # _confirm_plan()); for Shifts 1-4 it means the static
+    # INITIAL_SCHEDULE itself needs a developer fix, not a runtime patch.
+    initial_schedule = _apply_handoff_stability_nudge(
+        initial_schedule, grid, cfg,
+    )
 
     # Substation types (and the reactive devices they seed) come from the
     # grid itself — every DesignerBus always carries an explicit authored
@@ -428,8 +538,12 @@ def _make_campaign_shift_test(
 def _make_shift_test(
     display_surf: pygame.Surface,
     shift_name: str,
+    difficulty: str = 'standard',
 ):
-    """Build sim + renderer for an authored Shift Builder JSON test session."""
+    """Build sim + renderer for an authored Shift Builder JSON test session.
+    difficulty defaults to 'standard' for the Shift Builder's own dev-tool
+    test-request call site (no difficulty concept there); Continuous mode's
+    SHIFT_SELECT_JSON passes the player's actual DIFFICULTY_SELECT choice."""
     from data.designer_io import load_designer_grid_named
     from simulation.designer_grid import DesignerGrid
     from gameplay.shifts.loader import load_shift_config_from_json
@@ -448,7 +562,7 @@ def _make_shift_test(
     sim = GridSimulation(
         grid=designer_grid,
         shift_number=0,
-        difficulty='standard',
+        difficulty=difficulty,
         initial_schedule=initial_schedule,
         maintenance_units=maintenance_units,
         maintenance_lines=set(cfg['maintenance_lines']),
@@ -585,7 +699,7 @@ def main() -> None:
     difficulty       = 'standard'
 
     # ── Briefing / debrief state ─────────────────────────────────────────────
-    briefing_lines = build_briefing_lines(shift)
+    briefing_lines = build_briefing_lines(shift, campaign_budget)
     briefing_chars = 0.0
     debrief_lines: list = []
     debrief_chars  = 0.0
@@ -758,14 +872,29 @@ def main() -> None:
                         menu_selected = _next_enabled(mode_select_items, menu_selected, +1)
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         if menu_selected == 0:   # CAMPAIGN
-                            game_state    = GameState.DIFFICULTY_SELECT
-                            menu_selected = 1    # default OPERATOR
+                            # Campaign mode has no difficulty selector — it
+                            # always plays at 'standard'. Difficulty (and any
+                            # other per-session configuration) is a Continuous
+                            # mode concept only; see DIFFICULTY_SELECT below.
+                            difficulty           = 'standard'
+                            campaign_start_time  = pygame.time.get_ticks()
+                            # New campaign begins here — fresh budget, no
+                            # prior shift grades. A loaded campaign (MAIN_MENU's
+                            # CONTINUE) skips straight to SHIFT_SELECT, so this
+                            # branch only ever runs for a genuinely new campaign.
+                            shift_grades             = {}
+                            campaign_budget          = CAMPAIGN_STARTING_BUDGET_EUR
+                            campaign_start_time_iso  = datetime.datetime.now().isoformat()
+                            # Campaign intro (6 typewriter screens, see
+                            # build_campaign_intro_screens()) plays first; its
+                            # own completion handler sets shift = 1 and routes
+                            # to BRIEFING once the player has clicked through it.
+                            intro_screen_idx = 0
+                            intro_chars      = 0.0
+                            game_state = GameState.CAMPAIGN_INTRO
                         elif menu_selected == 1: # CONTINUOUS
-                            from data.shift_io import list_shift_names
-                            from display.menus import build_shift_json_select_items
-                            _shift_json_items = build_shift_json_select_items(list_shift_names())
-                            menu_selected     = 0
-                            game_state        = GameState.SHIFT_SELECT_JSON
+                            menu_selected = 1    # default OPERATOR
+                            game_state    = GameState.DIFFICULTY_SELECT
                     elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MAIN_MENU
                         menu_selected = 0
@@ -777,7 +906,7 @@ def main() -> None:
                 selected_idx=menu_selected,
             )
 
-        # ── DIFFICULTY SELECT ─────────────────────────────────────────────────
+        # ── DIFFICULTY SELECT (Continuous mode only) ────────────────────────────
         elif game_state == GameState.DIFFICULTY_SELECT:
             diff_as_items = [(label, True) for label, _ in difficulty_items]
             for event in pygame.event.get():
@@ -791,34 +920,11 @@ def main() -> None:
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         difficulty_map = {0: 'trainee', 1: 'standard', 2: 'dispatcher'}
                         difficulty     = difficulty_map.get(menu_selected, 'standard')
-                        # sim/grid deliberately NOT built here — for a
-                        # USES_PLANNING shift the real dispatch only exists
-                        # once the Phase 1 plan is confirmed, so building
-                        # from the shift's default INITIAL_SCHEDULE here
-                        # would be thrown away unused the moment BRIEFING
-                        # routes to PLANNING. Built once, for real, in
-                        # BRIEFING's completion handler below (either
-                        # directly, for non-planning shifts, or via
-                        # _on_plan_complete after Phase 1 confirms). The
-                        # existing renderer (built at startup, shift-
-                        # agnostic for menu/text screens) carries through
-                        # unchanged.
-                        campaign_start_time = pygame.time.get_ticks()
-                        # New campaign begins here — fresh budget, no prior
-                        # shift grades. A loaded campaign (MAIN_MENU's
-                        # CONTINUE) skips DIFFICULTY_SELECT entirely and
-                        # goes straight to SHIFT_SELECT, so this branch only
-                        # ever runs for a genuinely new campaign.
-                        shift_grades             = {}
-                        campaign_budget          = CAMPAIGN_STARTING_BUDGET_EUR
-                        campaign_start_time_iso  = datetime.datetime.now().isoformat()
-                        # Campaign intro (6 typewriter screens, see
-                        # build_campaign_intro_screens()) plays first; its own
-                        # completion handler sets shift = 1 and routes to
-                        # BRIEFING once the player has clicked through it.
-                        intro_screen_idx = 0
-                        intro_chars      = 0.0
-                        game_state = GameState.CAMPAIGN_INTRO
+                        from data.shift_io import list_shift_names
+                        from display.menus import build_shift_json_select_items
+                        _shift_json_items = build_shift_json_select_items(list_shift_names())
+                        menu_selected     = 0
+                        game_state        = GameState.SHIFT_SELECT_JSON
                     elif event.key == pygame.K_ESCAPE:
                         game_state    = GameState.MODE_SELECT
                         menu_selected = 0
@@ -850,7 +956,7 @@ def main() -> None:
                             shift_name = _shift_json_items[menu_selected][0]
                             try:
                                 _designer_test_sim, _designer_test_grid, _designer_test_renderer = \
-                                    _make_shift_test(display_surf, shift_name)
+                                    _make_shift_test(display_surf, shift_name, difficulty=difficulty)
                                 sim_accum             = 0.0
                                 speed                 = SPEED_NORMAL
                                 _designer_test_origin = GameState.SHIFT_SELECT_JSON
@@ -858,8 +964,8 @@ def main() -> None:
                             except Exception:
                                 pass   # stay on list
                     elif event.key == pygame.K_ESCAPE:
-                        game_state    = GameState.MODE_SELECT
-                        menu_selected = 1   # keep CONTINUOUS highlighted
+                        game_state    = GameState.DIFFICULTY_SELECT
+                        menu_selected = 1   # default OPERATOR
 
             renderer.tick_menu_screen(
                 dt,
@@ -885,7 +991,7 @@ def main() -> None:
                         if intro_screen_idx >= len(intro_screens):
                             # All intro screens done — start shift 1
                             shift      = 1
-                            briefing_lines = build_briefing_lines(shift)
+                            briefing_lines = build_briefing_lines(shift, campaign_budget)
                             briefing_chars = 0.0
                             game_state = GameState.BRIEFING
 
@@ -1333,7 +1439,7 @@ def main() -> None:
                         sim, grid, renderer = _make_sim_and_renderer(display_surf, shift, difficulty)
                         state          = sim.get_state()
                         sim_accum      = 0.0
-                        briefing_lines = build_briefing_lines(shift)
+                        briefing_lines = build_briefing_lines(shift, campaign_budget)
                         briefing_chars = 0.0
                         game_state     = GameState.BRIEFING
                     elif event.key == pygame.K_ESCAPE:

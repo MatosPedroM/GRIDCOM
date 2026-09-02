@@ -977,6 +977,16 @@ MIN_DOWN_HOURS_SOLAR:      float = 0.0
 # uncovered just to manufacture regulating headroom.
 PLANNING_AGC_RESERVE_MW: float = 50.0
 
+# Deadband (MW) below which the handoff-stability nudge (see
+# gameplay.phase1.handoff_imbalance() / main.py's _make_sim_and_renderer())
+# does not bother correcting a confirmed schedule's start-hour generation/
+# load diff at all — small enough that it's floating-point/rounding noise,
+# not a real imbalance worth touching. A schedule already balanced by
+# auto_schedule() (0 MW diff by construction) is always well under this and
+# so is left completely untouched. PLACEHOLDER pending playtest, same
+# status as PLANNING_AGC_RESERVE_MW originally was.
+HANDOFF_NUDGE_TOLERANCE_MW: float = 5.0
+
 # Previous-day boundary state: the auto-scheduler's commitment/ramp logic
 # for hour 00:00 needs a "previous hour" to compare against. Since there
 # is no actual prior day, every non-maintenance dispatchable unit is
@@ -1025,13 +1035,23 @@ VARIABLE_COST_EUR_PER_MWH_BY_TYPE: dict = {
     'SOLAR':      0.0,
 }
 
-# Flat surcharge (EUR per online hour) for any unit the player has enrolled
-# in AGC (see PlanningModel.agc_enrolled) — the cost of keeping that unit's
-# headroom available for automatic regulation, independent of its fuel cost.
-AGC_AVAILABILITY_COST_EUR_PER_HOUR: float = 150.0
+# EUR per MW of an AGC-enrolled unit's own regulation band (tech_max -
+# tech_min), per hour it is online and enrolled — the cost of holding that
+# unit's range ready for automatic regulation. Charged against the unit's
+# NOMINAL band (fixed per unit_type), not its actual remaining up/down
+# headroom that hour — for a single online unit these are the same number
+# regardless of dispatch position; see PlanningModel.hourly_cost(). Replaces
+# the old flat AGC_AVAILABILITY_COST_EUR_PER_HOUR surcharge, which didn't
+# scale with how much regulation capability was actually being paid for.
+#
+# Sized relative to VARIABLE_COST_EUR_PER_MWH_BY_TYPE (CCGT 55.0, HYDRO 5.0
+# EUR/MWh) so the regulation-band charge is a real but not dominant line
+# item. PLACEHOLDER pending playtest tuning, same status as
+# CAMPAIGN_STARTING_BUDGET_EUR.
+AGC_COST_EUR_PER_MW_BAND_HOUR: float = 10.0
 
 # Difficulty cost multiplier — scales STARTUP_COST_EUR_BY_TYPE,
-# VARIABLE_COST_EUR_PER_MWH_BY_TYPE and AGC_AVAILABILITY_COST_EUR_PER_HOUR
+# VARIABLE_COST_EUR_PER_MWH_BY_TYPE and AGC_COST_EUR_PER_MW_BAND_HOUR
 # uniformly, same trainee/standard/dispatcher keys as DIFFICULTY_MULT
 # (above). Only the COSTS scale — CAMPAIGN_STARTING_BUDGET_EUR itself does
 # not change with difficulty — so a lower multiplier on trainee stretches
@@ -1056,7 +1076,7 @@ DIFFICULTY_COST_MULT: dict[str, float] = {
 # retuning together after real playtesting, the same way AGC_KI and
 # other constants in this file were tuned after the fact rather than
 # calculated up front.
-CAMPAIGN_STARTING_BUDGET_EUR: float = 500_000.0
+CAMPAIGN_STARTING_BUDGET_EUR: float = 1_000_000.0
 
 # EUR added to (or, for FAILED, subtracted from) the persistent campaign
 # budget at each shift's debrief, keyed by grade_shift()'s overall grade
@@ -1067,11 +1087,11 @@ CAMPAIGN_STARTING_BUDGET_EUR: float = 500_000.0
 # uniformly), so a FAILED shift can hurt but Shift 10 always stays
 # technically plannable. PLACEHOLDER values.
 GRADE_TO_BUDGET_DELTA_EUR: dict[str, float] = {
-    'EXCELLENT':     40000.0,
-    'SATISFACTORY':  20000.0,
-    'MARGINAL':       5000.0,
-    'UNSATISFACTORY':    0.0,
-    'FAILED':       -15000.0,
+    'EXCELLENT':    1_000_000.0,
+    'SATISFACTORY':   500_000.0,
+    'MARGINAL':       100_000.0,
+    'UNSATISFACTORY':       0.0,
+    'FAILED':        -700_000.0,
 }
 
 # The persistent campaign budget can never drop below this floor, however
@@ -1081,7 +1101,7 @@ GRADE_TO_BUDGET_DELTA_EUR: dict[str, float] = {
 # player's in-the-moment skill by that point. PLACEHOLDER — a rubber-band
 # catch-up curve could replace this later without changing the
 # surrounding architecture.
-CAMPAIGN_BUDGET_FLOOR_EUR: float = 50_000.0
+CAMPAIGN_BUDGET_FLOOR_EUR: float = 0.0
 
 # ─────────────────────────────────────────────
 # SHIFT SCORING (gameplay/scoring.py)

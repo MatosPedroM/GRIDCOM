@@ -48,7 +48,7 @@ from config.constants import (
     PLANNING_AGC_RESERVE_MW,
     PLANNING_STEP_HOURS,
     STARTUP_COST_EUR_BY_TYPE, VARIABLE_COST_EUR_PER_MWH_BY_TYPE,
-    AGC_AVAILABILITY_COST_EUR_PER_HOUR, CAMPAIGN_STARTING_BUDGET_EUR,
+    AGC_COST_EUR_PER_MW_BAND_HOUR, CAMPAIGN_STARTING_BUDGET_EUR,
     DIFFICULTY_COST_MULT,
 )
 from simulation.demand import DemandModel
@@ -104,13 +104,52 @@ _PREV_DAY_H24_FRAC: dict[str, float] = {
     'HYDRO_PUMP': PLANNING_PREV_DAY_FRAC_HYDRO_PUMP,
 }
 
-# Auto-scheduler fill order (player-specified): wind/solar (non-scheduled,
-# forecast-driven, not a commitment decision) -> hydro ROR -> nuclear ->
-# coal -> CCGT -> hydro (conventional/cascade). Pumped storage (HYDRO_PUMP,
-# fastest-ramping, no min-up/down) fills last as final fast reserve.
-_AUTO_SCHEDULE_FILL_ORDER: tuple[str, ...] = (
+# All dispatchable technologies auto_schedule() ever commits (wind/solar are
+# forecast-only, never a commitment decision — see _RENEWABLE_TYPES). Order
+# is irrelevant here — auto_schedule() ranks technologies dynamically every
+# hour by _effective_marginal_cost() (below) rather than walking a fixed
+# priority order.
+_AUTO_SCHEDULE_TECH_TYPES: tuple[str, ...] = (
     'HYDRO_ROR', 'NUCLEAR', 'COAL', 'CCGT', 'HYDRO', 'HYDRO_PUMP',
 )
+
+# Trim-back / force-start shedding order: most flexible (free-toggle,
+# fastest-ramping) technology first, so trimming an overshoot or clearing
+# room for a force-started AGC unit prefers to touch the easiest-to-reverse
+# generation first. This is a fixed, cost-independent ordering — trimming is
+# about flexibility, not marginal cost — kept separate from the dynamic
+# per-hour commitment ranking in _effective_marginal_cost(). Equivalent to
+# the old _AUTO_SCHEDULE_FILL_ORDER reversed.
+_AUTO_SCHEDULE_TRIM_ORDER: tuple[str, ...] = (
+    'HYDRO_PUMP', 'HYDRO', 'CCGT', 'COAL', 'NUCLEAR', 'HYDRO_ROR',
+)
+
+
+def _effective_marginal_cost(
+    tech: str, already_online: bool, min_up_hours: float, tech_min_mw: float,
+) -> float:
+    """Ranking-only EUR/MWh estimate used to order technologies within a
+    single auto_schedule() hour — never billed this way (hourly_cost() is
+    the exact accounting). A technology already online this hour ranks at
+    its bare running cost, since committing more of it incurs no new
+    startup cost. A technology that would need a fresh start has its
+    startup cost amortized over its own minimum committed run length
+    (min_up_hours) at its own technical-minimum output (tech_min_mw) — the
+    conservative/worst-case run size — added as a penalty on top of the
+    running cost. This lets an expensive-to-start-but-cheap-to-run
+    technology (nuclear: high STARTUP_COST_EUR_BY_TYPE, low
+    VARIABLE_COST_EUR_PER_MWH_BY_TYPE) correctly outrank a
+    cheap-to-start-but-expensive-to-run one (CCGT) once the startup cost is
+    spread over the long run its own min_up_hours already commits it to,
+    without needing an iterative solver."""
+    running_cost = VARIABLE_COST_EUR_PER_MWH_BY_TYPE.get(tech, 0.0)
+    if already_online:
+        return running_cost
+    startup_cost = STARTUP_COST_EUR_BY_TYPE.get(tech, 0.0)
+    if startup_cost <= 0.0 or tech_min_mw <= 0.0:
+        return running_cost
+    run_hours = max(1.0, min_up_hours)
+    return running_cost + startup_cost / (run_hours * tech_min_mw)
 
 _PLANNING_HOURS: tuple[float, ...] = tuple(
     round(h * PLANNING_STEP_HOURS, 10) for h in range(int(24 / PLANNING_STEP_HOURS))
@@ -329,17 +368,28 @@ class PlanningModel:
     # ─────── economics ────────────────────────────────────────────────────
 
     def hourly_cost(self, hour: float) -> float:
-        """Variable (fuel) cost + AGC-availability surcharge + startup cost
+        """Variable (fuel) cost + AGC regulation-band cost + startup cost
         for this hour, summed across all online dispatchable units. Costs
         are looked up per unit_type (STARTUP_COST_EUR_BY_TYPE /
-        VARIABLE_COST_EUR_PER_MWH_BY_TYPE / AGC_AVAILABILITY_COST_EUR_PER_HOUR,
+        VARIABLE_COST_EUR_PER_MWH_BY_TYPE / AGC_COST_EUR_PER_MW_BAND_HOUR,
         constants.py) and scaled uniformly by DIFFICULTY_COST_MULT[difficulty]
         — cost is a per-technology property, not a per-fleet-unit one. The
-        fuel and AGC-surcharge terms are rate-based (EUR/MWh, EUR/hour) so
+        fuel and AGC-band terms are rate-based (EUR/MWh, EUR/MW/hour) so
         both are also scaled by PLANNING_STEP_HOURS to reflect the fraction
         of an hour each schedule column actually represents — a no-op at
         the default 1.0 (hourly) step, but keeps total_cost() correct if
         the step is ever tuned finer again.
+
+        AGC term uses the unit's own NOMINAL regulation band (tech_max(unit)
+        - tech_min(unit)) — a fixed per-unit-type quantity — not its actual
+        remaining up/down headroom at its current scheduled MW this hour.
+        For a single unit dispatched anywhere inside its own [tech_min,
+        tech_max] these are algebraically the same number (up-headroom +
+        down-headroom == tech_max - tech_min regardless of where within the
+        range the unit sits), so nominal band is simply the unconditional,
+        cheaper-to-compute form of the same quantity. Do not swap this for
+        reg_band_up(hour)+reg_band_down(hour) thinking it's a different
+        number for one unit; it is not.
 
         Startup cost is a one-time per-event charge, not a rate, so it is
         NOT scaled by PLANNING_STEP_HOURS — it fires once on a rising edge
@@ -359,7 +409,8 @@ class PlanningModel:
             total += mw * var_cost * cost_mult * PLANNING_STEP_HOURS
 
             if unit.unit_type in self.agc_eligible_types and self.is_agc_enrolled(label):
-                total += AGC_AVAILABILITY_COST_EUR_PER_HOUR * cost_mult * PLANNING_STEP_HOURS
+                band = self.tech_max(unit) - self.tech_min(unit)
+                total += band * AGC_COST_EUR_PER_MW_BAND_HOUR * cost_mult * PLANNING_STEP_HOURS
 
             if hour != h0 and not self.is_online(label, hour - PLANNING_STEP_HOURS):
                 total += STARTUP_COST_EUR_BY_TYPE.get(unit.unit_type, 0.0) * cost_mult
@@ -384,30 +435,42 @@ class PlanningModel:
         the result afterward exactly as with any other schedule.
 
         All 24 hours (00:00-23:00) are committed and filled by the same
-        per-hour logic, walking technology groups in
-        _AUTO_SCHEDULE_FILL_ORDER within each hour so faster/peaking
-        technologies only cover what slower/baseload ones didn't. Since
-        there is no actual previous day, 00:00's own commitment/ramp
-        decision is computed against a synthetic, calculation-only
-        boundary state: every non-maintenance dispatchable unit is
-        assumed to have been ONLINE at PLANNING_PREV_DAY_FRAC_<TYPE> *
-        rated_mw throughout the previous day's final hour (H24 of D-1),
-        already having satisfied its own min-up/min-down window. This
-        boundary state is never written to schedule/online and never
-        displayed — 00:00 is a fully computed, ordinary hour like any
-        other.
+        per-hour logic. Within each hour, technologies are visited in a
+        dynamic cost-ranked order (cheapest effective marginal EUR/MWh
+        first — see _effective_marginal_cost()) rather than a fixed
+        priority order, so faster/peaking technologies only cover what
+        cheaper ones didn't, and a technology with a high startup cost but
+        low running cost (nuclear) is preferred over one with a low
+        startup cost but high running cost (CCGT) once its startup is
+        amortized over its own committed minimum run. Since there is no
+        actual previous day, 00:00's own commitment/ramp decision is
+        computed against a synthetic, calculation-only boundary state:
+        every non-maintenance dispatchable unit is assumed to have been
+        ONLINE at PLANNING_PREV_DAY_FRAC_<TYPE> * rated_mw throughout the
+        previous day's final hour (H24 of D-1), already having satisfied
+        its own min-up/min-down window. This boundary state is never
+        written to schedule/online and never displayed — 00:00 is a fully
+        computed, ordinary hour like any other.
 
-        Each hour, after the fill-order commitment pass, three more passes
-        run to reach exactly 0 MW diff and leave AGC (CCGT/HYDRO) with
-        real regulating room, without disturbing any commitment decision
-        above (min-up/min-down, ramp rate):
+        An AGC-eligible, enrolled unit being committed to cover load
+        prefers to land at its own regulation-band midpoint
+        (tech_min + (tech_max-tech_min)/2) rather than merely the bare
+        shortfall — maximizing its available up/down regulation range —
+        whenever that midpoint alone still covers the remaining shortfall;
+        load coverage always wins when it doesn't (see the `desired`
+        computation below).
 
-          1. Trim-back — a baseload/CCGT unit that stays committed because
-             shedding it would need the shortfall to drop below its own
-             -tech_min (not just <=0) can still overshoot a small residual
-             shortfall once online. Walks technologies in *reverse* fill
-             order (most flexible first) pulling already-online units down
-             toward their own tech_min to absorb any such overshoot.
+        Each hour, after the commitment pass, three more passes run to
+        reach exactly 0 MW diff and leave AGC (CCGT/HYDRO) with real
+        regulating room, without disturbing any commitment decision above
+        (min-up/min-down, ramp rate):
+
+          1. Trim-back — a "sticky" baseload/CCGT unit kept online, or an
+             AGC unit pushed toward its own midpoint above, can overshoot
+             a small residual shortfall (or shortfall <= 0) once running.
+             Walks _AUTO_SCHEDULE_TRIM_ORDER (most flexible technology
+             first) pulling already-online units down toward their own
+             tech_min to absorb any such overshoot.
           2. Force-start — if the hour's online, AGC-enrolled CCGT/HYDRO
              fleet doesn't have at least 2*PLANNING_AGC_RESERVE_MW of
              combined range (tech_max-tech_min) to work with, starts the
@@ -423,7 +486,10 @@ class PlanningModel:
              wherever the fleet has the range to support it. Load coverage
              always wins if the two ever conflict — this pass only ever
              reallocates MW that's already scheduled, never adds or removes
-             any.
+             any. Under the nominal-band AGC billing model (hourly_cost()),
+             this pass never changes total_cost() — only regulation
+             quality — since a unit's AGC cost depends only on being
+             online+enrolled, not on where within its range it sits.
         """
         units_by_type: dict[str, list[GenerationUnit]] = {}
         for unit in self.unit_specs:
@@ -451,7 +517,7 @@ class PlanningModel:
             last_change_hour[label] = h0 - 1000.0
             prev_mw[label] = prev_mw0[label]
 
-        trim_order: tuple[str, ...] = tuple(reversed(_AUTO_SCHEDULE_FILL_ORDER))
+        trim_order: tuple[str, ...] = _AUTO_SCHEDULE_TRIM_ORDER
 
         for h in self.hours:
             covered = 0.0
@@ -462,7 +528,35 @@ class PlanningModel:
             # need this as the true ramp-budget anchor, since prev_mw
             # itself becomes "this column's MW so far" partway through.
             prev_hour_mw: dict[str, float] = dict(prev_mw)
-            for tech in _AUTO_SCHEDULE_FILL_ORDER:
+
+            # Rank technologies this hour by effective marginal cost
+            # (cheapest first) rather than a fixed priority order — a
+            # technology already online going into this hour (no fresh
+            # startup cost at stake) ranks at its bare running cost; an
+            # offline one carries its amortized startup-cost penalty. Ties
+            # (e.g. multiple free-toggle technologies already online at
+            # the same running cost) keep their _AUTO_SCHEDULE_TECH_TYPES
+            # relative order via a stable sort.
+            def _tech_already_online(tech: str) -> bool:
+                units = units_by_type.get(tech, [])
+                if not units:
+                    return False
+                return all(
+                    (prev_online0[u.label] if h == h0 else self.online[u.label][h - PLANNING_STEP_HOURS])
+                    for u in units
+                )
+
+            ranked_techs = sorted(
+                _AUTO_SCHEDULE_TECH_TYPES,
+                key=lambda tech: _effective_marginal_cost(
+                    tech,
+                    _tech_already_online(tech),
+                    _MIN_UP_HOURS.get(tech, 0.0),
+                    self.tech_min(units_by_type[tech][0]) if units_by_type.get(tech) else 0.0,
+                ),
+            )
+
+            for tech in ranked_techs:
                 min_up = _MIN_UP_HOURS.get(tech, 0.0)
                 min_down = _MIN_DOWN_HOURS.get(tech, 0.0)
                 for unit in units_by_type.get(tech, []):
@@ -502,7 +596,23 @@ class PlanningModel:
                         # top of the shortfall and over-size every committed
                         # unit toward its own ceiling regardless of how much
                         # is actually still needed.
-                        desired = min(self.tech_max(unit), max(self.tech_min(unit), shortfall))
+                        #
+                        # AGC-eligible + enrolled units prefer their own
+                        # regulation-band midpoint (tech_min +
+                        # (tech_max-tech_min)/2) instead, to maximize
+                        # available up/down regulation — but only when that
+                        # midpoint alone still covers the remaining
+                        # shortfall; load coverage always wins over
+                        # regulation-band preference. Pass 1 (trim-back)
+                        # absorbs any resulting overshoot afterward.
+                        if unit.unit_type in self.agc_eligible_types and self.is_agc_enrolled(label):
+                            midpoint = self.tech_min(unit) + (self.tech_max(unit) - self.tech_min(unit)) / 2.0
+                            if midpoint >= shortfall:
+                                desired = max(self.tech_min(unit), midpoint)
+                            else:
+                                desired = min(self.tech_max(unit), max(self.tech_min(unit), shortfall))
+                        else:
+                            desired = min(self.tech_max(unit), max(self.tech_min(unit), shortfall))
                     else:
                         desired = 0.0
                     delta = desired - prev
@@ -764,6 +874,124 @@ class PlanningModel:
                 for h in self.hours
             }
         return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HANDOFF STABILITY — correcting a start-hour generation/load imbalance
+# before it ever reaches GridSimulation.
+#
+# auto_schedule() always produces an exact 0 MW diff, but a confirmed plan
+# can still be hand-edited afterward (set_cell()/toggle_online()/etc. only
+# clamp a single unit's own [tech_min, tech_max], never the fleet-wide
+# balance), and Shifts 1-4's static INITIAL_SCHEDULE dict (shift_NN.py) is
+# hand-authored with no balance check at all. Since FrequencyModel always
+# starts at exactly F_NOMINAL (simulation/frequency.py) regardless of the
+# real starting balance, and every scheduled unit starts instantly at its
+# initial_schedule MW (UnitModel.__init__, simulation/units.py — current_mw
+# == target_mw from tick 0), whatever imbalance is baked into
+# initial_schedule becomes a live swing-equation input from the first
+# unfrozen tick. handoff_imbalance()/apply_handoff_nudge() below let a
+# caller correct that imbalance in the plain {unit_label: mw} dict itself,
+# before GridSimulation is ever constructed, so units start already at
+# their corrected value with zero ramp-in gap. See main.py's
+# _make_sim_and_renderer() (the actual call site) and
+# display/planning.py's _confirm_plan() (the confirm-time gate for
+# imbalances too large for this nudge to safely absorb).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def handoff_imbalance(
+    unit_specs: list[GenerationUnit],
+    initial_schedule: dict[str, float],
+    agc_eligible_types: frozenset[str],
+    load_mw: float,
+) -> dict:
+    """
+    Compare a candidate handover dispatch against the real load it will
+    face, and report how much of any gap the AGC-eligible online fleet can
+    absorb on its own.
+
+    diff_mw: sum(initial_schedule.values()) - load_mw (positive = surplus
+    generation, negative = shortfall). headroom_mw: the AGC-eligible,
+    online (present in initial_schedule) fleet's combined regulating range
+    in the direction needed to correct diff_mw — up-headroom
+    (sum(tech_max - mw)) if diff_mw < 0, down-headroom
+    (sum(mw - tech_min)) if diff_mw > 0, 0.0 if diff_mw is already ~0.
+    Mirrors simulation.units.FleetModel.apply_agc_signal()'s own weighting
+    shape, but computed directly from GenerationUnit specs since no
+    UnitModel/FleetModel exists yet at this point in the handoff.
+
+    correctable: True iff abs(diff_mw) <= headroom_mw — i.e. a nudge
+    confined to the AGC-eligible fleet's own real range can fully close
+    the gap without saturating (pinning to tech_min/tech_max) any unit.
+
+    Returns {'diff_mw': float, 'headroom_mw': float, 'correctable': bool}.
+    """
+    total_gen = sum(initial_schedule.values())
+    diff_mw = total_gen - load_mw
+
+    headroom_mw = 0.0
+    if abs(diff_mw) > 1e-9:
+        for unit in unit_specs:
+            if unit.unit_type not in agc_eligible_types:
+                continue
+            mw = initial_schedule.get(unit.label)
+            if mw is None:
+                continue
+            frac = _TECH_MIN_FRAC.get(unit.unit_type)
+            tech_min = unit.min_mw if frac is None else unit.rated_mw * frac
+            tech_max = unit.rated_mw
+            if diff_mw < 0.0:
+                headroom_mw += max(0.0, tech_max - mw)
+            else:
+                headroom_mw += max(0.0, mw - tech_min)
+
+    return {
+        'diff_mw': diff_mw,
+        'headroom_mw': headroom_mw,
+        'correctable': abs(diff_mw) <= headroom_mw + 1e-6,
+    }
+
+
+def apply_handoff_nudge(
+    initial_schedule: dict[str, float],
+    unit_specs: list[GenerationUnit],
+    agc_eligible_types: frozenset[str],
+    diff_mw: float,
+) -> dict[str, float]:
+    """
+    Return a corrected copy of initial_schedule with -diff_mw distributed
+    across AGC-eligible, online (present in initial_schedule) units,
+    proportional to each unit's own headroom in the needed direction — same
+    weighting shape as FleetModel.apply_agc_signal()
+    (simulation/units.py:678-718). Never touches a non-AGC-eligible unit,
+    never changes which units are online/offline, never moves any unit
+    outside its own [tech_min, tech_max]. Caller (see handoff_imbalance())
+    is responsible for only calling this when diff_mw is within the
+    fleet's own headroom — this function clamps per-unit but does not
+    itself verify the correction fully closes diff_mw when it doesn't.
+    """
+    candidates = []
+    for unit in unit_specs:
+        if unit.unit_type not in agc_eligible_types:
+            continue
+        mw = initial_schedule.get(unit.label)
+        if mw is None:
+            continue
+        frac = _TECH_MIN_FRAC.get(unit.unit_type)
+        tech_min = unit.min_mw if frac is None else unit.rated_mw * frac
+        tech_max = unit.rated_mw
+        weight = max(0.0, tech_max - mw) if diff_mw < 0.0 else max(0.0, mw - tech_min)
+        candidates.append((unit.label, mw, tech_min, tech_max, weight))
+
+    total_weight = sum(c[4] for c in candidates)
+    if total_weight < 1e-9:
+        return dict(initial_schedule)
+
+    corrected = dict(initial_schedule)
+    for label, mw, tech_min, tech_max, weight in candidates:
+        share = -diff_mw * (weight / total_weight)
+        corrected[label] = max(tech_min, min(tech_max, mw + share))
+    return corrected
 
 
 # ─────────────────────────────────────────────────────────────────────────────

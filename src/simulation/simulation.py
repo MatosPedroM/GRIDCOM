@@ -348,13 +348,17 @@ class GridSimulation:
         self._line_in_service: dict = {
             l.label: True for l in grid.get_active_lines()
         }
+        # Scripted LINE_DERATE overrides — {line_label: cap_mw}. Permanent
+        # for the shift unless cleared by LINE_RESTORE (mirrors UNIT_DERATE's
+        # permanence — see _random_derate_remaining_min's comment below).
+        self._line_rating_overrides: dict = {}
         self._maintenance_lines: frozenset = frozenset(maintenance_lines or set())
         for _label in self._maintenance_lines:
             if _label in self._line_in_service:
                 self._line_in_service[_label] = False
         if self._maintenance_lines:
             _in_service = self._get_in_service_lines()
-            self._loadflow.rebuild(_in_service)
+            self._loadflow.rebuild(_in_service, self._line_rating_overrides)
             self._voltage.rebuild(_in_service)
 
         # Overload timer state (owned here, passed to CascadeModel each tick)
@@ -675,7 +679,7 @@ class GridSimulation:
                                     f't={self._sim_time_min:.1f} min')
 
             in_service = self._get_in_service_lines()
-            self._loadflow.rebuild(in_service)
+            self._loadflow.rebuild(in_service, self._line_rating_overrides)
             self._voltage.rebuild(in_service)
             lf_result = self._loadflow.solve(p_injections)
             vr_result = self._voltage.solve(q_injections)
@@ -1009,7 +1013,7 @@ class GridSimulation:
         self._line_in_service[line_label] = False
         self._start_reclose_cooldown(line_label)
         in_service = self._get_in_service_lines()
-        self._loadflow.rebuild(in_service)
+        self._loadflow.rebuild(in_service, self._line_rating_overrides)
         self._voltage.rebuild(in_service)
         self._raise_alarm(
             priority='INFO',
@@ -1035,7 +1039,7 @@ class GridSimulation:
         self._line_in_service[line_label] = True
         self._start_reclose_cooldown(line_label)
         in_service = self._get_in_service_lines()
-        self._loadflow.rebuild(in_service)
+        self._loadflow.rebuild(in_service, self._line_rating_overrides)
         self._voltage.rebuild(in_service)
         self._raise_alarm(
             priority='INFO',
@@ -1044,6 +1048,26 @@ class GridSimulation:
             detail=f'Operator re-energised line {line_label}.',
         )
         return True
+
+    def derate_line(self, line_label: str, cap_mw: float) -> None:
+        """
+        Reduce a line's effective thermal rating to cap_mw and hold it there
+        (e.g. sustained high ambient temperature) — the line stays in
+        service, only its ceiling drops. Mirrors FleetModel.derate_unit();
+        clamped to the line's own nameplate rating_mw by
+        DCLoadFlow._effective_ratings(), same as UnitModel.derate()'s clamp.
+        Permanent for the shift until restore_line() clears it.
+        """
+        self._line_rating_overrides[line_label] = float(cap_mw)
+        in_service = self._get_in_service_lines()
+        self._loadflow.rebuild(in_service, self._line_rating_overrides)
+
+    def restore_line(self, line_label: str) -> None:
+        """Remove an active LINE_DERATE — the line's rating returns to nameplate."""
+        if line_label in self._line_rating_overrides:
+            del self._line_rating_overrides[line_label]
+            in_service = self._get_in_service_lines()
+            self._loadflow.rebuild(in_service, self._line_rating_overrides)
 
     def shed_load(self, bus_label: str, fraction: float) -> bool:
         result = self._demand.shed_load(bus_label, fraction)
@@ -1727,6 +1751,10 @@ class GridSimulation:
             label = action['unit']
             if self._fleet.has_unit(label):
                 self._fleet.derate_unit(label, action['cap_mw'])
+        elif action_type == 'LINE_DERATE':
+            self.derate_line(action['line'], action['cap_mw'])
+        elif action_type == 'LINE_RESTORE':
+            self.restore_line(action['line'])
         elif action_type == 'DEMAND_OVERRIDE':
             schedule = {float(h): mw for h, mw in action['schedule'].items()}
             sim_hour = self._start_hour + self._sim_time_min / 60.0

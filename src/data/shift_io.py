@@ -46,6 +46,8 @@ Event 'action' is a declarative dict or None:
   { "type": "LINE_CLOSE", "line": "L09" }
   { "type": "UNIT_TRIP", "unit": "RVSD-1" }
   { "type": "UNIT_DERATE", "unit": "RVSD-1", "cap_mw": 105.0 }
+  { "type": "LINE_DERATE", "line": "L09", "cap_mw": 300.0 }
+  { "type": "LINE_RESTORE", "line": "L09" }
   { "type": "DEMAND_OVERRIDE", "schedule": {hour_str: mw} }
   { "type": "AGC_SET", "enabled": true }
   { "type": "AGC_EXCLUDE_UNITS", "units": ["MERE-2", "CLUN-1"] }
@@ -53,6 +55,15 @@ UNIT_DERATE reduces the unit's dispatch ceiling to cap_mw and holds it
 there — unlike UNIT_TRIP, the unit stays ONLINE and keeps producing, just
 below its nameplate rating (e.g. a cooling fault). Output snaps down
 immediately if currently above the new cap.
+LINE_DERATE reduces a line's effective thermal rating to cap_mw and holds
+it there — the line-side counterpart to UNIT_DERATE (e.g. sustained high
+ambient temperature reducing real carrying capacity below nameplate). The
+line stays in service; only the loading_pct denominator drops, so a flow
+that was previously fine can suddenly read as overloaded. cap_mw is
+clamped to the line's own nameplate rating_mw — it can only reduce
+headroom, never raise it. Permanent for the shift until LINE_RESTORE
+clears it, matching UNIT_DERATE's permanence. LINE_RESTORE clears an
+active LINE_DERATE, returning the line to its nameplate rating.
 DEMAND_OVERRIDE replaces the system's demand profile with a sparse
 hour->MW schedule (linearly interpolated between given hours) from the
 moment it fires — used for a mid-shift surprise (e.g. a demand spike)

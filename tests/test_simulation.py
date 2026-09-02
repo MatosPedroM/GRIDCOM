@@ -2060,6 +2060,187 @@ def test_shift_scoring() -> bool:
     return all_passed
 
 
+def test_line_derate() -> bool:
+    """
+    Verify GridSimulation.derate_line() / restore_line() (LINE_DERATE /
+    LINE_RESTORE scripted actions) work like UnitModel.derate() for lines.
+
+    Checks:
+      - derate_line() lowers a line's effective rating, raising its
+        loading_pct for the same flow
+      - the cap is clamped to the line's own nameplate rating_mw
+      - restore_line() returns the line to its nameplate rating
+      - a derate survives an unrelated line trip/close elsewhere in the
+        network (rebuild() must be called with both in-service state and
+        overrides — a lone rebuild(in_service) call would silently drop it)
+      - the LINE_DERATE / LINE_RESTORE scripted-action dispatch path
+        (_execute_action()) reaches the same code
+    """
+    print("test_line_derate...")
+    all_passed = True
+
+    try:
+        from simulation.simulation import GridSimulation
+        from data.profiles import DEMAND_PROFILE_NORMALISED
+
+        substation_load_mw = {
+            'LD01': {h: 200.0 * DEMAND_PROFILE_NORMALISED[h] for h in DEMAND_PROFILE_NORMALISED},
+        }
+
+        # Demand follows DEMAND_PROFILE_NORMALISED, which drifts slightly
+        # tick-to-tick even at the same sim hour boundary — comparisons use
+        # a loose relative tolerance rather than exact equality, and every
+        # "before"/"after" pair below is taken one single tick(1.0) apart so
+        # the drift between the two samples is as small as possible.
+        REL_TOL = 0.01
+
+        def _close(a: float, b: float) -> bool:
+            return abs(a - b) <= REL_TOL * max(abs(a), abs(b), 1.0)
+
+        # ── derate_line() raises loading_pct, clamps to nameplate ─────────
+        try:
+            g1 = _build_simulation_fixture()
+            schedule = {'GENS-1': 200.0}
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
+                                  initial_schedule=schedule,
+                                  substation_load_mw=substation_load_mw)
+            sim.tick(60.0)
+            loading_nameplate = sim.get_state().line_loading_pct['L02']
+
+            sim.derate_line('L02', 100.0)
+            sim.tick(1.0)
+            loading_derated = sim.get_state().line_loading_pct['L02']
+
+            assert loading_derated > loading_nameplate * 1.5, (
+                f"L02 loading_pct should rise sharply after derate to 100 MW "
+                f"(nameplate reading was {loading_nameplate:.1f}%, now {loading_derated:.1f}%)"
+            )
+            assert sim.get_state().line_status['L02'] == 'IN_SERVICE', (
+                "A derated line must stay IN_SERVICE, not trip immediately"
+            )
+
+            # Cap above nameplate (500 MW) must clamp down to nameplate, not raise it
+            sim.derate_line('L02', 9000.0)
+            sim.tick(1.0)
+            loading_clamped = sim.get_state().line_loading_pct['L02']
+            assert _close(loading_clamped, loading_nameplate), (
+                f"Derate cap above nameplate should clamp to ~nameplate loading "
+                f"(~{loading_nameplate:.4f}%), got {loading_clamped:.4f}%"
+            )
+
+            print(f"  derate_line('L02', 100.0): loading {loading_nameplate:.1f}% -> "
+                  f"{loading_derated:.1f}%; cap-above-nameplate clamps — PASS")
+        except AssertionError as e:
+            print(f"  derate_line() raises loading / clamps: FAIL — {e}")
+            all_passed = False
+
+        # ── restore_line() returns to nameplate ────────────────────────────
+        try:
+            g1 = _build_simulation_fixture()
+            schedule = {'GENS-1': 200.0}
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
+                                  initial_schedule=schedule,
+                                  substation_load_mw=substation_load_mw)
+            sim.tick(60.0)
+            loading_nameplate = sim.get_state().line_loading_pct['L02']
+
+            sim.derate_line('L02', 100.0)
+            sim.tick(1.0)
+            loading_derated = sim.get_state().line_loading_pct['L02']
+            assert loading_derated > loading_nameplate * 1.5, \
+                "Sanity check: derate should have raised loading sharply before restore"
+
+            sim.restore_line('L02')
+            sim.tick(1.0)
+            loading_restored = sim.get_state().line_loading_pct['L02']
+            assert _close(loading_restored, loading_nameplate), (
+                f"restore_line() should return loading to ~nameplate value "
+                f"(~{loading_nameplate:.4f}%), got {loading_restored:.4f}%"
+            )
+
+            print(f"  restore_line('L02'): loading returns to "
+                  f"{loading_restored:.1f}% (nameplate) — PASS")
+        except AssertionError as e:
+            print(f"  restore_line(): FAIL — {e}")
+            all_passed = False
+
+        # ── Derate survives an unrelated line trip/close elsewhere ────────
+        # Regression check for the risk the plan called out explicitly:
+        # every self._loadflow.rebuild() call site in GridSimulation must
+        # pass BOTH the current in-service list AND the current rating
+        # overrides — a call site that rebuilds with only in_service (as
+        # trip_line()/close_line() did before this change) would silently
+        # drop any active derate the next time topology changes anywhere
+        # in the network, not just on the derated line itself.
+        try:
+            g1 = _build_simulation_fixture()
+            schedule = {'GENS-1': 200.0}
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
+                                  initial_schedule=schedule,
+                                  substation_load_mw=substation_load_mw)
+            sim.tick(60.0)
+
+            sim.derate_line('L02', 100.0)
+            assert sim._line_rating_overrides.get('L02') == 100.0, \
+                "Sanity check: derate_line() should record the override"
+
+            # Trip and reclose an unrelated line (L01) elsewhere in the
+            # network — this forces two more loadflow.rebuild() calls via a
+            # different call site than derate_line()'s own.
+            sim.trip_line('L01')
+            sim.tick(1.0)
+            sim.close_line('L01')
+            sim.tick(1.0)
+
+            assert sim._line_rating_overrides.get('L02') == 100.0, (
+                "L02's derate override must survive an unrelated L01 "
+                "trip/close, but the override dict no longer contains it: "
+                f"{sim._line_rating_overrides!r}"
+            )
+
+            print("  derate on L02 survives unrelated L01 trip/close — PASS")
+        except AssertionError as e:
+            print(f"  derate survives unrelated trip/close: FAIL — {e}")
+            all_passed = False
+
+        # ── LINE_DERATE / LINE_RESTORE scripted-action dispatch ────────────
+        try:
+            g1 = _build_simulation_fixture()
+            schedule = {'GENS-1': 200.0}
+            sim = GridSimulation(g1, shift_number=1, difficulty='NORMAL',
+                                  initial_schedule=schedule,
+                                  substation_load_mw=substation_load_mw)
+            sim.tick(60.0)
+            loading_nameplate = sim.get_state().line_loading_pct['L02']
+
+            sim._execute_action({'type': 'LINE_DERATE', 'line': 'L02', 'cap_mw': 100.0})
+            sim.tick(1.0)
+            loading_scripted_derate = sim.get_state().line_loading_pct['L02']
+            assert loading_scripted_derate > loading_nameplate * 1.5, (
+                "LINE_DERATE scripted action should raise L02's loading_pct sharply"
+            )
+
+            sim._execute_action({'type': 'LINE_RESTORE', 'line': 'L02'})
+            sim.tick(1.0)
+            loading_scripted_restore = sim.get_state().line_loading_pct['L02']
+            assert _close(loading_scripted_restore, loading_nameplate), (
+                "LINE_RESTORE scripted action should return L02 to ~nameplate loading"
+            )
+
+            print("  LINE_DERATE / LINE_RESTORE scripted actions dispatch correctly — PASS")
+        except AssertionError as e:
+            print(f"  scripted LINE_DERATE/LINE_RESTORE dispatch: FAIL — {e}")
+            all_passed = False
+
+    except Exception as e:
+        print(f"  ERROR — {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return all_passed
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TEST RUNNER
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2076,6 +2257,7 @@ if __name__ == "__main__":
         test_cascade_model(),
         test_simulation_model(),
         test_shift_scoring(),
+        test_line_derate(),
     ]
     passed = sum(results)
     total = len(results)

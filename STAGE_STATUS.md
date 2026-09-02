@@ -10,7 +10,134 @@
 
 ## Current Status
 
-**COMPLETE** — Session 118: Phase A of the campaign implementation plan in
+**COMPLETE** — Session 120: built `LINE_DERATE`/`LINE_RESTORE` (Phase B of the
+campaign implementation plan, `GRIDCOM_CAMPAIGN_BRAINSTORM.md`'s B5) — the one
+confirmed engine gap the event typology depended on. Mirrors `UNIT_DERATE`'s
+existing pattern exactly, adapted for `Line` being a frozen dataclass whose
+rating is cached inside the `DCLoadFlow` solver rather than mutable on the
+object itself:
+- **`DCLoadFlow.__init__()`/`.rebuild()`** (`src/simulation/loadflow.py`) gain
+  an optional `rating_overrides: dict[label, cap_mw]` parameter, applied via
+  new `_effective_ratings()` static helper — a cap is clamped to the line's
+  own nameplate `rating_mw` (mirrors `UnitModel.derate()`'s clamp), never
+  raises it. `VoltageModel` untouched — confirmed its decoupled ΔV=B'⁻¹×Q
+  solve has no rating-dependent term; only `DCLoadFlow` computes
+  `loading_pct`.
+- **`GridSimulation.derate_line()`/`restore_line()`** (`src/simulation/
+  simulation.py`) — new methods mirroring `trip_line()`/`close_line()`'s
+  shape, backed by new `self._line_rating_overrides: dict` state (permanent
+  for the shift until restored, matching `UNIT_DERATE`'s permanence). Every
+  existing `self._loadflow.rebuild(...)` call site (init-time maintenance
+  lines, the tick-loop cascade-trip path, `trip_line()`, `close_line()`) now
+  passes `self._line_rating_overrides` alongside the in-service list — a
+  derate must survive topology changes anywhere else in the network, not
+  just be set once and forgotten.
+- **Two new `_execute_action()` branches**: `LINE_DERATE` (`{'type':
+  'LINE_DERATE', 'line': ..., 'cap_mw': ...}`) and `LINE_RESTORE` (`{'type':
+  'LINE_RESTORE', 'line': ...}`), dispatched the same way as `UNIT_DERATE`.
+  `shift_io.py`'s action-vocabulary docstring updated with both shapes.
+- **`tests/test_simulation.py::test_line_derate()`** (new, 4 checks, all
+  passing): derate raises `loading_pct` and a cap above nameplate clamps
+  rather than raising the ceiling; `restore_line()` returns to nameplate;
+  a derate survives an unrelated line trip/reclose elsewhere in the network
+  (the specific regression a rebuild call site missing the overrides dict
+  would cause); the `LINE_DERATE`/`LINE_RESTORE` scripted-action dispatch
+  path reaches the same code. Also manually verified end-to-end through the
+  real `SCRIPTED_EVENTS`/`_process_scripted_events()` pipeline (not just
+  direct `_execute_action()` calls) — a scripted derate at T+1min followed
+  by a scripted restore at T+3min raised loading ~29%→~146% then returned
+  it to ~29%, on the same 2-line fixture the new test uses.
+- Baseline unchanged: 6/11 `test_simulation.py` (5 pre-existing unrelated
+  failures — 4 `ModuleNotFoundError: simulation.constants` plus one
+  `test_shift_scoring` `AttributeError` on a mock's `derate_events` field —
+  confirmed identical with and without this session's changes via
+  `git stash`); `tests/test_planning.py` unaffected, 10/10.
+- No new constants — `cap_mw` is authored per-event content, exactly like
+  `UNIT_DERATE`'s `cap_mw`, not a `constants.py` tunable.
+- Full implementation plan: `.claude/plans/read-the-document-gridcom-campaign-brain-logical-hippo.md`.
+
+---
+
+**COMPLETE (prior)** — Session 119: made `PlanningModel.auto_schedule()`
+(`src/gameplay/phase1.py`, the real Phase 1 auto-scheduler for Shifts 5-10 —
+`src/gameplay/autopilot.py` remains dead/empty, out of scope) cost-aware. It
+previously committed units via a fixed technology-priority order
+(`_AUTO_SCHEDULE_FILL_ORDER`) and never read the cost tables in
+`constants.py` at all — cost was reported after the fact by `hourly_cost()`/
+`total_cost()`, never optimized during scheduling.
+- **Per-hour cost-ranked commitment**: replaced the fixed fill order with a
+  dynamic per-hour ranking (`_effective_marginal_cost()`, new module-level
+  helper) that amortizes a technology's `STARTUP_COST_EUR_BY_TYPE` over its
+  own `_MIN_UP_HOURS` commitment at tech-min output when it isn't already
+  online this hour, added onto `VARIABLE_COST_EUR_PER_MWH_BY_TYPE` — a
+  technology already online ranks at its bare running cost (no new startup
+  cost at stake). This correctly favors nuclear (high startup, low running
+  cost) over CCGT (low startup, high running cost) once nuclear's startup is
+  spread over its long committed run, without an iterative solver — pure
+  Python, no numpy, per CLAUDE.md's dependency rule.
+  `_AUTO_SCHEDULE_FILL_ORDER` renamed `_AUTO_SCHEDULE_TECH_TYPES` (now
+  unordered); trim-back (Pass 1) keeps a separate fixed
+  `_AUTO_SCHEDULE_TRIM_ORDER` (flexibility-first, cost-independent),
+  numerically identical to the old reversed fill order.
+- **AGC regulation-band midpoint preference**: an AGC-eligible, enrolled unit
+  being committed to cover load now prefers its own regulation-band midpoint
+  (`tech_min + (tech_max-tech_min)/2`) — maximizing available up/down
+  regulation — whenever that midpoint alone still covers the remaining
+  shortfall; falls back to the existing clamp-to-shortfall when it doesn't
+  (load coverage always wins). Generalizes what was previously only Pass 2's
+  (force-start) reactive fallback formula into the main commitment path.
+  Passes 1-3 (trim-back, force-start, substitution) are all unchanged in
+  logic and still all necessary — none became redundant (see the plan doc
+  for the full reasoning); Pass 3 in particular still balances regulation
+  quality but, under the new billing model below, never changes
+  `total_cost()`.
+- **AGC cost changed from a flat fee to band-scaled**: retired
+  `AGC_AVAILABILITY_COST_EUR_PER_HOUR` (flat 150 EUR/h per enrolled unit)
+  entirely, replaced with `AGC_COST_EUR_PER_MW_BAND_HOUR` (new constant,
+  10.0 EUR/MW-band/hour, **placeholder pending playtest** same status as
+  `CAMPAIGN_STARTING_BUDGET_EUR`) — `hourly_cost()`'s AGC term is now
+  `(tech_max(unit) - tech_min(unit)) * AGC_COST_EUR_PER_MW_BAND_HOUR` per
+  enrolled unit, i.e. the developer's own formula
+  (`startup + scheduled_mw*running_cost + regulation_band*AGC_cost`).
+  Deliberately billed on the unit's fixed **nominal** band, not its
+  actual/varying hourly headroom — algebraically identical for any single
+  online unit (up-headroom + down-headroom always equals
+  `tech_max - tech_min` regardless of dispatch position within the range),
+  so this is a documentation/simplicity choice, not a behavioral one — see
+  `hourly_cost()`'s docstring. All three developer decision points (retire
+  the flat fee vs. keep both; nominal band vs. actual headroom; amortize
+  startup over min-up-time vs. rank on bare running cost) were confirmed
+  directly with the developer before implementation, not assumed.
+- **Added `tests/test_planning.py`** (no prior test covered `phase1.py`/
+  `PlanningModel`/`auto_schedule()` at all) — 6 tests, all passing: cost
+  ranking prefers cheap baseload for sustained load; AGC units land at/near
+  midpoint when load allows; tech-min/max, ramp, min-up/down, and pooled AGC
+  reserve floor all still hold; load coverage stays exact (0 MW diff every
+  hour); `hourly_cost()`/`total_cost()`/`remaining_budget()` stay finite;
+  manual (non-auto) edit functions unaffected. Follows the house
+  no-pytest/manual-`test_*()`/PASS-FAIL-ERROR convention from
+  `tests/test_simulation.py`.
+- **Found, did not fix (pre-existing, out of scope)**: `maintenance_units`
+  only seeds the synthetic D-1 boundary state at hour 0
+  (`prev_online0`/`prev_mw0`) — it does NOT prevent the forward-fill
+  commitment loop from bringing a "maintenance" unit online at a later hour
+  if load calls for it. Reproduced on the pre-rework code via `git stash`
+  before attributing it here — not introduced or worsened by this session's
+  changes, but a real bug worth a dedicated follow-up fix. Flagged in
+  `test_planning.py`'s `test_physical_constraints_hold()` rather than
+  silently asserting incorrect behavior.
+- Edited: `src/config/constants.py` (ECONOMICS section — new
+  `AGC_COST_EUR_PER_MW_BAND_HOUR`, removed `AGC_AVAILABILITY_COST_EUR_PER_HOUR`),
+  `src/gameplay/phase1.py` (`hourly_cost()`, `auto_schedule()`, its
+  module-level constants/new `_effective_marginal_cost()` helper).
+  `src/display/planning_panels.py` reads only `hourly_cost()`/`total_cost()`
+  — unchanged code, numbers will simply differ (expected; campaign-budget
+  constants are already flagged placeholder pending playtest).
+- Full implementation plan: `.claude/plans/the-auto-scheduler-should-solve-sunny-abelson.md`.
+
+---
+
+**COMPLETE (prior)** — Session 118: Phase A of the campaign implementation plan in
 `GRIDCOM_CAMPAIGN_BRAINSTORM.md` (untracked design doc; plan itself lives at
 `.claude/plans/read-the-gridcom-campaign-brainstorm-md-bubbly-cray.md`) — every
 campaign shift (1-10) now boots, balances at handover, and runs
@@ -3402,44 +3529,35 @@ contains working code unless listed above as complete.
 
 ## Next Session Objective
 
-**Phase B: build `LINE_DERATE`/`LINE_RESTORE`, then rebuild Shift 10 as the Act III
-finale**
+**Rebuild Shift 10 as the Act III finale**
 
-Session 118 completed Phase A of the campaign implementation plan (see this
-session's log entry above, and
-`.claude/plans/read-the-gridcom-campaign-brainstorm-md-bubbly-cray.md`) — every
-shift now has a minimal, playable, headless-verified structure. Two phases remain
-before real per-shift narrative content can be authored, per the plan's locked
-sequencing:
+Session 118 completed Phase A of the campaign implementation plan
+(`.claude/plans/read-the-gridcom-campaign-brainstorm-md-bubbly-cray.md`) —
+every shift now has a minimal, playable, headless-verified structure. Session
+120 completed Phase B — `LINE_DERATE`/`LINE_RESTORE` now exist and are
+verified (see this session's log entry above, and
+`.claude/plans/read-the-document-gridcom-campaign-brain-logical-hippo.md`).
+One piece of prerequisite work remains before real per-shift narrative
+content can be authored across the campaign:
 
-1. **Phase B — `LINE_DERATE`/`LINE_RESTORE`** (see the plan file's Phase B section
-   for full detail): the one confirmed engine gap the event typology
-   (`GRIDCOM_CAMPAIGN_BRAINSTORM.md` Part 2's B5, and the whole Part 2.5 Weather
-   Regime tier) depends on. Mirrors `UNIT_DERATE`'s existing pattern — a per-line
-   effective-rating override, a new scripted-action pair, and `loadflow.py` reading
-   the override instead of `line.rating_mw` directly. Confirmed this session:
-   neither `LINE_DERATE` nor `LINE_RESTORE` exist anywhere in `src/` yet; everything
-   else in the typology (A1-A5, B1-B4, C1-C4) is already buildable from existing
-   primitives (`SCRIPTED_EVENTS`, `DEMAND_OVERRIDE`, `UNIT_DERATE`, `UNIT_TRIP`,
-   `LINE_OPEN`, `LOAD_SHED`/`LOAD_RESTORE`) with no engine changes needed.
-2. **Shift 10 full rebuild** (developer decision, Session 118): the first piece of
-   real content-authoring work, ahead of Shifts 1-9. Shift 10 is currently a Phase A
-   placeholder only (see this session's log entry) — its previous "The Cold Snap"
-   content was discarded because it was authored against a grid (`grid_big.json`)
-   that never existed on disk, and its station/bus names don't exist in
-   `grid_large.json` (the grid it actually needs to run on: `CLOV` nuclear, `RIVE`
-   coal, `DOWN` CCGT anchors; `BATH`/`APPL`/`SOUT`/`LAMB`/`MOSS` the 5 INDUSTRIAL
-   buses). Rebuild it against `grid_large.json`'s real topology and
-   `GRIDCOM_CAMPAIGN_BRAINSTORM.md`'s Act III narrative (Part 1: "everything you
-   already know, all at once, without enough time to think about each thing
-   individually" — ideally a full three-channel Heatwave or full-intensity
-   High-Wind Storm Weather Regime per Part 2.5, which needs Phase B's
-   `LINE_DERATE` to be done first for the thermal-derate channel).
+**Shift 10 full rebuild** (developer decision, Session 118): the first piece
+of real content-authoring work, ahead of Shifts 1-9. Shift 10 is currently a
+Phase A placeholder only — its previous "The Cold Snap" content was
+discarded because it was authored against a grid (`grid_big.json`) that
+never existed on disk, and its station/bus names don't exist in
+`grid_large.json` (the grid it actually needs to run on: `CLOV` nuclear,
+`RIVE` coal, `DOWN` CCGT anchors; `BATH`/`APPL`/`SOUT`/`LAMB`/`MOSS` the 5
+INDUSTRIAL buses). Rebuild it against `grid_large.json`'s real topology and
+`GRIDCOM_CAMPAIGN_BRAINSTORM.md`'s Act III narrative (Part 1: "everything
+you already know, all at once, without enough time to think about each
+thing individually" — ideally a full three-channel Heatwave or
+full-intensity High-Wind Storm Weather Regime per Part 2.5, both now
+unblocked since `LINE_DERATE` exists for the thermal-derate channel).
 
-Only after both of the above should Shifts 1-9's real narrative content
+Only after Shift 10's rebuild should Shifts 1-9's real narrative content
 (`SCRIPTED_EVENTS`, full `HANDOVER_NOTES`, the typology archetypes per act) be
 authored — treat each shift or small group of shifts as its own sub-session, per
-the plan file's Phase C guidance, rather than attempting all nine in one pass.
+the Phase A plan file's Phase C guidance, rather than attempting all nine in one pass.
 
 ---
 
@@ -3594,6 +3712,7 @@ own hydraulic-pair data, which doesn't exist today.
 | 33 | New DROOP_ENABLED per-shift flag (fixes universal droop silently breaking Shift 1/2's manual-dispatch lesson) wired through constants/simulation/loader/main/Shift-Builder round-trip; merged Shift 1+2 into one tutorial (Shift 2 now a stub); scripted-event timings empirically corrected against real demand-curve math; headless droop-gating + playability checks, both shifts' loader config confirmed; 8/9 pass (1 pre-existing unrelated failure), 28/28 pytest | PASS | 2026-07-26 |
 | 35 | Shift 10 "Bad Night" Movement 1 — foundation (F1-F7). F1 seeded RNG (SHIFT_RNG_SEED_BASE; only simulation.py's live RenewablesModel actually draws noise — the other two sites are deterministic); F2 speed keys 0-4 in PLAYING, resolving the digit-entry precedence conflict (SPEED_VERY_FAST reachable for the first time); F3 WIN_CONDITIONS/FAIL_CONDITIONS reusing the scripted-event condition evaluator, with per-condition sustained_s that decays on release, evaluated after the tick snapshot; F4 gameplay/scoring.py replacing two duplicated inline rubrics and the hardcoded campaign grade 'A', now scoring voltage/loading/trips as well as frequency; F5 load shedding made reachable at all (clear_shed wrapper, renderer handlers, H / Shift+H, LOAD_SHED + LOAD_RESTORE actions) — load_shed_events can be non-zero for the first time; F6 inverse-time overload accumulation with decay instead of hard reset (100%:725s -> 180%:174s; a line flapping around its rating now trips, previously never did); F7 real engineering units in the UI (bus V in kV, derived S in MVA on the unit panel), display-only. Verified per item headlessly + offscreen panel renders; tick 0.72 ms (target <5 ms); new test_shift_scoring() plus rewritten cascade overload/decay tests. 26/29 vs a 25/28 clean-tree baseline — the 3 remaining failures are byte-identical to baseline (verified by diffing against a git-archive copy of HEAD), so zero regressions | PASS | 2026-08-19 |
 | 35 | Phase 2 setpoint-control rework (F8, developer request, supersedes F2's digit-speed keys): W arms active-power (MW) adjust, Q arms reactive-power (AVR setpoint) adjust, Up/Down step the armed quantity with Ctrl for a coarse step, F12 cycles run speed 0.25->1->3->10->wrap, P keeps pause off the cycle, and 0-9 revert to unit target entry only. The MW nudge already existed (rebound G->W); the AVR nudge is new (GEN_VOLTAGE_SETPOINT_STEP_PU 0.005, x4 coarse, clamped to the 0.95-1.05 pu band) since that side was typing-only. Arming one mode disarms the other. Collisions resolved: Q was a quit alias and F12 toggled EDITOR_MODE (now Ctrl+Shift+E only); Escape backs out one level at a time and with nothing left to close opens a new QUIT_CONFIRM screen (RESUME/ABANDON) that pauses rather than tears down the sim, so RESUME restores the prior speed. Context panel shows "(W to adjust)" and an AVR [Q] label that turns amber when armed. CLAUDE.md's Phase 2 input spec rewritten (was stale — documented neither the shed keys nor S/X/T/C). Verified against the real _make_sim_and_renderer() bootstrap: correct step sizes, clamping, disarmed no-ops, Escape disarm, and confirm-screen renders. 26/29, unchanged | PASS | 2026-08-19 |
+| 38 | Phase B — `LINE_DERATE`/`LINE_RESTORE` engine addition (campaign implementation plan): `DCLoadFlow` rating-override parameter + `_effective_ratings()` clamp helper, `GridSimulation.derate_line()`/`restore_line()` + `_line_rating_overrides` state, every `loadflow.rebuild()` call site updated to pass overrides alongside in-service state, two new `_execute_action()` branches, `shift_io.py` docstring updated; new `test_line_derate()` (4 checks: loading rises + clamps to nameplate, restore returns to nameplate, derate survives an unrelated line trip/reclose elsewhere, scripted-action dispatch) plus a manual end-to-end `SCRIPTED_EVENTS` pipeline check; baseline confirmed unchanged via `git stash` (5 pre-existing unrelated failures with or without this session's changes), 6/11 `test_simulation.py`, 10/10 `test_planning.py` | PASS | 2026-08-30 |
 
 ---
 

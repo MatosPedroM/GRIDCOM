@@ -51,13 +51,19 @@ class DCLoadFlow:
         loading = result.line_loading_pct  # {label: %}
     """
 
-    def __init__(self, grid: DesignerGrid) -> None:
+    def __init__(
+        self,
+        grid: DesignerGrid,
+        rating_overrides: dict[LineLabel, float] | None = None,
+    ) -> None:
         """
         Build the susceptance matrix from the grid's active lines.
 
         Args:
             grid: Loaded DesignerGrid object. Must have at least one active
                   bus and one active line.
+            rating_overrides: {line_label: cap_mw} for lines under a
+                               scripted LINE_DERATE. See rebuild().
         """
         self.grid = grid
         self.slack_bus: BusLabel = grid.slack_bus
@@ -80,8 +86,26 @@ class DCLoadFlow:
         self._line_b:         np.ndarray      = np.array(
             [1.0 / l.reactance_pu for l in lines], dtype=np.float64
         )
-        self._line_ratings:   np.ndarray      = np.array(
-            [l.rating_mw for l in lines], dtype=np.float64
+        self._line_ratings:   np.ndarray      = self._effective_ratings(lines, rating_overrides)
+
+    @staticmethod
+    def _effective_ratings(
+        lines: list,
+        rating_overrides: dict[LineLabel, float] | None,
+    ) -> np.ndarray:
+        """
+        Per-line MW rating, capped by rating_overrides (a scripted
+        LINE_DERATE) where present. A cap is clamped to the line's own
+        nameplate rating_mw — a derate can only reduce headroom, never
+        raise it above nameplate — mirroring UnitModel.derate()'s clamp.
+        """
+        if not rating_overrides:
+            return np.array([l.rating_mw for l in lines], dtype=np.float64)
+        return np.array(
+            [min(l.rating_mw, rating_overrides[l.label]) if l.label in rating_overrides
+             else l.rating_mw
+             for l in lines],
+            dtype=np.float64,
         )
 
     # ─────── B MATRIX CONSTRUCTION ────────────────────────────────────────
@@ -249,16 +273,28 @@ class DCLoadFlow:
 
     # ─────── REBUILD ──────────────────────────────────────────────────────
 
-    def rebuild(self, lines_in_service: list | None = None) -> None:
+    def rebuild(
+        self,
+        lines_in_service: list | None = None,
+        rating_overrides: dict[LineLabel, float] | None = None,
+    ) -> None:
         """
         Rebuild the B matrix and cached line data.
 
-        Call this after any topology change (line trip or close) before
-        calling solve() again.
+        Call this after any topology change (line trip or close), or any
+        rating change (LINE_DERATE / LINE_RESTORE), before calling solve()
+        again.
 
         Args:
             lines_in_service: Filtered line list (in-service only). If None,
                               uses all active lines from the grid.
+            rating_overrides: {line_label: cap_mw} for lines under a
+                              scripted LINE_DERATE. If None, every line uses
+                              its nameplate rating_mw. Callers that maintain
+                              both in-service state and derate state (see
+                              GridSimulation) must pass both on every
+                              rebuild() — omitting rating_overrides here
+                              silently drops any active derate.
         """
         if lines_in_service is not None:
             self._active_lines = lines_in_service
@@ -275,9 +311,7 @@ class DCLoadFlow:
         self._line_b        = np.array(
             [1.0 / l.reactance_pu for l in lines], dtype=np.float64
         )
-        self._line_ratings  = np.array(
-            [l.rating_mw for l in lines], dtype=np.float64
-        )
+        self._line_ratings  = self._effective_ratings(lines, rating_overrides)
 
 
 class LoadFlowResult:
